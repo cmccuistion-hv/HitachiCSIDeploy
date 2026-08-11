@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="12" fill="#2064B4"/>
-  <path d="M14 42V22h6v8h10v-8h6v20h-6v-8H20v8h-6zm32-20h6v20h-6V22z" fill="#FBFCFC"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="6" fill="#E4002B"/>
+  <!-- Hitachi H mark from official Hitachi Vantara wordmark -->
+  <path
+    transform="translate(6.4 4.4) scale(0.9)"
+    d="M3.19922 3.30005H8.29922V11.2H15.4992V3.30005H20.5992V24.2001H15.4992V15.5H8.29922V24.2001H3.19922V3.30005Z"
+    fill="#FBFCFC"
+  />
 </svg>

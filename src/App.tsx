@@ -1,3 +1,6 @@
+import { useRef } from 'react'
+import { ThemeControls } from './components/ThemeControls'
+import { useTheme } from './state/ThemeContext'
 import { useWizard } from './state/WizardContext'
 import { PlatformStep } from './steps/PlatformStep'
 import { ComponentsStep } from './steps/ComponentsStep'
@@ -38,19 +41,70 @@ function StepBody({ id }: { id: string }) {
 }
 
 export default function App() {
-  const { visibleSteps, stepIndex, setStepIndex, exportConfig } = useWizard()
+  const { visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
+  const { palette, mode, setPalette, toggleMode, headerLight } = useTheme()
   const current = visibleSteps[stepIndex]
+  const importRef = useRef<HTMLInputElement>(null)
+
+  const onImportFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        importConfig(String(reader.result || ''))
+        setStepIndex(0)
+      } catch {
+        alert('Could not import that file. Choose a hitachi-csi-wizard-config.json export.')
+      }
+    }
+    reader.onerror = () => alert('Could not read the selected file.')
+    reader.readAsText(file)
+  }
+
+  const logoSrc = headerLight
+    ? './hitachi-vantara-logo.svg'
+    : './hitachi-vantara-logo-white.svg'
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="brand">
-          <div className="brand-mark">HV</div>
-          <div>
-            <h1>Hitachi CSI Deployment Wizard</h1>
+          <img
+            className="brand-logo"
+            src={logoSrc}
+            alt="Hitachi Vantara"
+            width={201}
+            height={28}
+          />
+          <span className="brand-divider" aria-hidden="true" />
+          <div className="brand-product">
+            <h1>CSI Deployment Wizard</h1>
           </div>
         </div>
         <div className="header-actions">
+          <ThemeControls
+            palette={palette}
+            mode={mode}
+            onPalette={setPalette}
+            onToggleMode={toggleMode}
+          />
+          <input
+            ref={importRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              if (file) onImportFile(file)
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => importRef.current?.click()}
+          >
+            Import config
+          </button>
           <button
             type="button"
             className="btn btn-ghost"
