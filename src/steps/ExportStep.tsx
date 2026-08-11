@@ -298,6 +298,9 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
       : hasQuickstart
         ? '2. Run `./install.sh` — applies operator YAML / driver CR, storage Secrets, StorageClass, and test PVC.'
         : '2. Run `./install.sh` — applies operator YAML / driver CR, and storage Secrets (if generated). Add StorageClass and test workloads separately.',
+    state.telemetryEnabled
+      ? ''
+      : '- Hitachi Telemetry is disabled in this package. `install.sh` applies `hspc-csi-telemetry-config` (awsEnabled=false) after HSPC is READY.',
     hasQuickstart ? '3. Confirm PVC Bound and test Pod Running.' : '',
     '',
   ]

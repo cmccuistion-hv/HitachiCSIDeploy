@@ -1,7 +1,8 @@
 import { COMPONENTS } from '../catalog/components'
+import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { useWizard } from '../state/WizardContext'
-import { Callout, Field, Section, ToggleRow } from '../components/ui'
+import { Callout, Field, HelpTip, Section, ToggleRow } from '../components/ui'
 
 export function ComponentsStep() {
   const { state, setState, versions, versionsLoading } = useWizard()
@@ -88,7 +89,42 @@ export function ComponentsStep() {
             title={COMPONENTS.driver.displayName}
             description={COMPONENTS.driver.description}
             acronym={COMPONENTS.driver.acronym}
-          />
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                margin: 0,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={state.telemetryEnabled}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, telemetryEnabled: e.target.checked }))
+                }
+                style={{ width: 18, height: 18, marginTop: 2, accentColor: 'var(--hv-primary)' }}
+              />
+              <div>
+                <strong>
+                  Hitachi Telemetry
+                  <HelpTip text={HELP.telemetry} />
+                </strong>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                  Sends anonymized cluster and storage usage to Hitachi over HTTPS to AWS. Enabled by
+                  default — turn off to opt out.
+                </p>
+              </div>
+            </label>
+            {state.airGapped && state.telemetryEnabled && (
+              <Callout variant="warn">
+                Telemetry needs outbound HTTPS :443 to AWS — disable Telemetry for disconnected installs, or
+                leave on knowing it will fail without egress.
+              </Callout>
+            )}
+          </ToggleRow>
           <ToggleRow
             checked={state.components.replication}
             onChange={(v) =>

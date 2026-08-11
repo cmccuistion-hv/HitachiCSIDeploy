@@ -195,6 +195,8 @@ export function ToggleRow({
   description,
   acronym,
   disabled,
+  help,
+  children,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
@@ -203,9 +205,20 @@ export function ToggleRow({
   /** Legacy acronym — shown small and muted, no “aka” wording */
   acronym?: string
   disabled?: boolean
+  help?: string
+  /** Nested options under this row (not dimmed when parent is disabled) */
+  children?: ReactNode
 }) {
-  return (
-    <label className="toggle-row" style={disabled ? { opacity: 0.55 } : undefined}>
+  const main = (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '0.75rem',
+        flex: 1,
+        ...(disabled && children ? { opacity: 0.55 } : undefined),
+      }}
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -216,12 +229,41 @@ export function ToggleRow({
         <strong>
           {title}
           {acronym && <span className="acronym">{acronym}</span>}
+          {help && <HelpTip text={help} />}
         </strong>
         <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
           {description}
         </p>
       </div>
     </label>
+  )
+
+  return (
+    <div
+      className="toggle-row"
+      style={{
+        ...(disabled && !children ? { opacity: 0.55 } : undefined),
+        ...(children
+          ? { flexDirection: 'column', alignItems: 'stretch', gap: '0.75rem' }
+          : undefined),
+      }}
+    >
+      {main}
+      {children && (
+        <div
+          style={{
+            marginLeft: '1.75rem',
+            paddingTop: '0.65rem',
+            borderTop: '1px solid var(--hv-border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.65rem',
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
   )
 }
 

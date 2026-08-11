@@ -8,6 +8,7 @@ import {
   type OpenShiftTopology,
 } from '../catalog/platforms'
 import { CONNECTION_TYPES } from '../catalog/platforms'
+import { DOCS } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import {
   generateMultipathMachineConfig,
@@ -460,6 +461,7 @@ export function PrerequisitesChecklistStep() {
     mp.alreadyApplied,
     state.openshiftTopology,
     mp.includeDaemonSet,
+    state.telemetryEnabled,
   )
 
   const toggle = (id: string) => {
@@ -541,6 +543,17 @@ export function PrerequisitesChecklistStep() {
         </ul>
       </Section>
 
+      {state.telemetryEnabled && (
+        <Callout variant="ok">
+          <strong>Hitachi Telemetry egress:</strong> allow outbound HTTPS port 443 to Amazon Web Services
+          (proxy CONNECT if applicable; trusted CAs; TLS 1.2+; DNS resolution). See the{' '}
+          <a href={DOCS.hspc} target="_blank" rel="noreferrer">
+            CSI Driver documentation
+          </a>{' '}
+          for network requirements.
+        </Callout>
+      )}
+
       <Section title="Firewall allowlist (online installs)">
         <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.9rem' }}>
           {FIREWALL_DOMAINS.map((d) => (
@@ -548,6 +561,11 @@ export function PrerequisitesChecklistStep() {
               <code>{d.domain}</code> — {d.purpose}
             </li>
           ))}
+          {state.telemetryEnabled && (
+            <li>
+              Hitachi Telemetry — outbound HTTPS :443 to AWS (product telemetry, not registry redirects)
+            </li>
+          )}
         </ul>
       </Section>
 
@@ -576,6 +594,7 @@ function buildPrereqs(
   multipathAlreadyApplied: boolean,
   _openshiftTopology: string,
   includeDaemonSet: boolean,
+  telemetryEnabled: boolean,
 ): { id: string; title: string; body: string; snippet?: string }[] {
   const plat = PLATFORMS[platform as keyof typeof PLATFORMS]
   const items: { id: string; title: string; body: string; snippet?: string }[] = [
@@ -670,6 +689,14 @@ function buildPrereqs(
       id: 'operatorhub',
       title: 'OperatorHub / certified-operators catalog reachable',
       body: 'install.sh installs the CSI Driver via OLM (Subscription with Manual update approval). On air-gapped clusters, mirror certified-operators first.',
+    })
+  }
+
+  if (telemetryEnabled) {
+    items.push({
+      id: 'telemetry-egress',
+      title: 'Telemetry AWS egress allowed',
+      body: 'Outbound HTTPS port 443 to Amazon Web Services for Hitachi Telemetry (proxy CONNECT if applicable; trusted CAs; TLS 1.2+; DNS resolution).',
     })
   }
 

@@ -208,6 +208,8 @@ export interface WizardState {
   quickstart: QuickstartConfig
   /** Prerequisite checkboxes acknowledged */
   prereqAcknowledged: Record<string, boolean>
+  /** Hitachi Telemetry (CSI Driver); default on, opt out via ConfigMap */
+  telemetryEnabled: boolean
 }
 
 export const WIZARD_STATE_VERSION = 1
@@ -321,5 +323,6 @@ export function createDefaultState(): WizardState {
       volumeMode: 'Filesystem',
     },
     prereqAcknowledged: {},
+    telemetryEnabled: true,
   }
 }

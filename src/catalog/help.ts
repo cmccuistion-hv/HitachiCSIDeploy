@@ -52,6 +52,9 @@ export const HELP = {
 
   storageClassSerial:
     'For standard StorageClasses the serial goes on the StorageClass (not the Secret). GAD/stretched serials go on the Secret as primarySerial/secondarySerial.',
+
+  telemetry:
+    'Hitachi Telemetry (enabled by default with the CSI Driver) sends anonymized cluster and storage usage to Hitachi over HTTPS to AWS. Data is vendor-only. Turn off to opt out; the package then disables it via ConfigMap hspc-csi-telemetry-config (awsEnabled: false).',
 } as const
 
 export const WELCOME_SEEN_KEY = 'hitachi-csi-wizard-welcome-seen'

@@ -48,6 +48,17 @@ function yamlQuote(s: string): string {
   return s
 }
 
+export function generateTelemetryDisableConfigMap(namespace: string): string {
+  return `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hspc-csi-telemetry-config
+  namespace: ${namespace}
+data:
+  awsEnabled: "false"
+`
+}
+
 export function generateStandardSecret(sys: StorageSystemConfig, name: string, namespace: string): string {
   const data: string[] = [
     `  url: ${b64(sys.url)}`,
@@ -587,6 +598,10 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     if (plat.operatorHub && f.path.startsWith('02-driver/')) {
       continue
     }
+    // Telemetry disable ConfigMap must be applied only after HSPC READY (dedicated block below)
+    if (f.path === '02-driver/hspc-csi-telemetry-config.yaml') {
+      continue
+    }
     lines.push(`apply "${f.path}"`)
   }
 
@@ -627,6 +642,22 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     `"$CMD" wait --for=jsonpath='{.status.ready}'=true hspc/hspc -n ${state.driverNamespace} --timeout=300s || true`,
   )
 
+  if (!state.telemetryEnabled) {
+    lines.push(
+      '',
+      'echo "==> Disabling Hitachi Telemetry (ConfigMap awsEnabled=false)"',
+      `if [[ "$("$CMD" get hspc hspc -n ${state.driverNamespace} -o jsonpath='{.status.ready}' 2>/dev/null || true)" == "true" ]]; then`,
+      `  "$CMD" scale deployment hspc-operator-controller-manager --replicas=0 -n ${state.operatorNamespace}`,
+      '  apply "02-driver/hspc-csi-telemetry-config.yaml"',
+      `  "$CMD" scale deployment hspc-operator-controller-manager --replicas=1 -n ${state.operatorNamespace}`,
+      'else',
+      '  echo "WARN: HSPC not READY — skipped Telemetry disable. After READY, scale the operator down, apply 02-driver/hspc-csi-telemetry-config.yaml, then scale back up." >&2',
+      '  echo "ERROR: Hitachi Telemetry was opted out but HSPC is not READY; refusing to finish with Telemetry still enabled." >&2',
+      '  exit 1',
+      'fi',
+    )
+  }
+
   const hasQuickstart =
     state.storageClassesEnabled || files.some((f) => f.group === 'quickstart')
   if (hasQuickstart) {
@@ -640,7 +671,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       `echo "  $CMD get pod ${state.quickstart.podName}"`,
     )
   } else {
-    lines.push('', 'echo "Done. Verify CSI Driver:"', `"$CMD" get hspc -n ${state.driverNamespace}"`)
+    lines.push('', 'echo "Done. Verify CSI Driver:"', `"$CMD" get hspc -n ${state.driverNamespace}`)
   }
   return lines.join('\n') + '\n'
 }
@@ -824,6 +855,13 @@ kubectl apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-
 kubectl apply -f hspc-cr.yaml
 kubectl get hspc -n ${state.driverNamespace}
 \`\`\`
+${
+  state.telemetryEnabled
+    ? ''
+    : `
+Telemetry is disabled in this package. \`install.sh\` applies \`hspc-csi-telemetry-config\` (awsEnabled=false)
+after the CSI Driver HSPC instance is READY.`
+}
 `,
       description: 'Kubernetes driver install notes',
       group: 'driver',
@@ -857,6 +895,14 @@ oc get hspc -n ${state.driverNamespace}
 \`\`\`
 
 Target driver version (wizard): **${state.versions.driver}**
+${
+  state.telemetryEnabled
+    ? ''
+    : `
+
+Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scales the operator, applies
+\`hspc-csi-telemetry-config\` (awsEnabled=false), then scales back up.`
+}
 `,
       description: 'OpenShift OperatorHub install guide',
       group: 'driver',
@@ -869,6 +915,15 @@ Target driver version (wizard): **${state.versions.driver}**
     description: 'Hitachi CSI Driver custom resource',
     group: 'driver',
   })
+
+  if (!state.telemetryEnabled) {
+    files.push({
+      path: '02-driver/hspc-csi-telemetry-config.yaml',
+      content: generateTelemetryDisableConfigMap(state.driverNamespace),
+      description: 'Disable Hitachi Telemetry (awsEnabled false)',
+      group: 'driver',
+    })
+  }
 
   // Replication
   if (state.components.replication) {

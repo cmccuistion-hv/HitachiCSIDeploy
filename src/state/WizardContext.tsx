@@ -54,6 +54,9 @@ function loadState(): WizardState {
     if (merged.storageClassesEnabled === undefined) {
       merged.storageClassesEnabled = true
     }
+    if (parsed.telemetryEnabled === undefined) {
+      merged.telemetryEnabled = true
+    }
     // Deep-merge nested objects that may be missing from older saves
     merged.multipath = { ...createDefaultState().multipath, ...(parsed.multipath || {}) }
     merged.components = { ...createDefaultState().components, ...(parsed.components || {}) }
