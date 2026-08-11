@@ -94,9 +94,6 @@ function loadState(): WizardState {
         connectionsForStorageClassKind(sc.kind, env),
       ),
     }))
-<<<<<<< Updated upstream
-    merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
-=======
     // At most one default StorageClass
     let sawDefaultSc = false
     merged.storageClasses = merged.storageClasses.map((sc) => {
@@ -113,7 +110,7 @@ function loadState(): WizardState {
     if (!merged.snapshotClass.retentionPeriod) {
       merged.snapshotClass.retentionPeriod = '24'
     }
->>>>>>> Stashed changes
+    merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
     return merged
   } catch {
     return createDefaultState()
