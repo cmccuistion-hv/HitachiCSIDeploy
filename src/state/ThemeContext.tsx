@@ -22,19 +22,25 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-function readStored(): StoredTheme {
+function prefersDarkMode(): boolean {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+function systemDefault(): StoredTheme {
+  return { palette: 'coe', mode: prefersDarkMode() ? 'dark' : 'light' }
+}
+
+function readStored(): StoredTheme | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<StoredTheme>
-      const palette = parsed.palette === 'blue' ? 'blue' : 'coe'
-      const mode = parsed.mode === 'dark' ? 'dark' : 'light'
-      return { palette, mode }
-    }
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredTheme>
+    const palette = parsed.palette === 'blue' ? 'blue' : 'coe'
+    const mode = parsed.mode === 'dark' ? 'dark' : 'light'
+    return { palette, mode }
   } catch {
-    /* ignore */
+    return null
   }
-  return { palette: 'coe', mode: 'light' }
 }
 
 function applyDom(palette: ThemePalette, mode: ThemeMode) {
@@ -45,28 +51,48 @@ function applyDom(palette: ThemePalette, mode: ThemeMode) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [{ palette, mode }, setTheme] = useState<StoredTheme>(() => {
-    if (typeof window === 'undefined') return { palette: 'coe', mode: 'light' }
-    const initial = readStored()
+  const [{ palette, mode, explicit }, setTheme] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { palette: 'coe' as ThemePalette, mode: 'light' as ThemeMode, explicit: false }
+    }
+    const stored = readStored()
+    const initial = stored ?? systemDefault()
     applyDom(initial.palette, initial.mode)
-    return initial
+    return { ...initial, explicit: stored !== null }
   })
 
   useEffect(() => {
     applyDom(palette, mode)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ palette, mode }))
-  }, [palette, mode])
+    if (explicit) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ palette, mode }))
+    }
+  }, [palette, mode, explicit])
+
+  // Follow OS preference until the user makes an explicit theme choice
+  useEffect(() => {
+    if (explicit) return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => {
+      setTheme((t) => ({ ...t, mode: mq.matches ? 'dark' : 'light' }))
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [explicit])
 
   const setPalette = useCallback((next: ThemePalette) => {
-    setTheme((t) => ({ ...t, palette: next }))
+    setTheme((t) => ({ ...t, palette: next, explicit: true }))
   }, [])
 
   const setMode = useCallback((next: ThemeMode) => {
-    setTheme((t) => ({ ...t, mode: next }))
+    setTheme((t) => ({ ...t, mode: next, explicit: true }))
   }, [])
 
   const toggleMode = useCallback(() => {
-    setTheme((t) => ({ ...t, mode: t.mode === 'dark' ? 'light' : 'dark' }))
+    setTheme((t) => ({
+      ...t,
+      mode: t.mode === 'dark' ? 'light' : 'dark',
+      explicit: true,
+    }))
   }, [])
 
   const headerLight = mode === 'light' && palette === 'coe'
