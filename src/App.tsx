@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ThemeControls } from './components/ThemeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
@@ -46,7 +46,16 @@ export default function App() {
   const { palette, mode, setPalette, toggleMode, headerLight } = useTheme()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
+  const mainScrollRef = useRef<HTMLDivElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
+
+  useEffect(() => {
+    const el = mainScrollRef.current
+    if (el) el.scrollTop = 0
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [stepIndex, current?.id])
 
   const onImportFile = (file: File) => {
     const reader = new FileReader()
@@ -154,7 +163,9 @@ export default function App() {
       </aside>
 
       <main className="app-main">
-        <div className="main-scroll">{current && <StepBody id={current.id} />}</div>
+        <div className="main-scroll" ref={mainScrollRef}>
+          {current && <StepBody id={current.id} />}
+        </div>
         <footer className="footer-bar">
           <button
             type="button"
