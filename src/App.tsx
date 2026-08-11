@@ -20,6 +20,29 @@ import { ExportStep } from './steps/ExportStep'
 
 const REPO_ISSUES_URL = 'https://github.com/cmccuistion-hv/HitachiCSIDeploy/issues'
 
+function HeaderIcon({
+  children,
+}: {
+  children: ReactNode
+}) {
+  return (
+    <svg
+      className="header-action-icon"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  )
+}
+
 function renderSidebarNav(
   navEntries: NavEntry[],
   visibleSteps: { id: string }[],
@@ -188,17 +211,29 @@ export default function App() {
             type="button"
             className="btn btn-ghost"
             title="About this wizard"
+            aria-label="About this wizard"
             onClick={() => setWelcomeOpen(true)}
           >
-            About
+            <HeaderIcon>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 10.5v6" />
+              <circle cx="12" cy="7.5" r="0.85" fill="currentColor" stroke="none" />
+            </HeaderIcon>
+            <span className="header-action-label">About</span>
           </button>
           <a
             className="btn btn-ghost"
             href={REPO_ISSUES_URL}
             target="_blank"
             rel="noopener noreferrer"
+            title="Report issue"
+            aria-label="Report issue"
           >
-            Report issue
+            <HeaderIcon>
+              <path d="M7 8h10M7 12h7" />
+              <path d="M6 4h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-5l-4 3v-3H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+            </HeaderIcon>
+            <span className="header-action-label">Report issue</span>
           </a>
           <input
             ref={importRef}
@@ -214,13 +249,22 @@ export default function App() {
           <button
             type="button"
             className="btn btn-ghost"
+            title="Import config"
+            aria-label="Import config"
             onClick={() => importRef.current?.click()}
           >
-            Import config
+            <HeaderIcon>
+              <path d="M12 3v10" />
+              <path d="m8 9 4 4 4-4" />
+              <path d="M5 18h14" />
+            </HeaderIcon>
+            <span className="header-action-label">Import config</span>
           </button>
           <button
             type="button"
             className="btn btn-ghost"
+            title="Save config"
+            aria-label="Save config"
             onClick={() => {
               const blob = new Blob([exportConfig()], { type: 'application/json' })
               const url = URL.createObjectURL(blob)
@@ -231,7 +275,12 @@ export default function App() {
               URL.revokeObjectURL(url)
             }}
           >
-            Save config
+            <HeaderIcon>
+              <path d="M12 15V5" />
+              <path d="m8 9 4-4 4 4" />
+              <path d="M5 18h14" />
+            </HeaderIcon>
+            <span className="header-action-label">Save config</span>
           </button>
         </div>
       </header>
