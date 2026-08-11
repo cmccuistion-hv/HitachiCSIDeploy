@@ -17,6 +17,7 @@ import {
 import { PLATFORMS, coerceConnectionType, connectionsForStorageClassKind } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { STEPS_BASE, type VisibleStep } from './steps'
+import { migrateMetricsConfig } from './migrateMetrics'
 
 interface WizardContextValue {
   state: WizardState
@@ -78,6 +79,7 @@ function loadState(): WizardState {
         connectionsForStorageClassKind(sc.kind, env),
       ),
     }))
+    merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
     return merged
   } catch {
     return createDefaultState()
@@ -237,7 +239,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
 
   const importConfig = useCallback((json: string) => {
     const parsed = JSON.parse(json) as WizardState
-    setState({ ...createDefaultState(), ...parsed, version: WIZARD_STATE_VERSION })
+    const base = createDefaultState()
+    const next = { ...base, ...parsed, version: WIZARD_STATE_VERSION }
+    next.metrics = migrateMetricsConfig(parsed.metrics, base.metrics)
+    setState(next)
   }, [])
 
   const value: WizardContextValue = {

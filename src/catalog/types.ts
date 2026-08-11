@@ -101,7 +101,8 @@ export interface MetricsConfig {
   enabled: boolean
   namespace: string
   secretName: string
-  deployTestStack: boolean
+  deployPrometheus: boolean
+  deployGrafana: boolean
   enableDebugLog: boolean
   maxBatchSize: string
   maxWorkerCount: string
@@ -267,7 +268,8 @@ export function createDefaultState(): WizardState {
       enabled: false,
       namespace: 'hspc-monitoring-system',
       secretName: 'storage-exporter-secret',
-      deployTestStack: true,
+      deployPrometheus: true,
+      deployGrafana: true,
       enableDebugLog: true,
       maxBatchSize: '10',
       maxWorkerCount: '10',
