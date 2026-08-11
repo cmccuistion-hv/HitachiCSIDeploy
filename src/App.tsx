@@ -14,6 +14,8 @@ import { ConsolePluginStep } from './steps/ConsolePluginStep'
 import { QuickstartStep } from './steps/QuickstartStep'
 import { ExportStep } from './steps/ExportStep'
 
+const REPO_ISSUES_URL = 'https://github.com/cmccuistion-hv/HitachiCSIDeploy/issues'
+
 function StepBody({ id }: { id: string }) {
   switch (id) {
     case 'platform':
@@ -106,6 +108,14 @@ export default function App() {
           >
             About
           </button>
+          <a
+            className="btn btn-ghost"
+            href={REPO_ISSUES_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Report issue
+          </a>
           <input
             ref={importRef}
             type="file"

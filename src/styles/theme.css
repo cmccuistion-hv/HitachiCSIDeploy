@@ -504,11 +504,14 @@ textarea {
 
 .btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 0.55rem 1rem;
   font-weight: 600;
   font-size: 0.9rem;
+  text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
