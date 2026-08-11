@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
@@ -37,9 +37,20 @@ export function ExportStep() {
   const { state, exportConfig, importConfig, reset } = useWizard()
   const plat = PLATFORMS[state.platform]
   const cmd = plat.useOc ? 'oc' : 'kubectl'
-  const files = useMemo(() => generateAll(state), [state])
+  const [files, setFiles] = useState<GeneratedFile[]>([])
   const [activePath, setActivePath] = useState<string>('')
   const [importText, setImportText] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const next = await generateAll(state)
+      if (!cancelled) setFiles(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [state])
 
   useEffect(() => {
     if (!files.length) {

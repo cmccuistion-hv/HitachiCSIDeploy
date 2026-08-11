@@ -20,6 +20,8 @@ import {
   generateRemoteKubeconfigSecret,
   REMOTE_KUBECONFIG_SECRET_NAME,
 } from './remoteKubeconfig'
+import { patchGrafanaDatasource, splitMonitoringStack } from './monitoringStack'
+import { fetchFirstAvailable, templatePaths } from '../services/versions'
 
 export interface GeneratedFile {
   path: string
@@ -470,7 +472,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
   return lines.join('\n') + '\n'
 }
 
-export function generateAll(state: WizardState): GeneratedFile[] {
+export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = []
   const plat = PLATFORMS[state.platform]
 
@@ -754,6 +756,61 @@ You do not create these Secrets by hand.
 
   // Metrics
   if (state.components.metrics) {
+    const cmd = plat.useOc ? 'oc' : 'kubectl'
+    const stackLines: string[] = []
+    let fetchFailed = false
+
+    if (state.metrics.deployPrometheus || state.metrics.deployGrafana) {
+      const urls = templatePaths('hspp', state.versions.metrics).grafanaProm ?? []
+      const combined = await fetchFirstAvailable(urls)
+      if (!combined) {
+        fetchFailed = true
+      } else {
+        const { prometheusYaml, grafanaYaml } = splitMonitoringStack(combined)
+
+        if (state.metrics.deployPrometheus && prometheusYaml.trim()) {
+          files.push({
+            path: '04-metrics/prometheus-stack.yaml',
+            content: prometheusYaml,
+            description: 'Prometheus stack (from upstream HSPP monitoring YAML)',
+            group: 'metrics',
+          })
+          stackLines.push(`${cmd} apply -f prometheus-stack.yaml`)
+        }
+
+        if (state.metrics.deployGrafana && grafanaYaml.trim()) {
+          const content = state.metrics.deployPrometheus
+            ? grafanaYaml
+            : patchGrafanaDatasource(grafanaYaml, {
+                namespace: state.consolePlugin.prometheusNamespace,
+                service: state.consolePlugin.prometheusService,
+                port: state.consolePlugin.prometheusPort,
+              })
+          files.push({
+            path: '04-metrics/grafana-stack.yaml',
+            content,
+            description: 'Grafana stack + Hitachi dashboard (from upstream HSPP monitoring YAML)',
+            group: 'metrics',
+          })
+          stackLines.push(`${cmd} apply -f grafana-stack.yaml`)
+        }
+      }
+    }
+
+    const stackNotes =
+      state.metrics.deployPrometheus || state.metrics.deployGrafana
+        ? `Notes:
+- Stack manifests are filtered from upstream \`grafana-prometheus-sample.yaml\`.
+- StatefulSets still use upstream \`storageClassName: sc-sample\` — change to a StorageClass that exists in your cluster before apply if needed.
+${
+  state.metrics.deployGrafana && !state.metrics.deployPrometheus
+    ? `- Grafana datasource points at \`http://${state.consolePlugin.prometheusService}.${state.consolePlugin.prometheusNamespace}.svc:${state.consolePlugin.prometheusPort}\`.`
+    : ''
+}
+${fetchFailed ? '- WARNING: could not fetch upstream monitoring YAML; re-export when network access to GitHub is available.\n' : ''}
+`
+        : ''
+
     files.push({
       path: '04-metrics/README.md',
       content: `# Performance Metrics install
@@ -761,20 +818,18 @@ You do not create these Secrets by hand.
 Version: ${state.versions.metrics}
 
 \`\`\`bash
-${plat.useOc ? 'oc' : 'kubectl'} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/namespace.yaml
+${cmd} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/namespace.yaml
 ${
   plat.useOc
-    ? `${plat.useOc ? 'oc' : 'kubectl'} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/scc-for-openshift.yaml`
+    ? `${cmd} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/scc-for-openshift.yaml`
     : '# SCC only needed on OpenShift'
 }
-${plat.useOc ? 'oc' : 'kubectl'} apply -f metrics-secret.yaml
-${plat.useOc ? 'oc' : 'kubectl'} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/exporter.yaml
-${
-  state.metrics.deployTestStack
-    ? `${plat.useOc ? 'oc' : 'kubectl'} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/grafana-prometheus-sample.yaml`
-    : '# Skipping test Prometheus/Grafana stack'
-}
+${cmd} apply -f metrics-secret.yaml
+${cmd} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspp/${state.versions.metrics}/yaml/exporter.yaml
+${stackLines.length ? stackLines.join('\n') : '# No Prometheus/Grafana stack selected'}
 \`\`\`
+
+${stackNotes}
 `,
       description: 'Performance Metrics install notes',
       group: 'metrics',
