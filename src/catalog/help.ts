@@ -21,6 +21,12 @@ export const HELP = {
   multipath:
     'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI. On OpenShift/ROSA, apply the MachineConfig early from the preview or let install.sh apply it (skips if already present). On Kubernetes/RKE2/EKS, you install multipath.conf on workers after download.',
 
+  portIdWithoutMultipath:
+    'Wizard multipath packaging is off. Prefer a single Port ID unless worker nodes already have multipathing configured another way.',
+
+  portIdMultipleWithoutMultipath:
+    'Wizard multipath packaging is off and this StorageClass lists multiple Port IDs. Multiple ports need multipathing on the nodes — confirm your own config covers this, or enable multipath in Prerequisites.',
+
   gad: {
     role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary.',
     type: 'Standard uses one array. Stretched / GAD pairs two arrays for active-style volumes (quorum, copy group, dual pools/ports; volume expansion is off). SDS Block uses a different StorageClass shape without serial/pool/port.',

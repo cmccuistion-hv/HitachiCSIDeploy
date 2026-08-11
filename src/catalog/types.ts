@@ -26,6 +26,8 @@ export interface StorageSystemConfig {
   family: StorageFamily
   /** VSP One Block 20 series — Disabled efficiency not allowed */
   isB20Series?: boolean
+  /** VSP One Block High End — immutable snapshots + expandable clones family */
+  isHighEnd?: boolean
   serial: string
   url: string
   user: string
@@ -46,6 +48,8 @@ export interface StorageClassConfig {
   connectionType: ConnectionType
   secretName: string
   secretNamespace: string
+  /** Cluster default StorageClass (at most one in the package) */
+  isDefault?: boolean
   serialNumber?: string
   poolID?: string
   portID?: string
@@ -72,7 +76,14 @@ export interface SnapshotClassConfig {
   enabled: boolean
   name: string
   deletionPolicy: 'Delete' | 'Retain'
+  /** Cluster default VolumeSnapshotClass */
+  isDefault?: boolean
+  /**
+   * Immutable snapshots via retentionPeriod (VSP One B20 / Block High End only).
+   */
   immutable: boolean
+  /** Hours 1–12288 when immutable; emitted as parameters.retentionPeriod */
+  retentionPeriod?: string
 }
 
 export interface ReplicationConfig {
@@ -240,7 +251,7 @@ export function createDefaultState(): WizardState {
         name: 'hitachi-csi',
         connectionType: 'fc',
         secretName: 'hitachi-csi-secret',
-        secretNamespace: 'default',
+        secretNamespace: 'hspc-operator-system',
         serialNumber: '',
         poolID: '',
         portID: '',
@@ -255,7 +266,9 @@ export function createDefaultState(): WizardState {
       enabled: true,
       name: 'hitachi-csi-snapshot',
       deletionPolicy: 'Delete',
+      isDefault: false,
       immutable: false,
+      retentionPeriod: '24',
     },
     replication: {
       enabled: false,

@@ -173,6 +173,11 @@ export function ComponentsStep() {
                     ...s,
                     operatorNamespace: ns,
                     driverNamespace: ns,
+                    storageClasses: s.storageClasses.map((sc) =>
+                      sc.secretNamespace === s.driverNamespace || sc.secretNamespace === 'default'
+                        ? { ...sc, secretNamespace: ns }
+                        : sc,
+                    ),
                   }))
                 }}
               />
@@ -194,7 +199,18 @@ export function ComponentsStep() {
               >
                 <input
                   value={state.driverNamespace}
-                  onChange={(e) => setState((s) => ({ ...s, driverNamespace: e.target.value }))}
+                  onChange={(e) => {
+                    const ns = e.target.value
+                    setState((s) => ({
+                      ...s,
+                      driverNamespace: ns,
+                      storageClasses: s.storageClasses.map((sc) =>
+                        sc.secretNamespace === s.driverNamespace || sc.secretNamespace === 'default'
+                          ? { ...sc, secretNamespace: ns }
+                          : sc,
+                      ),
+                    }))
+                  }}
                 />
               </Field>
             </>

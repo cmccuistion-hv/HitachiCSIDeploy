@@ -14,7 +14,12 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
-import { PLATFORMS, coerceConnectionType, connectionsForStorageClassKind } from '../catalog/platforms'
+import {
+  PLATFORMS,
+  coerceConnectionType,
+  connectionsForStorageClassKind,
+  supportsImmutableSnapshots,
+} from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { STEPS_BASE, type VisibleStep } from './steps'
 import { migrateMetricsConfig } from './migrateMetrics'
@@ -46,6 +51,10 @@ function loadState(): WizardState {
     // Deep-merge nested objects that may be missing from older saves
     merged.multipath = { ...createDefaultState().multipath, ...(parsed.multipath || {}) }
     merged.components = { ...createDefaultState().components, ...(parsed.components || {}) }
+    merged.snapshotClass = {
+      ...createDefaultState().snapshotClass,
+      ...(parsed.snapshotClass || {}),
+    }
     merged.replication = {
       ...createDefaultState().replication,
       ...(parsed.replication || {}),
@@ -58,6 +67,12 @@ function loadState(): WizardState {
       merged.driverNamespace = merged.operatorNamespace || 'hspc-operator-system'
       merged.operatorNamespace = merged.operatorNamespace || 'hspc-operator-system'
     }
+    // Storage Secrets default to the CSI Driver install namespace (not "default")
+    merged.storageClasses = (merged.storageClasses || []).map((sc) =>
+      sc.secretNamespace === 'default'
+        ? { ...sc, secretNamespace: merged.driverNamespace }
+        : sc,
+    )
     if (plat?.useOc && merged.multipath.enabled) {
       merged.multipath.includeMachineConfig = true
       merged.multipath.includeConf = false
@@ -79,7 +94,26 @@ function loadState(): WizardState {
         connectionsForStorageClassKind(sc.kind, env),
       ),
     }))
+<<<<<<< Updated upstream
     merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
+=======
+    // At most one default StorageClass
+    let sawDefaultSc = false
+    merged.storageClasses = merged.storageClasses.map((sc) => {
+      if (!sc.isDefault) return sc
+      if (sawDefaultSc) return { ...sc, isDefault: false }
+      sawDefaultSc = true
+      return sc
+    })
+    // Immutable snapshots: B20 / High End only; drop stale flag on unsupported arrays
+    const primary = merged.storageSystems?.[0]
+    if (merged.snapshotClass.immutable && !supportsImmutableSnapshots(primary)) {
+      merged.snapshotClass = { ...merged.snapshotClass, immutable: false }
+    }
+    if (!merged.snapshotClass.retentionPeriod) {
+      merged.snapshotClass.retentionPeriod = '24'
+    }
+>>>>>>> Stashed changes
     return merged
   } catch {
     return createDefaultState()

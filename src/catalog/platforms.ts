@@ -213,3 +213,13 @@ devices {
     }
 }
 `
+
+/** Immutable snapshots (retentionPeriod): VSP One B20 series and VSP One Block High End only. */
+export function supportsImmutableSnapshots(sys?: {
+  family: StorageFamily
+  isB20Series?: boolean
+  isHighEnd?: boolean
+}): boolean {
+  if (!sys || sys.family !== 'vsp') return false
+  return !!(sys.isB20Series || sys.isHighEnd)
+}

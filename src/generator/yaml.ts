@@ -159,12 +159,17 @@ export function generateStorageClass(sc: StorageClassConfig): string {
   const secretName = sc.kind.startsWith('stretched') ? sc.stretchedSecretName || sc.secretName : sc.secretName
   params.push(secretRefs(secretName, sc.secretNamespace, expand))
 
+  const annotations = ['    kubernetes.io/description: Hitachi CSI']
+  if (sc.isDefault) {
+    annotations.push('    storageclass.kubernetes.io/is-default-class: "true"')
+  }
+
   return `apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: ${sc.name}
   annotations:
-    kubernetes.io/description: Hitachi CSI
+${annotations.join('\n')}
 provisioner: hspc.csi.hitachi.com
 reclaimPolicy: ${sc.reclaimPolicy}
 volumeBindingMode: ${sc.volumeBindingMode}
@@ -175,12 +180,30 @@ ${params.join('\n')}
 }
 
 export function generateSnapshotClass(cfg: SnapshotClassConfig): string {
+  const metaAnnotations: string[] = []
+  if (cfg.isDefault) {
+    metaAnnotations.push('    snapshot.storage.kubernetes.io/is-default-class: "true"')
+  }
+  const metaBlock =
+    metaAnnotations.length > 0
+      ? `metadata:
+  name: ${cfg.name}
+  annotations:
+${metaAnnotations.join('\n')}`
+      : `metadata:
+  name: ${cfg.name}`
+
+  const snapParams: string[] = []
+  if (cfg.immutable && cfg.retentionPeriod) {
+    snapParams.push(`  retentionPeriod: ${JSON.stringify(cfg.retentionPeriod)}`)
+  }
+  const paramsBlock = snapParams.length > 0 ? `\nparameters:\n${snapParams.join('\n')}` : ''
+
   return `apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
-metadata:
-  name: ${cfg.name}${cfg.immutable ? '\n  annotations:\n    snapshot.storage.kubernetes.io/is-default-class: "false"' : ''}
+${metaBlock}
 driver: hspc.csi.hitachi.com
-deletionPolicy: ${cfg.deletionPolicy}
+deletionPolicy: ${cfg.deletionPolicy}${paramsBlock}
 `
 }
 
@@ -558,7 +581,7 @@ multipath -ll
   for (const sys of state.storageSystems) {
     if (!sys.serial && !sys.url) continue
     const name = state.storageClasses[0]?.secretName || 'hitachi-csi-secret'
-    const ns = state.storageClasses[0]?.secretNamespace || 'default'
+    const ns = state.storageClasses[0]?.secretNamespace || state.driverNamespace
     files.push({
       path: `01-storage/secret-${sys.name || sys.id}.yaml`,
       content: generateStandardSecret(sys, sys.name === 'primary' ? name : `hitachi-csi-secret-${sys.name}`, ns),

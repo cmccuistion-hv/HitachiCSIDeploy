@@ -1,4 +1,5 @@
 import type { StorageFamily, StorageSystemConfig } from '../catalog/types'
+import { supportsImmutableSnapshots } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
@@ -20,10 +21,15 @@ export function StorageStep() {
   const { state, setState } = useWizard()
 
   const updateSys = (id: string, patch: Partial<StorageSystemConfig>) => {
-    setState((s) => ({
-      ...s,
-      storageSystems: s.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys)),
-    }))
+    setState((s) => {
+      const storageSystems = s.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys))
+      const primary = storageSystems[0]
+      const snapshotClass =
+        s.snapshotClass.immutable && !supportsImmutableSnapshots(primary)
+          ? { ...s.snapshotClass, immutable: false }
+          : s.snapshotClass
+      return { ...s, storageSystems, snapshotClass }
+    })
   }
 
   const removeSys = (id: string) => {
@@ -145,6 +151,20 @@ export function StorageStep() {
                   <strong>VSP One Block 20 series</strong>
                   <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
                     Disables &quot;Disabled&quot; storage efficiency (defaults to CompressionDeduplication).
+                    Enables immutable snapshots.
+                  </p>
+                </div>
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={!!sys.isHighEnd}
+                  onChange={(e) => updateSys(sys.id, { isHighEnd: e.target.checked })}
+                />
+                <div>
+                  <strong>VSP One Block High End</strong>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                    Enables immutable snapshots (and other High End capabilities such as expandable clones).
                   </p>
                 </div>
               </label>

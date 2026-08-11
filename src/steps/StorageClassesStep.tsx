@@ -2,6 +2,7 @@ import {
   CONNECTION_TYPES,
   coerceConnectionType,
   connectionsForStorageClassKind,
+  supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import type { ConnectionType, NodeEnvironment, StorageClassConfig, StorageClassKind } from '../catalog/types'
@@ -9,10 +10,19 @@ import { generateSnapshotClass, generateStorageClass } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
+/** Count comma-separated Port ID values (empty segments ignored). */
+function portIdCount(value: string | undefined): number {
+  return (value || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean).length
+}
+
 function defaultSc(
   kind: StorageClassKind,
   connectionType: ConnectionType,
   nodeEnvironment: NodeEnvironment,
+  secretNamespace: string,
 ): StorageClassConfig {
   const allowed = connectionsForStorageClassKind(kind, nodeEnvironment)
   const base: StorageClassConfig = {
@@ -28,7 +38,7 @@ function defaultSc(
             : 'hitachi-csi-stretched',
     connectionType: coerceConnectionType(connectionType, allowed),
     secretName: 'hitachi-csi-secret',
-    secretNamespace: 'default',
+    secretNamespace,
     reclaimPolicy: 'Delete',
     volumeBindingMode: 'Immediate',
     allowVolumeExpansion: kind === 'stretched' || kind === 'stretched-adr' ? false : true,
@@ -46,6 +56,7 @@ export function StorageClassesStep() {
   const { state, setState } = useWizard()
   const primary = state.storageSystems[0]
   const previewSc = state.storageClasses[0]
+  const canImmutableSnapshots = supportsImmutableSnapshots(primary)
 
   const updateSc = (id: string, patch: Partial<StorageClassConfig>) => {
     setState((s) => ({
@@ -81,6 +92,11 @@ export function StorageClassesStep() {
         const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
         const efficiencyBlocked =
           primary?.isB20Series && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
+        const multipathOff = !state.multipath.enabled
+        const portIdHint = multipathOff
+          ? 'Prefer a single port when wizard multipath packaging is off (e.g. CL1-A).'
+          : 'Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe.'
+        const portIdPlaceholder = multipathOff ? 'CL1-A' : 'CL1-A,CL2-A'
 
         return (
           <Section
@@ -110,7 +126,7 @@ export function StorageClassesStep() {
                   onChange={(e) => {
                     const kind = e.target.value as StorageClassKind
                     updateSc(sc.id, {
-                      ...defaultSc(kind, sc.connectionType, state.nodeEnvironment),
+                      ...defaultSc(kind, sc.connectionType, state.nodeEnvironment, state.driverNamespace),
                       id: sc.id,
                       secretName: sc.secretName,
                       secretNamespace: sc.secretNamespace,
@@ -148,13 +164,40 @@ export function StorageClassesStep() {
                   onChange={(e) => updateSc(sc.id, { secretName: e.target.value })}
                 />
               </Field>
-              <Field label="Secret namespace" hint="Namespace where that storage Secret will be applied.">
+              <Field
+                label="Secret namespace"
+                hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
+              >
                 <input
                   value={sc.secretNamespace}
                   onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
                 />
               </Field>
             </div>
+
+            <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={!!sc.isDefault}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setState((s) => ({
+                    ...s,
+                    storageClasses: s.storageClasses.map((x) => ({
+                      ...x,
+                      isDefault: x.id === sc.id ? on : on ? false : x.isDefault,
+                    })),
+                  }))
+                }}
+              />
+              <div>
+                <strong>Default StorageClass</strong>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                  Sets <code>storageclass.kubernetes.io/is-default-class</code>. Only one StorageClass in
+                  this package can be the default.
+                </p>
+              </div>
+            </label>
 
             {sc.kind === 'vsp-one-sds-block' && (
               <Callout>
@@ -179,16 +222,24 @@ export function StorageClassesStep() {
                   />
                 </Field>
                 {conn.needsPortId && (
-                  <Field
-                    label="Port ID(s)"
-                    hint="Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe."
-                  >
-                    <input
-                      value={sc.portID || ''}
-                      onChange={(e) => updateSc(sc.id, { portID: e.target.value })}
-                      placeholder="CL1-A,CL2-A"
-                    />
-                  </Field>
+                  <>
+                    {multipathOff && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <Callout variant="warn">
+                          {portIdCount(sc.portID) > 1
+                            ? HELP.portIdMultipleWithoutMultipath
+                            : HELP.portIdWithoutMultipath}
+                        </Callout>
+                      </div>
+                    )}
+                    <Field label="Port ID(s)" hint={portIdHint}>
+                      <input
+                        value={sc.portID || ''}
+                        onChange={(e) => updateSc(sc.id, { portID: e.target.value })}
+                        placeholder={portIdPlaceholder}
+                      />
+                    </Field>
+                  </>
                 )}
                 {conn.needsNvmSubsystem && (
                   <Field
@@ -276,6 +327,13 @@ export function StorageClassesStep() {
                   Stretched StorageClasses require a dual-array Secret, support Fibre Channel and iSCSI only
                   (not NVMe), and set <code>allowVolumeExpansion: false</code>.
                 </Callout>
+                {multipathOff && (
+                  <Callout variant="warn">
+                    {portIdCount(sc.primaryPortID) > 1 || portIdCount(sc.secondaryPortID) > 1
+                      ? HELP.portIdMultipleWithoutMultipath
+                      : HELP.portIdWithoutMultipath}
+                  </Callout>
+                )}
                 <div className="field-grid" style={{ marginTop: '1rem' }}>
                   <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials.">
                     <input
@@ -307,10 +365,18 @@ export function StorageClassesStep() {
                       onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Primary port ID(s)" hint="Comma-separated primary ports (e.g. CL1-A,CL2-A).">
+                  <Field
+                    label="Primary port ID(s)"
+                    hint={
+                      multipathOff
+                        ? 'Prefer a single primary port when wizard multipath packaging is off (e.g. CL1-A).'
+                        : 'Comma-separated primary ports (e.g. CL1-A,CL2-A).'
+                    }
+                  >
                     <input
                       value={sc.primaryPortID || ''}
                       onChange={(e) => updateSc(sc.id, { primaryPortID: e.target.value })}
+                      placeholder={portIdPlaceholder}
                     />
                   </Field>
                   <Field label="Secondary pool ID" hint="HDP pool on the secondary array.">
@@ -319,10 +385,18 @@ export function StorageClassesStep() {
                       onChange={(e) => updateSc(sc.id, { secondaryPoolID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Secondary port ID(s)" hint="Comma-separated secondary ports.">
+                  <Field
+                    label="Secondary port ID(s)"
+                    hint={
+                      multipathOff
+                        ? 'Prefer a single secondary port when wizard multipath packaging is off (e.g. CL1-F).'
+                        : 'Comma-separated secondary ports.'
+                    }
+                  >
                     <input
                       value={sc.secondaryPortID || ''}
                       onChange={(e) => updateSc(sc.id, { secondaryPortID: e.target.value })}
+                      placeholder={multipathOff ? 'CL1-F' : 'CL1-F,CL2-F'}
                     />
                   </Field>
                 </div>
@@ -374,7 +448,10 @@ export function StorageClassesStep() {
         onClick={() =>
           setState((s) => ({
             ...s,
-            storageClasses: [...s.storageClasses, defaultSc('standard', s.connectionType, s.nodeEnvironment)],
+            storageClasses: [
+              ...s.storageClasses,
+              defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace),
+            ],
           }))
         }
       >
@@ -401,57 +478,125 @@ export function StorageClassesStep() {
           </div>
         </label>
         {state.snapshotClass.enabled && (
-          <div className="field-grid">
-            <Field label="Name" hint="Kubernetes VolumeSnapshotClass metadata.name.">
+          <>
+            <div className="field-grid">
+              <Field label="Name" hint="Kubernetes VolumeSnapshotClass metadata.name.">
+                <input
+                  value={state.snapshotClass.name}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      snapshotClass: { ...s.snapshotClass, name: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+              <Field
+                label="Deletion policy"
+                hint="Delete removes snapshot content with the VolumeSnapshot; Retain keeps it."
+              >
+                <select
+                  value={state.snapshotClass.deletionPolicy}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      snapshotClass: {
+                        ...s.snapshotClass,
+                        deletionPolicy: e.target.value as 'Delete' | 'Retain',
+                      },
+                    }))
+                  }
+                >
+                  <option value="Delete">Delete</option>
+                  <option value="Retain">Retain</option>
+                </select>
+              </Field>
+            </div>
+
+            <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
               <input
-                value={state.snapshotClass.name}
+                type="checkbox"
+                checked={!!state.snapshotClass.isDefault}
                 onChange={(e) =>
                   setState((s) => ({
                     ...s,
-                    snapshotClass: { ...s.snapshotClass, name: e.target.value },
+                    snapshotClass: { ...s.snapshotClass, isDefault: e.target.checked },
                   }))
                 }
               />
-            </Field>
-            <Field
-              label="Deletion policy"
-              hint="Delete removes snapshot content with the VolumeSnapshot; Retain keeps it."
+              <div>
+                <strong>Default VolumeSnapshotClass</strong>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                  Sets <code>snapshot.storage.kubernetes.io/is-default-class</code>.
+                </p>
+              </div>
+            </label>
+
+            <label
+              className="toggle-row"
+              style={{ marginTop: '0.85rem', opacity: canImmutableSnapshots ? 1 : 0.65 }}
             >
-              <select
-                value={state.snapshotClass.deletionPolicy}
+              <input
+                type="checkbox"
+                checked={!!state.snapshotClass.immutable && canImmutableSnapshots}
+                disabled={!canImmutableSnapshots}
                 onChange={(e) =>
                   setState((s) => ({
                     ...s,
                     snapshotClass: {
                       ...s.snapshotClass,
-                      deletionPolicy: e.target.value as 'Delete' | 'Retain',
+                      immutable: e.target.checked,
+                      retentionPeriod: s.snapshotClass.retentionPeriod || '24',
                     },
-                  }))
-                }
-              >
-                <option value="Delete">Delete</option>
-                <option value="Retain">Retain</option>
-              </select>
-            </Field>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={state.snapshotClass.immutable}
-                onChange={(e) =>
-                  setState((s) => ({
-                    ...s,
-                    snapshotClass: { ...s.snapshotClass, immutable: e.target.checked },
                   }))
                 }
               />
               <div>
-                <strong>Immutable snapshot class variant</strong>
+                <strong>Immutable snapshots</strong>
                 <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                  Generates the immutable VolumeSnapshotClass sample when enabled.
+                  {canImmutableSnapshots
+                    ? 'Adds retentionPeriod so snapshot data cannot be deleted or cloned until the period expires (1–12288 hours).'
+                    : 'Requires primary array marked as VSP One Block 20 series or High End on Storage systems.'}
                 </p>
               </div>
             </label>
-          </div>
+            {canImmutableSnapshots && state.snapshotClass.immutable && (
+              <div className="field-grid" style={{ marginTop: '0.85rem' }}>
+                <Field
+                  label="Retention period (hours)"
+                  hint="1–12288 hours. Snapshot cannot be deleted or cloned until this expires."
+                  error={
+                    (() => {
+                      const n = Number(state.snapshotClass.retentionPeriod)
+                      if (
+                        !state.snapshotClass.retentionPeriod ||
+                        !Number.isFinite(n) ||
+                        n < 1 ||
+                        n > 12288
+                      ) {
+                        return 'Enter a number from 1 to 12288.'
+                      }
+                      return undefined
+                    })()
+                  }
+                >
+                  <input
+                    value={state.snapshotClass.retentionPeriod || ''}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        snapshotClass: {
+                          ...s.snapshotClass,
+                          retentionPeriod: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="24"
+                  />
+                </Field>
+              </div>
+            )}
+          </>
         )}
       </Section>
 

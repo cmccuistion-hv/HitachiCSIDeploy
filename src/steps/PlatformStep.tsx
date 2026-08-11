@@ -64,6 +64,7 @@ export function PlatformStep() {
                 // Kubernetes YAML path: upstream sample deploys the driver into kube-system.
                 const operatorNs = 'hspc-operator-system'
                 const driverNs = p.operatorHub ? operatorNs : 'kube-system'
+                const prevDriverNs = state.driverNamespace
                 const needsDm =
                   state.connectionType === 'fc' || state.connectionType === 'iscsi'
                 patch({
@@ -71,6 +72,11 @@ export function PlatformStep() {
                   platformVersion: p.versions[p.versions.length - 1],
                   operatorNamespace: operatorNs,
                   driverNamespace: driverNs,
+                  storageClasses: state.storageClasses.map((sc) =>
+                    sc.secretNamespace === prevDriverNs || sc.secretNamespace === 'default'
+                      ? { ...sc, secretNamespace: driverNs }
+                      : sc,
+                  ),
                   multipath: {
                     ...state.multipath,
                     enabled: needsDm,
