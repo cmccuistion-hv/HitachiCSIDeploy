@@ -1,6 +1,7 @@
 import type { ComponentId } from './components'
 import type {
   ConnectionType,
+  NodeEnvironment,
   PlatformId,
   StorageClassKind,
   StorageEfficiency,
@@ -11,6 +12,7 @@ import type {
 export type {
   ComponentId,
   ConnectionType,
+  NodeEnvironment,
   PlatformId,
   StorageClassKind,
   StorageEfficiency,
@@ -143,6 +145,8 @@ export interface WizardState {
   version: number
   platform: PlatformId
   platformVersion: string
+  /** Bare metal vs VM — restricts FC / NVMe-FC (guide server requirements) */
+  nodeEnvironment: NodeEnvironment
   connectionType: ConnectionType
   airGapped: boolean
   components: {
@@ -180,6 +184,7 @@ export function createDefaultState(): WizardState {
     version: WIZARD_STATE_VERSION,
     platform: 'openshift',
     platformVersion: '4.22',
+    nodeEnvironment: 'bare-metal',
     connectionType: 'fc',
     airGapped: false,
     components: {

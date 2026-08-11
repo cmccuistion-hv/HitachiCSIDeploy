@@ -7,7 +7,12 @@ import type {
   StorageSystemConfig,
   WizardState,
 } from '../catalog/types'
-import { CONNECTION_TYPES } from '../catalog/platforms'
+import {
+  CONNECTION_TYPES,
+  SDS_BLOCK_CONNECTIONS,
+  STRETCHED_CONNECTIONS,
+  coerceConnectionType,
+} from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
 import { generateMultipathMachineConfigs, getMultipathConf } from './multipath'
 import {
@@ -113,11 +118,15 @@ export function generateStorageClass(sc: StorageClassConfig): string {
 
   if (sc.kind === 'vsp-one-sds-block') {
     params.push(`  storageType: vsp-one-sds-block`)
-    params.push(`  connectionType: ${sc.connectionType}`)
+    params.push(
+      `  connectionType: ${coerceConnectionType(sc.connectionType, SDS_BLOCK_CONNECTIONS)}`,
+    )
     if (sc.storageEfficiency) params.push(`  storageEfficiency: ${sc.storageEfficiency}`)
     if (sc.fstype) params.push(`  csi.storage.k8s.io/fstype: ${sc.fstype}`)
   } else if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
-    params.push(`  connectionType: ${sc.connectionType}`)
+    params.push(
+      `  connectionType: ${coerceConnectionType(sc.connectionType, STRETCHED_CONNECTIONS)}`,
+    )
     params.push(`  replicationType: stretched`)
     if (sc.quorumID) params.push(`  quorumID: ${JSON.stringify(sc.quorumID)}`)
     if (sc.copyGroupName) params.push(`  copyGroupName: ${JSON.stringify(sc.copyGroupName)}`)

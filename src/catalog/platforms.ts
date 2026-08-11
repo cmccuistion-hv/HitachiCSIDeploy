@@ -2,6 +2,8 @@
 
 export type PlatformId = 'openshift' | 'kubernetes' | 'rke2' | 'eks' | 'rosa'
 export type ConnectionType = 'fc' | 'iscsi' | 'nvme-fc' | 'nvme-tcp'
+/** Worker node form factor — HSPC server requirements restrict protocols per environment */
+export type NodeEnvironment = 'bare-metal' | 'virtual-machine'
 export type StorageFamily = 'vsp' | 'vsp-one-sds-block'
 export type StorageClassKind = 'standard' | 'stretched' | 'stretched-adr' | 'vsp-one-sds-block'
 export type StorageEfficiency = 'Disabled' | 'Compression' | 'CompressionDeduplication'
@@ -116,8 +118,42 @@ export const CONNECTION_TYPES: {
   },
 ]
 
-/** Connection types allowed for VSP One SDS Block */
+/** Connection types allowed for VSP One SDS Block (MK-92ADPTR142) */
 export const SDS_BLOCK_CONNECTIONS: ConnectionType[] = ['fc', 'iscsi', 'nvme-tcp']
+
+/** Stretched PVC supports only Fibre Channel and iSCSI (MK-92ADPTR142) */
+export const STRETCHED_CONNECTIONS: ConnectionType[] = ['fc', 'iscsi']
+
+export function connectionsForNodeEnvironment(env: NodeEnvironment): ConnectionType[] {
+  return CONNECTION_TYPES.filter((c) => (env === 'bare-metal' ? c.bareMetal : c.virtualMachine)).map(
+    (c) => c.id,
+  )
+}
+
+/** Allowed connectionType values for a StorageClass kind under the chosen node environment */
+export function connectionsForStorageClassKind(
+  kind: StorageClassKind,
+  env: NodeEnvironment,
+): ConnectionType[] {
+  const byEnv = connectionsForNodeEnvironment(env)
+  if (kind === 'stretched' || kind === 'stretched-adr') {
+    return byEnv.filter((id) => STRETCHED_CONNECTIONS.includes(id))
+  }
+  if (kind === 'vsp-one-sds-block') {
+    return byEnv.filter((id) => SDS_BLOCK_CONNECTIONS.includes(id))
+  }
+  return byEnv
+}
+
+/** Pick a valid connection when the current one is disallowed (prefer iSCSI — valid on BM and VM). */
+export function coerceConnectionType(
+  current: ConnectionType,
+  allowed: ConnectionType[],
+): ConnectionType {
+  if (allowed.includes(current)) return current
+  if (allowed.includes('iscsi')) return 'iscsi'
+  return allowed[0] ?? 'fc'
+}
 
 export const STORAGE_EFFICIENCY: {
   id: StorageEfficiency

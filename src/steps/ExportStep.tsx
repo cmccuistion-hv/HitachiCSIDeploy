@@ -238,6 +238,7 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     '# Hitachi CSI Deployment Guide',
     '',
     `Platform: ${plat.displayName} ${state.platformVersion}`,
+    `Worker nodes: ${state.nodeEnvironment === 'virtual-machine' ? 'Virtual machine' : 'Bare metal'}`,
     `Connection: ${state.connectionType}`,
     `CSI Driver: ${state.versions.driver}`,
     state.components.replication ? `Replication: ${state.versions.replication}` : '',

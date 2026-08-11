@@ -1,11 +1,38 @@
-import { CONNECTION_TYPES, PLATFORMS, type PlatformId } from '../catalog/platforms'
+import {
+  CONNECTION_TYPES,
+  PLATFORMS,
+  coerceConnectionType,
+  connectionsForNodeEnvironment,
+  connectionsForStorageClassKind,
+  type NodeEnvironment,
+  type PlatformId,
+} from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { useWizard } from '../state/WizardContext'
 import { Callout, ChoiceCard, Field, Section } from '../components/ui'
 
+function applyConnectionSideEffects(
+  connectionId: ReturnType<typeof coerceConnectionType>,
+  platform: PlatformId,
+  multipath: { enabled: boolean; includeConf: boolean; includeMachineConfig: boolean },
+) {
+  const needsDm = connectionId === 'fc' || connectionId === 'iscsi'
+  const plat = PLATFORMS[platform]
+  return {
+    connectionType: connectionId,
+    multipath: {
+      ...multipath,
+      enabled: needsDm,
+      includeConf: true,
+      includeMachineConfig: needsDm && plat.useOc,
+    },
+  }
+}
+
 export function PlatformStep() {
   const { state, patch, setState } = useWizard()
   const plat = PLATFORMS[state.platform]
+  const allowedConnections = connectionsForNodeEnvironment(state.nodeEnvironment)
 
   return (
     <div className="step-panel">
@@ -74,9 +101,59 @@ export function PlatformStep() {
         )}
       </Section>
 
+      <Section title="Worker node environment">
+        <div className="card-grid">
+          {(
+            [
+              {
+                id: 'bare-metal' as NodeEnvironment,
+                title: 'Bare metal',
+                description: 'FC, iSCSI, NVMe over FC, and NVMe/TCP',
+              },
+              {
+                id: 'virtual-machine' as NodeEnvironment,
+                title: 'Virtual machine',
+                description: 'iSCSI and NVMe/TCP only',
+              },
+            ] as const
+          ).map((opt) => (
+            <ChoiceCard
+              key={opt.id}
+              title={opt.title}
+              description={opt.description}
+              selected={state.nodeEnvironment === opt.id}
+              onClick={() => {
+                setState((s) => {
+                  const allowed = connectionsForNodeEnvironment(opt.id)
+                  const nextConn = coerceConnectionType(s.connectionType, allowed)
+                  const side = applyConnectionSideEffects(nextConn, s.platform, s.multipath)
+                  return {
+                    ...s,
+                    nodeEnvironment: opt.id,
+                    ...side,
+                    storageClasses: s.storageClasses.map((sc) => ({
+                      ...sc,
+                      connectionType: coerceConnectionType(
+                        sc.connectionType,
+                        connectionsForStorageClassKind(sc.kind, opt.id),
+                      ),
+                    })),
+                  }
+                })
+              }}
+            />
+          ))}
+        </div>
+        {state.nodeEnvironment === 'virtual-machine' && (
+          <Callout>
+            Fibre Channel and NVMe over FC require bare metal hosts. Choose iSCSI or NVMe/TCP for VMs.
+          </Callout>
+        )}
+      </Section>
+
       <Section title="Storage connection type" help={HELP.protocolMultipath}>
         <div className="card-grid">
-          {CONNECTION_TYPES.map((c) => (
+          {CONNECTION_TYPES.filter((c) => allowedConnections.includes(c.id)).map((c) => (
             <ChoiceCard
               key={c.id}
               title={c.label}
@@ -88,19 +165,20 @@ export function PlatformStep() {
               selected={state.connectionType === c.id}
               onClick={() => {
                 setState((s) => {
-                  const needsDm = c.id === 'fc' || c.id === 'iscsi'
-                  const plat = PLATFORMS[s.platform]
+                  const side = applyConnectionSideEffects(c.id, s.platform, s.multipath)
                   return {
                     ...s,
-                    connectionType: c.id,
-                    multipath: {
-                      ...s.multipath,
-                      enabled: needsDm,
-                      includeConf: true,
-                      includeMachineConfig: needsDm && plat.useOc,
-                    },
+                    ...side,
                     storageClasses: s.storageClasses.map((sc, i) =>
-                      i === 0 ? { ...sc, connectionType: c.id } : sc,
+                      i === 0
+                        ? {
+                            ...sc,
+                            connectionType: coerceConnectionType(
+                              c.id,
+                              connectionsForStorageClassKind(sc.kind, s.nodeEnvironment),
+                            ),
+                          }
+                        : sc,
                     ),
                   }
                 })
@@ -111,7 +189,12 @@ export function PlatformStep() {
         {(state.connectionType === 'nvme-tcp' || state.connectionType === 'nvme-fc') && (
           <Callout variant="warn">
             NVMe connections require <code>nvmSubsystemID</code> on the StorageClass. Port ID is not used.
-            NVMe/TCP is supported on VSP One Block High End and VSP One Block 20 series.
+          </Callout>
+        )}
+        {state.connectionType === 'nvme-tcp' && (
+          <Callout variant="warn">
+            NVMe/TCP is supported on VSP One Block High End and VSP One Block 20 series (and on VSP One SDS
+            Block when that StorageClass type is used).
           </Callout>
         )}
         {state.connectionType === 'iscsi' && (

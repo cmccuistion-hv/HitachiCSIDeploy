@@ -13,7 +13,7 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
-import { PLATFORMS } from '../catalog/platforms'
+import { PLATFORMS, coerceConnectionType, connectionsForStorageClassKind } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { STEPS_BASE } from './steps'
 
@@ -63,6 +63,20 @@ function loadState(): WizardState {
       merged.multipath.includeMachineConfig = false
       merged.multipath.includeConf = true
     }
+    // Coerce connection types against node environment + StorageClass kind limits
+    const env = merged.nodeEnvironment || 'bare-metal'
+    merged.nodeEnvironment = env
+    merged.connectionType = coerceConnectionType(
+      merged.connectionType,
+      connectionsForStorageClassKind('standard', env),
+    )
+    merged.storageClasses = (merged.storageClasses || []).map((sc) => ({
+      ...sc,
+      connectionType: coerceConnectionType(
+        sc.connectionType,
+        connectionsForStorageClassKind(sc.kind, env),
+      ),
+    }))
     return merged
   } catch {
     return createDefaultState()

@@ -16,6 +16,9 @@ Constraints and parameters in `src/catalog/` are curated from the official guide
 |-------|-------------------------|
 | Supported orchestrators / versions | Prerequisites |
 | FC / iSCSI / NVMe-FC / NVMe-TCP | Server pre-installation |
+| Bare metal vs VM protocol limits | Server requirements (VM: iSCSI + NVMe/TCP only) |
+| Stretched PVC: FC / iSCSI only | Requirements for using Stretched PVC |
+| SDS Block: FC / iSCSI / NVMe/TCP | Storage requirements for VSP One SDS Block / StorageClass legend |
 | Multipath (DM + Native NVMe) | Device Mapper Multipath / Native NVMe Multipath |
 | OpenShift OperatorHub install | Installation on OpenShift |
 | Kubernetes operator YAML install | Installation on Kubernetes |

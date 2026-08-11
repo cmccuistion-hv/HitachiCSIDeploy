@@ -1,11 +1,20 @@
-import { CONNECTION_TYPES, SDS_BLOCK_CONNECTIONS } from '../catalog/platforms'
+import {
+  CONNECTION_TYPES,
+  coerceConnectionType,
+  connectionsForStorageClassKind,
+} from '../catalog/platforms'
 import { HELP } from '../catalog/help'
-import type { StorageClassConfig, StorageClassKind } from '../catalog/types'
+import type { ConnectionType, NodeEnvironment, StorageClassConfig, StorageClassKind } from '../catalog/types'
 import { generateSnapshotClass, generateStorageClass } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
-function defaultSc(kind: StorageClassKind, connectionType: StorageClassConfig['connectionType']): StorageClassConfig {
+function defaultSc(
+  kind: StorageClassKind,
+  connectionType: ConnectionType,
+  nodeEnvironment: NodeEnvironment,
+): StorageClassConfig {
+  const allowed = connectionsForStorageClassKind(kind, nodeEnvironment)
   const base: StorageClassConfig = {
     id: `sc-${Date.now()}`,
     kind,
@@ -17,7 +26,7 @@ function defaultSc(kind: StorageClassKind, connectionType: StorageClassConfig['c
           : kind === 'stretched-adr'
             ? 'hitachi-csi-stretched-adr'
             : 'hitachi-csi-stretched',
-    connectionType,
+    connectionType: coerceConnectionType(connectionType, allowed),
     secretName: 'hitachi-csi-secret',
     secretNamespace: 'default',
     reclaimPolicy: 'Delete',
@@ -47,6 +56,8 @@ export function StorageClassesStep() {
         if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
           next.allowVolumeExpansion = false
         }
+        const allowed = connectionsForStorageClassKind(next.kind, s.nodeEnvironment)
+        next.connectionType = coerceConnectionType(next.connectionType, allowed)
         return next
       }),
       quickstart: {
@@ -65,11 +76,11 @@ export function StorageClassesStep() {
       <Callout>{HELP.secretVsStorageClass.storageClassCallout}</Callout>
 
       {state.storageClasses.map((sc) => {
-        const conn = CONNECTION_TYPES.find((c) => c.id === sc.connectionType)!
+        const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
+        const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
+        const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
         const efficiencyBlocked =
           primary?.isB20Series && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
-        const sdsConnOk =
-          sc.kind !== 'vsp-one-sds-block' || SDS_BLOCK_CONNECTIONS.includes(sc.connectionType)
 
         return (
           <Section
@@ -99,7 +110,7 @@ export function StorageClassesStep() {
                   onChange={(e) => {
                     const kind = e.target.value as StorageClassKind
                     updateSc(sc.id, {
-                      ...defaultSc(kind, sc.connectionType),
+                      ...defaultSc(kind, sc.connectionType, state.nodeEnvironment),
                       id: sc.id,
                       secretName: sc.secretName,
                       secretNamespace: sc.secretNamespace,
@@ -117,14 +128,14 @@ export function StorageClassesStep() {
               </Field>
               <Field label="Connection type" help={HELP.protocolMultipath}>
                 <select
-                  value={sc.connectionType}
+                  value={effectiveConn}
                   onChange={(e) =>
                     updateSc(sc.id, {
                       connectionType: e.target.value as StorageClassConfig['connectionType'],
                     })
                   }
                 >
-                  {CONNECTION_TYPES.map((c) => (
+                  {CONNECTION_TYPES.filter((c) => allowedConns.includes(c.id)).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
@@ -145,8 +156,8 @@ export function StorageClassesStep() {
               </Field>
             </div>
 
-            {!sdsConnOk && (
-              <Callout variant="warn">
+            {sc.kind === 'vsp-one-sds-block' && (
+              <Callout>
                 VSP One SDS Block supports FC, iSCSI, and NVMe/TCP only (not NVMe over FC).
               </Callout>
             )}
@@ -262,8 +273,8 @@ export function StorageClassesStep() {
             {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
               <>
                 <Callout>
-                  Stretched StorageClasses require a dual-array Secret and set{' '}
-                  <code>allowVolumeExpansion: false</code>.
+                  Stretched StorageClasses require a dual-array Secret, support Fibre Channel and iSCSI only
+                  (not NVMe), and set <code>allowVolumeExpansion: false</code>.
                 </Callout>
                 <div className="field-grid" style={{ marginTop: '1rem' }}>
                   <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials.">
@@ -363,7 +374,7 @@ export function StorageClassesStep() {
         onClick={() =>
           setState((s) => ({
             ...s,
-            storageClasses: [...s.storageClasses, defaultSc('standard', s.connectionType)],
+            storageClasses: [...s.storageClasses, defaultSc('standard', s.connectionType, s.nodeEnvironment)],
           }))
         }
       >

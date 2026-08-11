@@ -16,7 +16,7 @@ export const HELP = {
   },
 
   protocolMultipath:
-    'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID).',
+    'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
 
   multipath:
     'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI.',
