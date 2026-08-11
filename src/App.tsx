@@ -43,7 +43,7 @@ function StepBody({ id }: { id: string }) {
 
 export default function App() {
   const { visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
-  const { palette, mode, setPalette, toggleMode, headerLight } = useTheme()
+  const { palette, mode, setPalette, setMode, headerLight } = useTheme()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
@@ -96,7 +96,7 @@ export default function App() {
             palette={palette}
             mode={mode}
             onPalette={setPalette}
-            onToggleMode={toggleMode}
+            onMode={setMode}
           />
           <button
             type="button"
