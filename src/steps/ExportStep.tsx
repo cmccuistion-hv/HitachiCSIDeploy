@@ -246,33 +246,29 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     '',
     '## After install',
     '',
-    '1. Prerequisites complete (multipath / initiator / licenses as required).',
-    '2. Run `./install.sh` — applies driver path, Secret, StorageClass, and the test PVC/Pod.',
+    '1. Prerequisites: finish this wizard and download the ZIP. On OpenShift you may apply the multipath MachineConfig early (while finishing the wizard) or let install.sh apply it.',
+    '2. Run `./install.sh` — skips multipath apply if already done / detected; otherwise applies MachineConfig first (node reboots), then prompts for OperatorHub CSI, then Secrets / StorageClass / test PVC.',
     '3. Confirm PVC Bound and test Pod Running.',
     '',
   ]
 
   if (state.multipath.enabled) {
     lines.push('## Multipath', '')
-    if (state.multipath.includeConf) {
-      lines.push('- `00-prereq/multipath.conf` — Hitachi CSI Device Mapper Multipath sample')
-    }
     if (plat.useOc && state.multipath.includeMachineConfig) {
       lines.push(
-        '- OpenShift MachineConfig(s) under `00-prereq/` embedding that conf into `/etc/multipath.conf`',
+        '- OpenShift MachineConfig(s) under `00-prereq/` embedding multipath.conf into `/etc/multipath.conf`',
+        state.multipath.alreadyApplied
+          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the MC exists) and asks you to confirm MCP health.'
+          : '- **Apply path:** optional early `oc apply` during Prerequisites, or let `install.sh` apply (auto-skips if MC already exists).',
         '',
         '> **Reboots:** Applying MachineConfig **reboots nodes** in the pool (rolling). Wait until',
         '> `UPDATED=True` / `UPDATING=False` before installing the CSI Driver.',
         '',
-        '```bash',
-        `${cmd} apply -f 00-prereq/`,
-        `${cmd} get mcp -w`,
-        '# Proceed only when UPDATED=True and UPDATING=False',
-        '```',
-        '',
       )
-    } else if (state.multipath.includeConf) {
+    } else if (!plat.useOc && state.multipath.includeConf) {
       lines.push(
+        '- `00-prereq/multipath.conf` — Hitachi CSI Device Mapper Multipath sample',
+        '- **You** install this on workers (`install.sh` does not push it to nodes):',
         '',
         '```bash',
         'sudo cp 00-prereq/multipath.conf /etc/multipath.conf',

@@ -14,17 +14,25 @@ import { Callout, ChoiceCard, Field, Section } from '../components/ui'
 function applyConnectionSideEffects(
   connectionId: ReturnType<typeof coerceConnectionType>,
   platform: PlatformId,
-  multipath: { enabled: boolean; includeConf: boolean; includeMachineConfig: boolean },
+  multipath: {
+    enabled: boolean
+    includeConf: boolean
+    includeMachineConfig: boolean
+    alreadyApplied?: boolean
+  },
 ) {
   const needsDm = connectionId === 'fc' || connectionId === 'iscsi'
   const plat = PLATFORMS[platform]
+  const includeMachineConfig = needsDm && plat.useOc
   return {
     connectionType: connectionId,
     multipath: {
       ...multipath,
       enabled: needsDm,
-      includeConf: true,
-      includeMachineConfig: needsDm && plat.useOc,
+      // OpenShift/ROSA deliver via MachineConfig; other platforms ship loose multipath.conf
+      includeConf: needsDm && !plat.useOc,
+      includeMachineConfig,
+      alreadyApplied: includeMachineConfig ? !!multipath.alreadyApplied : false,
     },
   }
 }
@@ -66,9 +74,10 @@ export function PlatformStep() {
                   multipath: {
                     ...state.multipath,
                     enabled: needsDm,
-                    includeConf: true,
+                    includeConf: needsDm && !p.useOc,
                     // OpenShift / ROSA: MachineConfig is the supported delivery method
                     includeMachineConfig: p.useOc && needsDm,
+                    alreadyApplied: p.useOc && needsDm ? state.multipath.alreadyApplied : false,
                   },
                   components: {
                     ...state.components,

@@ -128,13 +128,21 @@ export interface QuickstartConfig {
 export interface MultipathConfig {
   /** Include multipath artifacts in the export package */
   enabled: boolean
-  /** Always include the basic multipath.conf sample when enabled */
+  /**
+   * Kubernetes / RKE2 / EKS: include standalone multipath.conf in the export.
+   * Always false on OpenShift / ROSA (conf is embedded in MachineConfig only).
+   */
   includeConf: boolean
   /**
    * OpenShift / ROSA only: generate MachineConfig wrapping the conf.
    * Always false on Kubernetes / RKE2 / EKS.
    */
   includeMachineConfig: boolean
+  /**
+   * OpenShift / ROSA: user already applied the MachineConfig (e.g. from Prerequisites preview).
+   * install.sh skips apply when true or when the MC already exists on the cluster.
+   */
+  alreadyApplied: boolean
   machineConfigName: string
   machineConfigRole: 'worker' | 'master' | 'all'
   /** Optional override of the sample conf body; empty = use Hitachi sample */
@@ -205,8 +213,9 @@ export function createDefaultState(): WizardState {
     operatorNamespace: 'hspc-operator-system',
     multipath: {
       enabled: true,
-      includeConf: true,
+      includeConf: false,
       includeMachineConfig: true,
+      alreadyApplied: false,
       machineConfigName: 'hitachi-csi-multipath',
       machineConfigRole: 'worker',
       customConf: '',

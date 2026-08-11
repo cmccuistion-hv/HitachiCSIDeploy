@@ -9,26 +9,15 @@ import {
 import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, CopyButton, Field, Section } from '../components/ui'
 
-export function PrerequisitesStep() {
+/** Prerequisites 3.1 — multipath packaging / optional early apply */
+export function PrerequisitesMultipathStep() {
   const { state, setState } = useWizard()
   const plat = PLATFORMS[state.platform]
   const conn = CONNECTION_TYPES.find((c) => c.id === state.connectionType)!
-  const cmd = plat.useOc ? 'oc' : 'kubectl'
   const needsDm = conn.multipath === 'dm-multipath'
   const mp = state.multipath
   const confText = getMultipathConf(mp.customConf || undefined)
   const showMachineConfig = mp.enabled && plat.useOc && mp.includeMachineConfig
-
-  const items = buildPrereqs(state.platform, state.connectionType, state.airGapped, cmd, mp.enabled)
-
-  const toggle = (id: string) => {
-    setState((s) => ({
-      ...s,
-      prereqAcknowledged: { ...s.prereqAcknowledged, [id]: !s.prereqAcknowledged[id] },
-    }))
-  }
-
-  const done = items.filter((i) => state.prereqAcknowledged[i.id]).length
 
   const mcPreview =
     showMachineConfig && mp.machineConfigRole !== 'all'
@@ -49,183 +38,319 @@ export function PrerequisitesStep() {
 
   return (
     <div className="step-panel">
-      <h2>Prerequisites</h2>
+      <h2>Multipath</h2>
       <p className="lede">
-        Complete these environment checks before applying manifests. Items adapt to{' '}
-        <strong>{plat.displayName}</strong> and <strong>{conn.label}</strong>.
+        Shape Device Mapper Multipath for the export package. This page does not talk to the cluster — you can
+        optionally apply the MachineConfig preview from a terminal while you finish the wizard.
       </p>
 
-      <Callout>
-        Progress: {done} / {items.length} acknowledged. You can continue without checking all boxes, but
-        skipped prerequisites are the most common cause of first-PV delays.
-      </Callout>
+      <Callout variant="ok">{HELP.configuratorVsApply}</Callout>
 
-      {(needsDm || mp.enabled) && (
-        <Section title="Multipath configuration" help={HELP.multipath}>
-          {!needsDm && (
-            <Callout variant="warn">
-              Your connection type uses Native NVMe Multipath, not Device Mapper Multipath. You can still
-              generate a DM multipath.conf if nodes need it for other paths.
-            </Callout>
-          )}
+      <Section title="Multipath configuration" help={HELP.multipath}>
+        {!needsDm && (
+          <Callout variant="warn">
+            Your connection type uses Native NVMe Multipath, not Device Mapper Multipath. You can still
+            package a DM multipath.conf if nodes need it for other paths.
+          </Callout>
+        )}
 
-          <label className="toggle-row" style={{ marginBottom: '0.75rem' }}>
-            <input
-              type="checkbox"
-              checked={mp.enabled}
-              onChange={(e) =>
+        <label className="toggle-row" style={{ marginBottom: '0.75rem' }}>
+          <input
+            type="checkbox"
+            checked={mp.enabled}
+            onChange={(e) =>
+              setState((s) => ({
+                ...s,
+                multipath: {
+                  ...s.multipath,
+                  enabled: e.target.checked,
+                  includeConf: e.target.checked && !plat.useOc,
+                  includeMachineConfig: e.target.checked && plat.useOc,
+                  alreadyApplied: e.target.checked && plat.useOc ? s.multipath.alreadyApplied : false,
+                },
+              }))
+            }
+          />
+          <div>
+            <strong>
+              {plat.useOc
+                ? 'Include multipath MachineConfig in the export'
+                : 'Include multipath.conf in the export'}
+            </strong>
+            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+              {plat.useOc ? (
+                <>
+                  Packages a MachineConfig that embeds the Hitachi <code>multipath-sample.conf</code>. You can
+                  apply the preview now (nodes reboot while you finish the wizard) or let{' '}
+                  <code>install.sh</code> apply it after export. Required for Fibre Channel and iSCSI.
+                </>
+              ) : (
+                <>
+                  Packages the Hitachi CSI sample (<code>multipath-sample.conf</code>) for workers.{' '}
+                  <strong>You</strong> install it on nodes after export — <code>install.sh</code> does not push
+                  it. Required for Fibre Channel and iSCSI.
+                </>
+              )}
+            </p>
+          </div>
+        </label>
+
+        {mp.enabled && (
+          <>
+            {plat.useOc ? (
+              mp.alreadyApplied ? (
+                <Callout variant="ok">
+                  <strong>Already applied:</strong> <code>install.sh</code> will skip applying the MachineConfig
+                  (and will also skip if it detects the same name on the cluster). YAML stays in{' '}
+                  <code>00-prereq/</code> for reference. Confirm MCP pools are <code>UPDATED=True</code> before
+                  expecting volumes.
+                </Callout>
+              ) : (
+                <Callout variant="ok">
+                  <strong>Optional early apply:</strong> copy the MachineConfig preview below and{' '}
+                  <code>oc apply -f …</code> from a machine with cluster access now — nodes can reboot while you
+                  finish the wizard. Check the box when done so <code>install.sh</code> skips re-apply. Or leave
+                  it unchecked and let <code>install.sh</code> apply after export.
+                </Callout>
+              )
+            ) : (
+              <Callout variant="ok">
+                <strong>Later (after export):</strong> copy <code>00-prereq/multipath.conf</code> to each worker
+                and enable <code>multipathd</code>. You can preview/edit the conf here; <code>install.sh</code>{' '}
+                will not install it for you.
+              </Callout>
+            )}
+
+            {plat.useOc && (
+              <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
+                <Field
+                  label="MachineConfig name"
+                  hint="OpenShift MachineConfig metadata.name written into the export package."
+                >
+                  <input
+                    value={mp.machineConfigName}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        multipath: { ...s.multipath, machineConfigName: e.target.value },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label="MachineConfig role"
+                  hint="Worker is recommended. Master/all will reboot control-plane nodes."
+                >
+                  <select
+                    value={mp.machineConfigRole}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        multipath: {
+                          ...s.multipath,
+                          machineConfigRole: e.target.value as typeof mp.machineConfigRole,
+                        },
+                      }))
+                    }
+                  >
+                    <option value="worker">worker</option>
+                    <option value="master">master</option>
+                    <option value="all">worker + master</option>
+                  </select>
+                </Field>
+              </div>
+            )}
+
+            <Field
+              label={plat.useOc ? 'multipath.conf (embedded in MachineConfig)' : 'multipath.conf contents'}
+              hint={
+                plat.useOc
+                  ? 'Hitachi CSI sample defaults. Edits update the MachineConfig payload (keep user_friendly_names yes). If you already applied, re-apply after editing or install.sh will skip.'
+                  : 'Hitachi CSI sample defaults. Edit if needed; install on workers after you download the ZIP (keep user_friendly_names yes).'
+              }
+            >
+              <textarea
+                rows={16}
+                style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.78rem', width: '100%' }}
+                value={mp.customConf || MULTIPATH_CONF}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    multipath: { ...s.multipath, customConf: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
+              {showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig preview" />}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  setState((s) => ({
+                    ...s,
+                    multipath: { ...s.multipath, customConf: '' },
+                  }))
+                }
+              >
+                Reset to sample
+              </button>
+            </div>
+
+            {showMachineConfig && (
+              <>
+                <label className="toggle-row" style={{ margin: '0.85rem 0' }}>
+                  <input
+                    type="checkbox"
+                    checked={mp.alreadyApplied}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        multipath: { ...s.multipath, alreadyApplied: e.target.checked },
+                      }))
+                    }
+                  />
+                  <div>
+                    <strong>I already applied this MachineConfig on the cluster</strong>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                      Tells <code>install.sh</code> to skip apply. The script also auto-skips if a MachineConfig
+                      with this name already exists.
+                    </p>
+                  </div>
+                </label>
+
+                <Callout variant="warn">
+                  {mp.alreadyApplied ? (
+                    <>
+                      <strong>Pools may already be updating or updated.</strong> Wait until every targeted pool
+                      shows <code>UPDATED=True</code> / <code>UPDATING=False</code> before creating volumes.{' '}
+                      <code>install.sh</code> will skip apply and ask you to confirm MCP health.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Reboots when applied:</strong> MachineConfigPool updates <em>reboot each node</em>{' '}
+                      in that pool (rolling). Plan a maintenance window. Do <strong>not</strong> create volumes
+                      until pools show <code>UPDATED=True</code> / <code>UPDATING=False</code>.
+                    </>
+                  )}
+                  {mp.machineConfigRole === 'master' || mp.machineConfigRole === 'all' ? (
+                    <>
+                      {' '}
+                      Targeting <strong>master</strong> reboots control-plane nodes — prefer{' '}
+                      <strong>worker</strong> unless CSI must run on masters.
+                    </>
+                  ) : null}
+                  {plat.id === 'rosa' && (
+                    <>
+                      {' '}
+                      On ROSA, if MachineConfig is restricted, use the upstream{' '}
+                      <code>rosa-daemonset.yaml</code> approach instead.
+                    </>
+                  )}
+                </Callout>
+                <p
+                  style={{
+                    margin: '0.75rem 0 0.35rem',
+                    fontSize: '0.85rem',
+                    color: 'var(--hv-text-subtle)',
+                  }}
+                >
+                  {mp.alreadyApplied
+                    ? 'MachineConfig YAML kept in 00-prereq/ for reference:'
+                    : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                </p>
+                {mp.alreadyApplied ? null : (
+                  <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
+                    {`# From a host with oc access (optional early apply):
+# Save the preview to a file, then:
+oc apply -f multipath-machineconfig.yaml
+oc get mcp -w
+# Proceed with the wizard while nodes reboot`}
+                  </CodeBlock>
+                )}
+                <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
+                  {mcPreview}
+                </CodeBlock>
+              </>
+            )}
+          </>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+/** Prerequisites 3.2 (or lone step 3) — environment checklist */
+export function PrerequisitesChecklistStep() {
+  const { state, setState, visibleSteps } = useWizard()
+  const plat = PLATFORMS[state.platform]
+  const conn = CONNECTION_TYPES.find((c) => c.id === state.connectionType)!
+  const cmd = plat.useOc ? 'oc' : 'kubectl'
+  const needsDm = conn.multipath === 'dm-multipath'
+  const mp = state.multipath
+  const showMultipathSibling = visibleSteps.some((s) => s.id === 'prerequisites-multipath')
+
+  const items = buildPrereqs(
+    state.platform,
+    state.connectionType,
+    state.airGapped,
+    cmd,
+    mp.enabled,
+    mp.alreadyApplied,
+  )
+
+  const toggle = (id: string) => {
+    setState((s) => ({
+      ...s,
+      prereqAcknowledged: { ...s.prereqAcknowledged, [id]: !s.prereqAcknowledged[id] },
+    }))
+  }
+
+  const done = items.filter((i) => state.prereqAcknowledged[i.id]).length
+
+  return (
+    <div className="step-panel">
+      <h2>{showMultipathSibling ? 'Checklist' : 'Prerequisites'}</h2>
+      <p className="lede">
+        Verify cluster, array, and network items you can check <strong>now</strong>. Multipath packaging lives
+        on the Multipath substep when enabled.
+      </p>
+
+      {!showMultipathSibling && <Callout variant="ok">{HELP.configuratorVsApply}</Callout>}
+
+      {!mp.enabled && needsDm && (
+        <Callout variant="ok">
+          <strong>Multipath packaging is off.</strong> Fibre Channel and iSCSI normally need it. Use{' '}
+          <strong>Enable multipath</strong> to show the Multipath substep (3.1) again.
+          <div style={{ marginTop: '0.65rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() =>
                 setState((s) => ({
                   ...s,
                   multipath: {
                     ...s.multipath,
-                    enabled: e.target.checked,
-                    includeConf: true,
-                    includeMachineConfig: e.target.checked && plat.useOc,
+                    enabled: true,
+                    includeConf: !plat.useOc,
+                    includeMachineConfig: plat.useOc,
                   },
                 }))
               }
-            />
-            <div>
-              <strong>Generate Device Mapper Multipath config</strong>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                Starts from the Hitachi CSI sample (<code>multipath-sample.conf</code>) and includes it in
-                the export package. Required for Fibre Channel and iSCSI.
-              </p>
-            </div>
-          </label>
-
-          {mp.enabled && (
-            <>
-              {!plat.useOc && (
-                <Callout>
-                  On Kubernetes / RKE2 / EKS, export includes <code>multipath.conf</code> to install on each
-                  node. OpenShift MachineConfig is only offered when OpenShift or ROSA is selected.
-                </Callout>
-              )}
-
-              {plat.useOc && (
-                <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
-                  <Field
-                    label="MachineConfig name"
-                    hint="OpenShift MachineConfig metadata.name for the multipath.conf delivery."
-                  >
-                    <input
-                      value={mp.machineConfigName}
-                      onChange={(e) =>
-                        setState((s) => ({
-                          ...s,
-                          multipath: { ...s.multipath, machineConfigName: e.target.value },
-                        }))
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label="MachineConfig role"
-                    hint="Worker is recommended. Master/all will reboot control-plane nodes."
-                  >
-                    <select
-                      value={mp.machineConfigRole}
-                      onChange={(e) =>
-                        setState((s) => ({
-                          ...s,
-                          multipath: {
-                            ...s.multipath,
-                            machineConfigRole: e.target.value as typeof mp.machineConfigRole,
-                          },
-                        }))
-                      }
-                    >
-                      <option value="worker">worker</option>
-                      <option value="master">master</option>
-                      <option value="all">worker + master</option>
-                    </select>
-                  </Field>
-                </div>
-              )}
-
-              <Field
-                label="multipath.conf contents"
-                hint="Hitachi CSI sample defaults. Edit if your environment needs changes (keep user_friendly_names yes)."
-              >
-                <textarea
-                  rows={16}
-                  style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.78rem', width: '100%' }}
-                  value={mp.customConf || MULTIPATH_CONF}
-                  onChange={(e) =>
-                    setState((s) => ({
-                      ...s,
-                      multipath: { ...s.multipath, customConf: e.target.value },
-                    }))
-                  }
-                />
-              </Field>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                <CopyButton text={confText} label="Copy multipath.conf" />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      multipath: { ...s.multipath, customConf: '' },
-                    }))
-                  }
-                >
-                  Reset to sample
-                </button>
-              </div>
-
-              {showMachineConfig && (
-                <>
-                  <Callout variant="warn">
-                    <strong>Node reboots required.</strong> Applying a MachineConfig updates the
-                    MachineConfigPool and <em>reboots each node</em> in that pool (rolling, one or a few at
-                    a time). Plan a maintenance window. Do <strong>not</strong> install the CSI Driver or
-                    create volumes until every targeted pool shows <code>UPDATED=True</code> and{' '}
-                    <code>UPDATING=False</code>.
-                    {mp.machineConfigRole === 'master' || mp.machineConfigRole === 'all' ? (
-                      <>
-                        {' '}
-                        Targeting <strong>master</strong> reboots control-plane nodes — prefer{' '}
-                        <strong>worker</strong> unless CSI must run on masters.
-                      </>
-                    ) : null}
-                    {plat.id === 'rosa' && (
-                      <>
-                        {' '}
-                        On ROSA, if MachineConfig is restricted, use the upstream{' '}
-                        <code>rosa-daemonset.yaml</code> approach instead.
-                      </>
-                    )}
-                  </Callout>
-                  <CodeBlock className="code-block" style={{ marginTop: '0.75rem' }}>{`${cmd} apply -f 00-prereq/
-# Watch pools — nodes reboot while UPDATING=True
-${cmd} get mcp -w
-# When ready:
-# NAME     CONFIG             UPDATED   UPDATING   DEGRADED
-# worker   rendered-worker-…  True      False      False
-
-${cmd} get mc | grep multipath
-# On a rebooted node:
-# cat /etc/multipath.conf && multipath -ll`}</CodeBlock>
-                  <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem', maxHeight: 280 }}>
-                    {mcPreview}
-                  </CodeBlock>
-                </>
-              )}
-
-              {!plat.useOc && mp.includeConf && (
-                <Callout>
-                  Copy <code>multipath.conf</code> to <code>/etc/multipath.conf</code> on each worker, then{' '}
-                  <code>systemctl enable --now multipathd</code>.
-                </Callout>
-              )}
-            </>
-          )}
-        </Section>
+            >
+              Enable multipath
+            </button>
+          </div>
+        </Callout>
       )}
 
-      <Section title="Checklist">
+      <Callout variant="ok">
+        Progress: {done} / {items.length} acknowledged. You can continue without checking all boxes, but
+        skipped environment checks are the most common cause of first-PV delays.
+      </Callout>
+
+      <Section title="Environment checklist">
         <ul className="checklist">
           {items.map((item) => (
             <li key={item.id}>
@@ -240,9 +365,7 @@ ${cmd} get mc | grep multipath
                 <p style={{ margin: '0.25rem 0', fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
                   {item.body}
                 </p>
-                {item.snippet && (
-                  <CodeBlock>{item.snippet}</CodeBlock>
-                )}
+                {item.snippet && <CodeBlock>{item.snippet}</CodeBlock>}
               </div>
             </li>
           ))}
@@ -270,19 +393,25 @@ ${cmd} get mc | grep multipath
   )
 }
 
+/** @deprecated Use PrerequisitesMultipathStep / PrerequisitesChecklistStep */
+export function PrerequisitesStep() {
+  return <PrerequisitesChecklistStep />
+}
+
 function buildPrereqs(
   platform: string,
   connection: string,
   airGapped: boolean,
   cmd: string,
   multipathEnabled: boolean,
+  multipathAlreadyApplied: boolean,
 ): { id: string; title: string; body: string; snippet?: string }[] {
   const plat = PLATFORMS[platform as keyof typeof PLATFORMS]
   const items: { id: string; title: string; body: string; snippet?: string }[] = [
     {
       id: 'cluster-access',
       title: 'Cluster admin access',
-      body: `Verify you can talk to the API server as a cluster-admin.`,
+      body: 'Verify you can talk to the API server as a cluster-admin.',
       snippet: `${cmd} get nodes`,
     },
     {
@@ -298,16 +427,26 @@ function buildPrereqs(
   ]
 
   if (connection === 'fc' || connection === 'iscsi' || multipathEnabled) {
-    items.push({
-      id: 'multipath',
-      title: 'Device Mapper Multipath configured',
-      body: plat.useOc
-        ? 'Apply the generated MachineConfig, then wait for node reboots to finish (MCP UPDATED=True). Only then install the CSI Driver.'
-        : 'Install the generated multipath.conf on every worker and ensure multipathd is running.',
-      snippet: plat.useOc
-        ? `${cmd} apply -f 00-prereq/\n# Nodes reboot while the pool updates — do not proceed early\n${cmd} get mcp -w\n# Proceed only when UPDATED=True and UPDATING=False\n${cmd} get mc | grep multipath`
-        : 'sudo cp multipath.conf /etc/multipath.conf\nsudo systemctl enable --now multipathd\nmultipath -ll',
-    })
+    if (plat.useOc) {
+      items.push({
+        id: 'multipath',
+        title: multipathAlreadyApplied
+          ? 'Multipath MachineConfig already applied'
+          : 'Plan multipath MachineConfig (early apply or install.sh)',
+        body: multipathAlreadyApplied
+          ? 'You marked the MachineConfig as already applied. Confirm MCP UPDATED=True before volumes; install.sh will skip apply (and auto-detect existing MCs).'
+          : 'Optional: oc apply the preview on the Multipath substep so nodes reboot while you finish the wizard, then check “already applied.” Or leave it for install.sh after export.',
+        snippet: multipathAlreadyApplied
+          ? `${cmd} get mcp\n# Expect UPDATED=True UPDATING=False for targeted pools`
+          : undefined,
+      })
+    } else {
+      items.push({
+        id: 'multipath',
+        title: 'Plan to install multipath.conf on workers (after export)',
+        body: 'After you download the ZIP, copy multipath.conf to each worker and enable multipathd. install.sh does not push the conf to nodes.',
+      })
+    }
   }
 
   if (connection === 'iscsi') {
@@ -346,7 +485,7 @@ function buildPrereqs(
     items.push({
       id: 'operatorhub',
       title: 'OperatorHub / Software Catalog reachable',
-      body: 'You will install Hitachi Storage Plug-in for Containers from OperatorHub with Manual approval.',
+      body: 'After multipath is in place, you will install Hitachi Storage Plug-in for Containers from OperatorHub with Manual approval (install.sh prompts you).',
     })
   }
 

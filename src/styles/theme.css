@@ -297,11 +297,104 @@ textarea {
   color: var(--hv-text-on-primary);
 }
 
+.step-item-parent {
+  cursor: default;
+  opacity: 0.95;
+  pointer-events: none;
+  padding-top: 0.45rem;
+  padding-bottom: 0.05rem;
+}
+
+.step-item-parent.child-active {
+  background: transparent;
+  border-color: transparent;
+}
+
+.step-item-parent .step-label strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--hv-text-subtle);
+}
+
+.step-group-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.step-sublist {
+  list-style: none;
+  margin: 0 0 0.2rem;
+  /* Indent under the parent number badge; left border = the connector */
+  padding: 0.15rem 0 0.1rem calc(0.75rem + 27px);
+  margin-left: calc(0.75rem + 13px);
+  border-left: 1px solid var(--hv-text-disabled);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.step-item.nested {
+  position: relative;
+  margin: 0;
+  width: 100%;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  align-items: baseline;
+}
+
+.step-item.nested::before {
+  display: none;
+}
+
+.step-item.nested .step-num {
+  margin-left: 0;
+  min-width: 1.6rem;
+  height: auto;
+  padding: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  color: var(--hv-text-subtle);
+  border-radius: 0;
+  display: inline;
+  place-items: unset;
+}
+
+.step-item.nested.active .step-num {
+  background: transparent;
+  color: var(--hv-primary);
+}
+
+.step-item.nested.done .step-num {
+  background: transparent;
+  color: var(--hv-positive);
+}
+
+.step-item.nested .step-label {
+  gap: 0;
+}
+
+.step-item.nested .step-label strong {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--hv-text-subtle);
+}
+
+.step-item.nested.active .step-label strong {
+  font-weight: 600;
+  color: var(--hv-text);
+}
+
 .step-num {
   flex-shrink: 0;
-  width: 28px;
+  min-width: 28px;
+  width: auto;
+  padding: 0 0.35rem;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--hv-bg-secondary);
   color: var(--hv-text-subtle);
   display: grid;
@@ -584,8 +677,8 @@ textarea {
 }
 
 .callout {
-  border-left: 4px solid var(--hv-primary);
-  background: var(--hv-primary-dimmed);
+  border-left: 4px solid var(--hv-positive);
+  background: var(--hv-callout-ok-bg);
   padding: 0.85rem 1rem;
   border-radius: 0 var(--hv-radius) var(--hv-radius) 0;
   margin: 1rem 0;
@@ -1035,11 +1128,9 @@ textarea {
 }
 
 .help-tip-popover {
-  position: absolute;
+  /* Fixed + JS clamp keeps tips inside the viewport without expanding .main-scroll. */
+  position: fixed;
   z-index: 40;
-  left: 0;
-  top: calc(100% + 0.35rem);
-  width: min(280px, 70vw);
   padding: 0.65rem 0.75rem;
   border-radius: var(--hv-radius);
   border: 1px solid var(--hv-border);
@@ -1050,6 +1141,7 @@ textarea {
   line-height: 1.4;
   box-shadow: var(--hv-shadow);
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 .welcome-dialog {

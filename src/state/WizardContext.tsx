@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -15,7 +16,7 @@ import {
 } from '../catalog/types'
 import { PLATFORMS, coerceConnectionType, connectionsForStorageClassKind } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
-import { STEPS_BASE } from './steps'
+import { STEPS_BASE, type VisibleStep } from './steps'
 
 interface WizardContextValue {
   state: WizardState
@@ -29,7 +30,7 @@ interface WizardContextValue {
   versionsLoading: boolean
   stepIndex: number
   setStepIndex: (i: number) => void
-  visibleSteps: { id: string; title: string; description: string }[]
+  visibleSteps: VisibleStep[]
 }
 
 const WizardContext = createContext<WizardContextValue | null>(null)
@@ -58,10 +59,10 @@ function loadState(): WizardState {
     }
     if (plat?.useOc && merged.multipath.enabled) {
       merged.multipath.includeMachineConfig = true
-      merged.multipath.includeConf = true
+      merged.multipath.includeConf = false
     } else if (!plat?.useOc) {
       merged.multipath.includeMachineConfig = false
-      merged.multipath.includeConf = true
+      if (merged.multipath.enabled) merged.multipath.includeConf = true
     }
     // Coerce connection types against node environment + StorageClass kind limits
     const env = merged.nodeEnvironment || 'bare-metal'
@@ -159,20 +160,47 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     state.components.replication,
   ])
 
-  const visibleSteps = useMemo(() => {
+  const visibleSteps = useMemo((): VisibleStep[] => {
     return STEPS_BASE.filter((step) => {
+      if (step.id === 'prerequisites-multipath') return state.multipath.enabled
       if (step.id === 'replication') return state.components.replication
       if (step.id === 'metrics') return state.components.metrics
       if (step.id === 'console') {
         return state.components.consolePlugin && PLATFORMS[state.platform].supportsConsolePlugin
       }
       return true
+    }).map((step) => {
+      if (step.id === 'prerequisites-checklist' && !state.multipath.enabled) {
+        return {
+          id: step.id,
+          title: 'Prerequisites',
+          description: 'Environment checklist',
+          group: step.group,
+        }
+      }
+      return {
+        id: step.id,
+        title: step.title,
+        description: step.description,
+        group: step.group,
+      }
     })
-  }, [state.components, state.platform])
+  }, [state.components, state.platform, state.multipath.enabled])
+
+  const stepIdRef = useRef(visibleSteps[0]?.id ?? 'platform')
+  useEffect(() => {
+    stepIdRef.current = visibleSteps[stepIndex]?.id ?? stepIdRef.current
+  }, [stepIndex, visibleSteps])
 
   useEffect(() => {
-    if (stepIndex >= visibleSteps.length) setStepIndex(Math.max(0, visibleSteps.length - 1))
-  }, [visibleSteps.length, stepIndex])
+    const wanted = stepIdRef.current
+    let idx = visibleSteps.findIndex((s) => s.id === wanted)
+    if (idx < 0 && wanted === 'prerequisites-multipath') {
+      idx = visibleSteps.findIndex((s) => s.id === 'prerequisites-checklist')
+    }
+    if (idx < 0) idx = Math.max(0, visibleSteps.length - 1)
+    setStepIndex((current) => (current === idx ? current : idx))
+  }, [visibleSteps])
 
   const update = useCallback(<K extends keyof WizardState>(key: K, value: WizardState[K]) => {
     setState((s) => ({ ...s, [key]: value }))
@@ -224,7 +252,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     versionsLoading,
     stepIndex,
     setStepIndex,
-    visibleSteps: visibleSteps.map((s) => ({ id: s.id, title: s.title, description: s.description })),
+    visibleSteps,
   }
 
   return <WizardContext.Provider value={value}>{children}</WizardContext.Provider>

@@ -10,11 +10,33 @@ import {
 /** Click/focus-toggled help popover (hover enhances expand; touch-safe). */
 export function HelpTip({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
   const wrapRef = useRef<HTMLSpanElement>(null)
   const tipId = useId()
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setCoords(null)
+      return
+    }
+
+    const place = () => {
+      const wrap = wrapRef.current
+      if (!wrap) return
+      const rect = wrap.getBoundingClientRect()
+      const margin = 8
+      const width = Math.min(280, window.innerWidth * 0.7, window.innerWidth - margin * 2)
+      // Prefer aligning to the trigger's left; flip when that would overflow the viewport.
+      let left = rect.left
+      if (left + width > window.innerWidth - margin) {
+        left = rect.right - width
+      }
+      left = Math.max(margin, Math.min(left, window.innerWidth - margin - width))
+      setCoords({ top: rect.bottom + 6, left, width })
+    }
+
+    place()
+
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setOpen(false)
@@ -25,9 +47,13 @@ export function HelpTip({ text }: { text: string }) {
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
     }
   }, [open])
 
@@ -53,8 +79,13 @@ export function HelpTip({ text }: { text: string }) {
       >
         ?
       </button>
-      {open && (
-        <span className="help-tip-popover" id={tipId} role="tooltip">
+      {open && coords && (
+        <span
+          className="help-tip-popover"
+          id={tipId}
+          role="tooltip"
+          style={{ top: coords.top, left: coords.left, width: coords.width }}
+        >
           {text}
         </span>
       )}

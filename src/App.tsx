@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ThemeControls } from './components/ThemeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
 import { useWizard } from './state/WizardContext'
+import { buildNavEntries, footerStepLabel, type NavEntry } from './state/steps'
 import { PlatformStep } from './steps/PlatformStep'
 import { ComponentsStep } from './steps/ComponentsStep'
-import { PrerequisitesStep } from './steps/PrerequisitesStep'
+import {
+  PrerequisitesChecklistStep,
+  PrerequisitesMultipathStep,
+} from './steps/PrerequisitesStep'
 import { StorageStep } from './steps/StorageStep'
 import { StorageClassesStep } from './steps/StorageClassesStep'
 import { ReplicationStep } from './steps/ReplicationStep'
@@ -16,14 +20,88 @@ import { ExportStep } from './steps/ExportStep'
 
 const REPO_ISSUES_URL = 'https://github.com/cmccuistion-hv/HitachiCSIDeploy/issues'
 
+function renderSidebarNav(
+  navEntries: NavEntry[],
+  visibleSteps: { id: string }[],
+  setStepIndex: (i: number) => void,
+): ReactNode[] {
+  const nodes: ReactNode[] = []
+  let i = 0
+  while (i < navEntries.length) {
+    const entry = navEntries[i]
+    if (entry.kind === 'parent') {
+      const children: Extract<NavEntry, { kind: 'step' }>[] = []
+      i += 1
+      while (i < navEntries.length) {
+        const next = navEntries[i]
+        if (next.kind !== 'step' || !next.nested) break
+        children.push(next)
+        i += 1
+      }
+      nodes.push(
+        <li key={`group-${entry.major}`} className="step-group-block">
+          <div
+            className={`step-item step-item-parent${entry.childActive ? ' child-active' : ''}${
+              entry.done ? ' done' : ''
+            }`}
+            aria-hidden="true"
+          >
+            <span className="step-num">{entry.major}</span>
+            <span className="step-label">
+              <strong>{entry.title}</strong>
+            </span>
+          </div>
+          <ol className="step-sublist">
+            {children.map((child) => (
+              <li key={visibleSteps[child.stepIndex]?.id ?? child.stepIndex}>
+                <button
+                  type="button"
+                  className={`step-item nested${child.active ? ' active' : ''}${child.done ? ' done' : ''}`}
+                  onClick={() => setStepIndex(child.stepIndex)}
+                >
+                  <span className="step-num">{child.label}</span>
+                  <span className="step-label">
+                    <strong>{child.title}</strong>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </li>,
+      )
+      continue
+    }
+
+    nodes.push(
+      <li key={visibleSteps[entry.stepIndex]?.id ?? entry.stepIndex}>
+        <button
+          type="button"
+          className={`step-item${entry.active ? ' active' : ''}${entry.done ? ' done' : ''}`}
+          onClick={() => setStepIndex(entry.stepIndex)}
+        >
+          <span className="step-num">{entry.label}</span>
+          <span className="step-label">
+            <strong>{entry.title}</strong>
+            <span>{entry.description}</span>
+          </span>
+        </button>
+      </li>,
+    )
+    i += 1
+  }
+  return nodes
+}
+
 function StepBody({ id }: { id: string }) {
   switch (id) {
     case 'platform':
       return <PlatformStep />
     case 'components':
       return <ComponentsStep />
-    case 'prerequisites':
-      return <PrerequisitesStep />
+    case 'prerequisites-multipath':
+      return <PrerequisitesMultipathStep />
+    case 'prerequisites-checklist':
+      return <PrerequisitesChecklistStep />
     case 'storage':
       return <StorageStep />
     case 'storageclasses':
@@ -50,6 +128,12 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
+
+  const navEntries = useMemo(
+    () => buildNavEntries(visibleSteps, stepIndex),
+    [visibleSteps, stepIndex],
+  )
+  const footerLabel = footerStepLabel(navEntries, stepIndex)
 
   useEffect(() => {
     const el = mainScrollRef.current
@@ -153,23 +237,7 @@ export default function App() {
       </header>
 
       <aside className="app-sidebar">
-        <ol className="step-list">
-          {visibleSteps.map((step, i) => (
-            <li key={step.id}>
-              <button
-                type="button"
-                className={`step-item${i === stepIndex ? ' active' : ''}${i < stepIndex ? ' done' : ''}`}
-                onClick={() => setStepIndex(i)}
-              >
-                <span className="step-num">{i + 1}</span>
-                <span className="step-label">
-                  <strong>{step.title}</strong>
-                  <span>{step.description}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
+        <ol className="step-list">{renderSidebarNav(navEntries, visibleSteps, setStepIndex)}</ol>
       </aside>
 
       <main className="app-main">
@@ -186,8 +254,8 @@ export default function App() {
             Back
           </button>
           <span style={{ fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-            Step {stepIndex + 1} of {visibleSteps.length}
-            {current ? ` — ${current.title}` : ''}
+            {footerLabel ||
+              `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`}
           </span>
           <button
             type="button"

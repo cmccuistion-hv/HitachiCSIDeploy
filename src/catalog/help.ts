@@ -19,7 +19,7 @@ export const HELP = {
     'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
 
   multipath:
-    'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI.',
+    'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI. On OpenShift/ROSA, apply the MachineConfig early from the preview or let install.sh apply it (skips if already present). On Kubernetes/RKE2/EKS, you install multipath.conf on workers after download.',
 
   gad: {
     role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary.',

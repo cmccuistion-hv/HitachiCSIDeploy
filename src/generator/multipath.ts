@@ -89,3 +89,13 @@ export function generateMultipathMachineConfigs(opts: {
     },
   ]
 }
+
+/** Metadata.name values produced for the chosen role — used by install.sh detection. */
+export function expectedMultipathMachineConfigNames(opts: {
+  name?: string
+  role?: MachineConfigRole
+}): string[] {
+  const baseName = opts.name || 'hitachi-csi-multipath'
+  if (opts.role === 'all') return [`${baseName}-worker`, `${baseName}-master`]
+  return [baseName]
+}

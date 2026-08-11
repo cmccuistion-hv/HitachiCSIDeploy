@@ -14,7 +14,7 @@ import {
   coerceConnectionType,
 } from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
-import { generateMultipathMachineConfigs, getMultipathConf } from './multipath'
+import { generateMultipathMachineConfigs, getMultipathConf, expectedMultipathMachineConfigNames } from './multipath'
 import {
   generateRemoteKubeconfigScript,
   generateRemoteKubeconfigSecret,
@@ -336,38 +336,78 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     '',
   ]
 
+  const prereqYaml = applyFiles.filter(
+    (f) => f.group === 'prereq' && f.path.endsWith('.yaml') && plat.useOc,
+  )
+  // Multipath MachineConfig must complete (and nodes reboot) before CSI Driver install.
+  if (prereqYaml.length) {
+    const mcNames = expectedMultipathMachineConfigNames({
+      name: state.multipath.machineConfigName,
+      role: state.multipath.machineConfigRole,
+    })
+    const namesBash = mcNames.map((n) => JSON.stringify(n)).join(' ')
+    lines.push(
+      `# Multipath: wizard alreadyApplied=${state.multipath.alreadyApplied ? '1' : '0'}`,
+      `MULTIPATH_ALREADY_APPLIED=${state.multipath.alreadyApplied ? '1' : '0'}`,
+      `MULTIPATH_MC_NAMES=(${namesBash})`,
+      '',
+      'multipath_mcs_exist() {',
+      '  local n',
+      '  for n in "${MULTIPATH_MC_NAMES[@]}"; do',
+      '    if ! "$CMD" get machineconfig "$n" >/dev/null 2>&1; then',
+      '      return 1',
+      '    fi',
+      '  done',
+      '  return 0',
+      '}',
+      '',
+      'SKIP_MULTIPATH_APPLY=0',
+      'if [[ "$MULTIPATH_ALREADY_APPLIED" == "1" ]]; then',
+      '  echo "==> Multipath: wizard marked MachineConfig as already applied — skipping apply."',
+      '  SKIP_MULTIPATH_APPLY=1',
+      'elif multipath_mcs_exist; then',
+      '  echo "==> Multipath: found existing MachineConfig(s) (${MULTIPATH_MC_NAMES[*]}) — skipping apply."',
+      '  SKIP_MULTIPATH_APPLY=1',
+      'fi',
+      '',
+      'if [[ "$SKIP_MULTIPATH_APPLY" == "1" ]]; then',
+      '  echo "YAML remains under 00-prereq/ for reference."',
+      '  echo "If you changed multipath.conf after applying, re-apply the YAML manually before continuing."',
+      '  echo "Confirm MachineConfigPools are healthy (UPDATED=True / UPDATING=False):"',
+      '  "$CMD" get mcp || true',
+      '  read -r -p "Press Enter once multipath is verified on nodes... "',
+      '  echo',
+      'else',
+      '  echo "==> Applying multipath MachineConfig(s)"',
+      '  echo "WARNING: MachineConfig updates reboot nodes in the targeted pool (rolling)."',
+      '  echo "Do not install the CSI Driver until MCP shows UPDATED=True / UPDATING=False."',
+      '  read -r -p "Press Enter to apply MachineConfig(s) and begin node reboots... " ',
+      '',
+    )
+    for (const f of prereqYaml) {
+      lines.push(`  apply "${f.path}"`)
+    }
+    lines.push(
+      '',
+      '  echo "Watch MachineConfigPools (Ctrl+C when UPDATED=True and UPDATING=False):"',
+      '  "$CMD" get mcp -w || true',
+      '',
+      '  read -r -p "Confirm all targeted nodes rebooted and multipath is verified, then press Enter... "',
+      '  echo',
+      'fi',
+      '',
+    )
+  }
+
   if (plat.operatorHub) {
     lines.push(
-      'echo "OpenShift: Install the CSI Driver from OperatorHub / Software Catalog before applying storage manifests."',
+      'echo "OpenShift: Install the CSI Driver from OperatorHub / Software Catalog."',
+      'echo "  (Do this only after multipath MachineConfig pools are UPDATED=True.)"',
       'echo "  Search: Hitachi Storage Plug-in for Containers"',
       'echo "  Installation mode: A specific namespace on the cluster"',
       'echo "  Update approval: Manual"',
       'echo "Then create the HSPC instance (or apply 02-driver/hspc-cr.yaml)."',
       'read -r -p "Press Enter once the CSI Driver operator is Succeeded and HSPC READY=true... "',
-      '',
-    )
-  }
-
-  const prereqYaml = applyFiles.filter(
-    (f) => f.group === 'prereq' && f.path.endsWith('.yaml') && plat.useOc,
-  )
-  if (prereqYaml.length) {
-    lines.push(
-      'echo "==> Applying multipath MachineConfig(s)"',
-      'echo "WARNING: MachineConfig updates reboot nodes in the targeted pool (rolling)."',
-      'echo "Do not install the CSI Driver until MCP shows UPDATED=True / UPDATING=False."',
-      'read -r -p "Press Enter to apply MachineConfig(s) and begin node reboots... " ',
-      '',
-    )
-    for (const f of prereqYaml) {
-      lines.push(`apply "${f.path}"`)
-    }
-    lines.push(
-      '',
-      'echo "Watch MachineConfigPools (Ctrl+C when UPDATED=True and UPDATING=False):"',
-      `"$CMD" get mcp -w || true`,
-      '',
-      'read -r -p "Confirm all targeted nodes rebooted and multipath is verified, then press Enter... "',
       '',
     )
   }
@@ -436,15 +476,8 @@ export function generateAll(state: WizardState): GeneratedFile[] {
 
   // Multipath prerequisites
   if (state.multipath.enabled) {
-    if (state.multipath.includeConf || plat.useOc) {
-      files.push({
-        path: '00-prereq/multipath.conf',
-        content: getMultipathConf(state.multipath.customConf || undefined),
-        description: 'Hitachi CSI Device Mapper Multipath sample (/etc/multipath.conf)',
-        group: 'prereq',
-      })
-    }
-    // MachineConfig is OpenShift/ROSA only — never emit for Kubernetes/RKE2/EKS
+    // OpenShift/ROSA: MachineConfig embeds the conf — do not ship a standalone multipath.conf to copy.
+    // Kubernetes/RKE2/EKS: ship the conf file only (no MachineConfig).
     if (plat.useOc && state.multipath.includeMachineConfig) {
       for (const mc of generateMultipathMachineConfigs({
         name: state.multipath.machineConfigName,
@@ -461,32 +494,28 @@ export function generateAll(state: WizardState): GeneratedFile[] {
 > (rolling). Schedule a maintenance window. Do **not** install the CSI Driver or create PVCs until pools
 > are fully updated.
 
-1. Review \`multipath.conf\` (also embedded in the MachineConfig as base64).
-2. Apply MachineConfig(s):
+The Hitachi multipath sample is embedded in the MachineConfig as base64 Ignition content for
+\`/etc/multipath.conf\`. Do not copy a loose \`multipath.conf\` onto nodes.
+
+**Paths:**
+
+1. **Early apply (optional):** On the Prerequisites step, copy the MachineConfig preview and
+   \`oc apply\` it so nodes reboot while you finish the wizard. Check **I already applied this
+   MachineConfig** so \`install.sh\` skips apply.
+2. **Via install.sh (default):** Leave that checkbox unchecked. \`install.sh\` applies the YAML,
+   then waits for MCP / reboots. It also skips apply if the MachineConfig already exists on the cluster.
 
 \`\`\`bash
-${plat.useOc ? 'oc' : 'kubectl'} apply -f 00-prereq/
+# Early apply example:
+oc apply -f 00-prereq/
+oc get mcp -w
+
+# Or let install.sh handle apply + wait
+./install.sh
 \`\`\`
 
-3. Watch the pool until updates and reboots complete:
-
-\`\`\`bash
-${plat.useOc ? 'oc' : 'kubectl'} get mcp -w
-# Wait until UPDATED=True and UPDATING=False for each targeted pool
-# Example:
-# NAME     CONFIG             UPDATED   UPDATING   DEGRADED
-# worker   rendered-worker-…  True      False      False
-\`\`\`
-
-4. After nodes are back, confirm multipath on a node:
-
-\`\`\`bash
-${plat.useOc ? 'oc' : 'kubectl'} get mc | grep multipath
-# On the node:
-# cat /etc/multipath.conf && multipath -ll
-\`\`\`
-
-5. Only then continue with CSI Driver install and storage manifests.
+After apply (either path), wait until pools show UPDATED=True / UPDATING=False, then continue with
+CSI Driver install.
 ${
   plat.id === 'rosa'
     ? '\nROSA note: if MachineConfig is not available, use the upstream `rosa-daemonset.yaml` sample instead.\n'
@@ -496,7 +525,13 @@ ${
         description: 'Multipath apply notes for OpenShift (includes reboot warning)',
         group: 'prereq',
       })
-    } else if (state.multipath.includeConf) {
+    } else if (!plat.useOc && state.multipath.includeConf) {
+      files.push({
+        path: '00-prereq/multipath.conf',
+        content: getMultipathConf(state.multipath.customConf || undefined),
+        description: 'Hitachi CSI Device Mapper Multipath sample (/etc/multipath.conf)',
+        group: 'prereq',
+      })
       files.push({
         path: '00-prereq/README-multipath.md',
         content: `# Multipath (Kubernetes)
