@@ -1,59 +1,56 @@
 # Hitachi CSI Deployment Wizard
 
-Interactive wizard that walks you through deploying the **Hitachi CSI** stack and generates ready-to-apply manifests, including an `install.sh` and a sample PVC/Pod smoke test.
-## Components (plain-language names)
+A browser configurator for deploying the **Hitachi CSI** stack on OpenShift, ROSA, Kubernetes, RKE2, or EKS.
 
-| Wizard name | Role | Legacy acronym |
-|-------------|------|----------------|
-| CSI Driver | Core volume provisioning | HSPC |
-| Replication | UR / TrueCopy across clusters | HRPC |
-| Disaster Recovery | Policy-based DR operator | HRPC DR |
-| Performance Metrics | Prometheus exporter / Grafana | HSPP |
-| OpenShift Console Plugin | OpenShift UI dashboard | — |
+Answer a short series of questions about your platform, storage systems, and optional add-ons. The wizard produces a ZIP of manifests and an `install.sh` you run against your cluster — it never connects to the cluster from the page.
 
-## Features
+**Live site:** [cmccuistion-hv.github.io/HitachiCSIDeploy](https://cmccuistion-hv.github.io/HitachiCSIDeploy/)
 
-- Platform-aware flow (OpenShift, ROSA, Kubernetes, RKE2, EKS)
-- OpenShift OperatorHub steps for the CSI Driver
-- Dynamic prerequisites (multipath, iSCSI, NVMe, firewall, licenses)
-- StorageClass builder with documented constraints (stretched/GAD, SDS Block, efficiency rules)
-- Auto-detects latest component versions from [csi-operator-hitachi](https://github.com/hitachi-vantara/csi-operator-hitachi)
-- Live YAML preview, ZIP export, `install.sh`, config save/resume
-- Hitachi Vantara NEXT color theme (`#2064B4` primary)
+## What this is for
 
-## Local development
+Installing Hitachi storage for containers usually means stitching together operator samples, namespaces, Secrets, StorageClasses, multipath MachineConfigs, and (for multi-site) remote kubeconfig packaging. This wizard walks that path once and emits the right bundle for your choices.
 
-```bash
-npm install
-npm run dev
-```
+| You provide | The wizard generates |
+|-------------|----------------------|
+| Platform and connection type (FC / iSCSI / NVMe) | Operator / driver install path for that platform |
+| Array REST credentials, serial, pool IDs | Secret and StorageClass YAML |
+| Optional Replication / Metrics / Console Plugin | Matching manifests and install steps |
+| Cluster-admin access when you apply | Ready-to-run `install.sh` + ZIP |
 
-Open the URL Vite prints (typically `http://localhost:5173`).
+## Components
 
-You do not need to run production builds while developing if a Vite dev server is already running.
+| Name | What it does |
+|------|----------------|
+| CSI Driver | Core volume provisioning for Hitachi storage |
+| Replication | Cross-cluster UR / TrueCopy (includes the DR Operator) |
+| Performance Metrics | Prometheus exporter / Grafana |
+| OpenShift Console Plugin | OpenShift UI dashboard |
 
-## GitHub Pages
+## What you get
 
-1. Push this repository to GitHub.
-2. Enable **Settings → Pages → Build and deployment → GitHub Actions**.
-3. The workflow [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds and publishes on pushes to `main`.
-4. Site uses relative `base: './'` so it works as a project Pages site.
+- Platform-aware defaults (OpenShift/ROSA vs Kubernetes-style namespaces and OperatorHub vs YAML)
+- Prerequisites called out for multipath, iSCSI, NVMe, firewall, and licenses where they apply
+- StorageClass options constrained to documented rules (stretched/GAD, SDS Block, efficiency)
+- Latest component versions pulled from [csi-operator-hitachi](https://github.com/hitachi-vantara/csi-operator-hitachi)
+- Live YAML preview, ZIP download, `install.sh`, and save/resume of non-secret config
+- Sample PVC and Pod to smoke-test provisioning after install
 
-## Docs used for the option catalog
+## What you will need
 
-Official guides (also under `docs/`):
+- Cluster-admin access when you run the generated scripts
+- Array REST credentials, serial number, and pool IDs
+- For Replication: journal IDs and a way to place each site’s remote kubeconfig Secret (helper script or wizard Secret YAML)
 
-- [CSI Driver guide](https://docs.hitachivantara.com/r/en-us/mk-92adptr142/latest) (MK-92ADPTR142)
-- [Replication guide](https://docs.hitachivantara.com/r/en-us/mk-92adptr155/latest) (MK-92ADPTR155)
-- [Performance Metrics guide](https://docs.hitachivantara.com/r/en-us/mk-92adptr156/latest) (MK-92ADPTR156)
+Kubeconfigs and credentials are never stored in the browser export.
 
-See [catalog-notes.md](catalog-notes.md) for constraint mapping.
+## Official documentation
 
-## Stack
+- [CSI Driver](https://docs.hitachivantara.com/r/en-us/mk-92adptr142/latest) (MK-92ADPTR142)
+- [Replication](https://docs.hitachivantara.com/r/en-us/mk-92adptr155/latest) (MK-92ADPTR155)
+- [Performance Metrics](https://docs.hitachivantara.com/r/en-us/mk-92adptr156/latest) (MK-92ADPTR156)
+- [Compatibility matrix](https://compatibility.hitachivantara.com/products/hspc)
 
-- React + TypeScript + Vite
-- Theme colors aligned with Hitachi Vantara NEXT (`#2064B4` primary from `@hitachivantara/uikit-styles`)
-- `jszip` for bundle download
+Constraint notes used by the catalog: [catalog-notes.md](catalog-notes.md).
 
 ## License
 
