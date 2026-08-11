@@ -9,7 +9,8 @@ export function ConsolePluginStep() {
       <h2>OpenShift Console Plugin</h2>
       <p className="lede">
         Deploys the Hitachi dashboard tab in the OpenShift web console. Prometheus settings should match
-        your Performance Metrics deployment — that is where the plugin finds metrics.
+        where metrics are scraped. If you set them on Performance Metrics (Grafana with an existing
+        Prometheus), those values appear here.
       </p>
 
       <Callout>

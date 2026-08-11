@@ -36,7 +36,9 @@ export function MetricsStep() {
                 setState((s) => ({
                   ...s,
                   metrics: { ...s.metrics, namespace: ns },
-                  consolePlugin: { ...s.consolePlugin, prometheusNamespace: ns },
+                  consolePlugin: s.metrics.deployPrometheus
+                    ? { ...s.consolePlugin, prometheusNamespace: ns }
+                    : s.consolePlugin,
                 }))
               }}
             />
@@ -105,21 +107,100 @@ export function MetricsStep() {
         <label className="toggle-row" style={{ marginTop: '0.65rem' }}>
           <input
             type="checkbox"
-            checked={state.metrics.deployTestStack}
+            checked={state.metrics.deployPrometheus}
+            onChange={(e) => {
+              const on = e.target.checked
+              setState((s) => ({
+                ...s,
+                metrics: { ...s.metrics, deployPrometheus: on },
+                consolePlugin: on
+                  ? {
+                      ...s.consolePlugin,
+                      prometheusNamespace: s.metrics.namespace,
+                      prometheusService: 'prometheus',
+                      prometheusPort: '9090',
+                    }
+                  : s.consolePlugin,
+              }))
+            }}
+          />
+          <div>
+            <strong>Include Prometheus</strong>
+            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+              Deploys Prometheus into the metrics namespace. Turn off if you already run Prometheus
+              elsewhere.
+            </p>
+          </div>
+        </label>
+        <label className="toggle-row" style={{ marginTop: '0.65rem' }}>
+          <input
+            type="checkbox"
+            checked={state.metrics.deployGrafana}
             onChange={(e) =>
               setState((s) => ({
                 ...s,
-                metrics: { ...s.metrics, deployTestStack: e.target.checked },
+                metrics: { ...s.metrics, deployGrafana: e.target.checked },
               }))
             }
           />
           <div>
-            <strong>Include sample Prometheus + Grafana stack</strong>
+            <strong>Include Grafana</strong>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-              For lab/test only. Production should point at your existing Prometheus.
+              Deploys Grafana with the Hitachi dashboard provisioned. Optional if you only need metrics
+              scrape.
             </p>
           </div>
         </label>
+        {state.metrics.deployGrafana && !state.metrics.deployPrometheus && (
+          <>
+            <div className="field-grid" style={{ marginTop: '0.75rem' }}>
+              <Field label="Prometheus namespace" hint="Namespace of the existing Prometheus Service.">
+                <input
+                  value={state.consolePlugin.prometheusNamespace}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      consolePlugin: { ...s.consolePlugin, prometheusNamespace: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+              <Field
+                label="Prometheus service"
+                hint="Service name Grafana (and the Console Plugin) will query."
+              >
+                <input
+                  value={state.consolePlugin.prometheusService}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      consolePlugin: { ...s.consolePlugin, prometheusService: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="Prometheus port">
+                <input
+                  value={state.consolePlugin.prometheusPort}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      consolePlugin: { ...s.consolePlugin, prometheusPort: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            {(!state.consolePlugin.prometheusNamespace.trim() ||
+              !state.consolePlugin.prometheusService.trim() ||
+              !state.consolePlugin.prometheusPort.trim()) && (
+              <Callout variant="warn">
+                Prometheus namespace, service, and port are required so Grafana can reach your existing
+                Prometheus.
+              </Callout>
+            )}
+          </>
+        )}
         {plat.useOc && (
           <Callout>OpenShift: the export guide applies <code>scc-for-openshift.yaml</code>.</Callout>
         )}
