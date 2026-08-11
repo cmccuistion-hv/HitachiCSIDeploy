@@ -18,6 +18,9 @@ import {
   PLATFORMS,
   coerceConnectionType,
   connectionsForStorageClassKind,
+  defaultOpenShiftTopology,
+  effectiveMultipathDelivery,
+  multipathFlagsForDelivery,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
@@ -48,6 +51,9 @@ function loadState(): WizardState {
     const parsed = JSON.parse(raw) as WizardState
     if (parsed.version !== WIZARD_STATE_VERSION) return createDefaultState()
     const merged = { ...createDefaultState(), ...parsed }
+    if (merged.storageClassesEnabled === undefined) {
+      merged.storageClassesEnabled = true
+    }
     // Deep-merge nested objects that may be missing from older saves
     merged.multipath = { ...createDefaultState().multipath, ...(parsed.multipath || {}) }
     merged.components = { ...createDefaultState().components, ...(parsed.components || {}) }
@@ -73,12 +79,27 @@ function loadState(): WizardState {
         ? { ...sc, secretNamespace: merged.driverNamespace }
         : sc,
     )
-    if (plat?.useOc && merged.multipath.enabled) {
-      merged.multipath.includeMachineConfig = true
-      merged.multipath.includeConf = false
-    } else if (!plat?.useOc) {
-      merged.multipath.includeMachineConfig = false
-      if (merged.multipath.enabled) merged.multipath.includeConf = true
+    // Topology + multipath delivery flags (do not force MachineConfig on all useOc)
+    if (merged.openshiftTopology !== 'classic' && merged.openshiftTopology !== 'hosted') {
+      merged.openshiftTopology = defaultOpenShiftTopology(merged.platform)
+    } else if (!parsed.openshiftTopology && plat?.useOc) {
+      merged.openshiftTopology = defaultOpenShiftTopology(merged.platform)
+    }
+    const needsDm =
+      merged.connectionType === 'fc' || merged.connectionType === 'iscsi'
+    const delivery =
+      merged.multipath.enabled && needsDm
+        ? effectiveMultipathDelivery({
+            platform: merged.platform,
+            openshiftTopology: merged.openshiftTopology,
+            needsDm: true,
+          })
+        : 'none'
+    const flags = multipathFlagsForDelivery(delivery)
+    merged.multipath = {
+      ...merged.multipath,
+      ...flags,
+      alreadyApplied: !!merged.multipath.alreadyApplied,
     }
     // Coerce connection types against node environment + StorageClass kind limits
     const env = merged.nodeEnvironment || 'bare-metal'
@@ -201,6 +222,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       if (step.id === 'console') {
         return state.components.consolePlugin && PLATFORMS[state.platform].supportsConsolePlugin
       }
+      if (step.id === 'quickstart') return state.storageClassesEnabled
       return true
     }).map((step) => {
       if (step.id === 'prerequisites-checklist' && !state.multipath.enabled) {
@@ -218,7 +240,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         group: step.group,
       }
     })
-  }, [state.components, state.platform, state.multipath.enabled])
+  }, [state.components, state.platform, state.multipath.enabled, state.storageClassesEnabled])
 
   const stepIdRef = useRef(visibleSteps[0]?.id ?? 'platform')
   useEffect(() => {

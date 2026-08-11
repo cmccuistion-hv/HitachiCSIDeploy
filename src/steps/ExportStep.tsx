@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
+import { storageArtifactsInvalidReason, storageArtifactsValid } from '../catalog/validation'
 import type { WizardState } from '../catalog/types'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
@@ -62,6 +63,8 @@ export function ExportStep() {
     }
   }, [files, activePath])
 
+  const storageExportBlocked = !storageArtifactsValid(state)
+  const storageExportReason = storageExportBlocked ? storageArtifactsInvalidReason(state) : null
   const guide = buildGuide(state, files, cmd)
   const current = files.find((f) => f.path === activePath) || files[0]
   const grouped = FILE_GROUPS.map((g) => ({
@@ -99,7 +102,12 @@ export function ExportStep() {
         title="Actions"
         actions={
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-primary" onClick={downloadZip}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={storageExportBlocked}
+              onClick={downloadZip}
+            >
               Download ZIP
             </button>
             <CopyButton text={guide} label="Copy install guide" />
@@ -124,13 +132,17 @@ export function ExportStep() {
           </div>
         }
       >
-        <Callout variant="ok">
-          Generated {files.length} files for <strong>{plat.displayName}</strong> / CSI Driver{' '}
-          <strong>{state.versions.driver}</strong>. Upstream templates:{' '}
-          <a href={REPO.githubUrl} target="_blank" rel="noreferrer">
-            {REPO.owner}/{REPO.name}
-          </a>
-        </Callout>
+        {storageExportReason ? (
+          <Callout variant="warn">{storageExportReason}</Callout>
+        ) : (
+          <Callout variant="ok">
+            Generated {files.length} files for <strong>{plat.displayName}</strong> / CSI Driver{' '}
+            <strong>{state.versions.driver}</strong>. Upstream templates:{' '}
+            <a href={REPO.githubUrl} target="_blank" rel="noreferrer">
+              {REPO.owner}/{REPO.name}
+            </a>
+          </Callout>
+        )}
       </Section>
 
       <Section title="Install guide">
@@ -245,11 +257,26 @@ export function ExportStep() {
 
 function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): string {
   const plat = PLATFORMS[state.platform]
+  const hasQuickstart =
+    state.storageClassesEnabled || files.some((f) => f.group === 'quickstart')
+  const storageFiles = files.filter((f) => f.group === 'storage')
+
+  const installShTail = hasQuickstart
+    ? 'then storage Secrets / StorageClass / test PVC.'
+    : 'then storage Secrets (if generated). StorageClass and test PVC are not included — add your own after the driver is READY.'
+
   const lines: string[] = [
     '# Hitachi CSI Deployment Guide',
     '',
     `Platform: ${plat.displayName} ${state.platformVersion}`,
     `Worker nodes: ${state.nodeEnvironment === 'virtual-machine' ? 'Virtual machine' : 'Bare metal'}`,
+    plat.useOc
+      ? `Control plane: ${
+          state.openshiftTopology === 'hosted'
+            ? 'Hosted or HCP (DaemonSet)'
+            : 'Self-managed (MachineConfig)'
+        }`
+      : '',
     `Connection: ${state.connectionType}`,
     `CSI Driver: ${state.versions.driver}`,
     state.components.replication ? `Replication: ${state.versions.replication}` : '',
@@ -257,9 +284,21 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     '',
     '## After install',
     '',
-    '1. Prerequisites: finish this wizard and download the ZIP. On OpenShift you may apply the multipath MachineConfig early (while finishing the wizard) or let install.sh apply it.',
-    '2. Run `./install.sh` — skips multipath apply if already done / detected; otherwise applies MachineConfig first (node reboots), then prompts for OperatorHub CSI, then Secrets / StorageClass / test PVC.',
-    '3. Confirm PVC Bound and test Pod Running.',
+    plat.useOc
+      ? state.multipath.includeDaemonSet
+        ? '1. Prerequisites: finish this wizard and download the ZIP. On hosted/HCP OpenShift you may apply the multipath DaemonSet early or let install.sh apply it.'
+        : '1. Prerequisites: finish this wizard and download the ZIP. On OpenShift you may apply the multipath MachineConfig early (while finishing the wizard) or let install.sh apply it.'
+      : '1. Prerequisites: finish this wizard and download the ZIP. Install multipath on workers if required, then run install.sh.',
+    plat.operatorHub
+      ? state.multipath.includeDaemonSet
+        ? `2. Run \`./install.sh\` — multipath DaemonSet (if enabled), then OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
+        : state.multipath.includeMachineConfig
+          ? `2. Run \`./install.sh\` — multipath MachineConfig (if enabled), then OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
+          : `2. Run \`./install.sh\` — OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
+      : hasQuickstart
+        ? '2. Run `./install.sh` — applies operator YAML / driver CR, storage Secrets, StorageClass, and test PVC.'
+        : '2. Run `./install.sh` — applies operator YAML / driver CR, and storage Secrets (if generated). Add StorageClass and test workloads separately.',
+    hasQuickstart ? '3. Confirm PVC Bound and test Pod Running.' : '',
     '',
   ]
 
@@ -274,6 +313,16 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
         '',
         '> **Reboots:** Applying MachineConfig **reboots nodes** in the pool (rolling). Wait until',
         '> `UPDATED=True` / `UPDATING=False` before installing the CSI Driver.',
+        '',
+      )
+    } else if (plat.useOc && state.multipath.includeDaemonSet) {
+      lines.push(
+        '- Hosted/HCP DaemonSet under `00-prereq/` writing multipath.conf and enabling multipathd',
+        state.multipath.alreadyApplied
+          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the DaemonSet exists).'
+          : '- **Apply path:** optional early `oc apply` during Prerequisites, or let `install.sh` apply (auto-skips if DaemonSet exists).',
+        '',
+        '> No MachineConfigPool reboot cycle. Confirm multipathd on workers before CSI Driver install.',
         '',
       )
     } else if (!plat.useOc && state.multipath.includeConf) {
@@ -294,14 +343,12 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     lines.push(
       '## Install CSI Driver (OpenShift OperatorHub)',
       '',
-      '1. Open OperatorHub / Software Catalog.',
-      '2. Search **Hitachi Storage Plug-in for Containers**.',
-      `3. Install into namespace \`${state.operatorNamespace}\` with **Manual** update approval.`,
-      '4. Wait for Operator status Succeeded.',
-      `5. Create the CSI Driver instance in the same namespace (\`${state.driverNamespace}\`), or apply \`02-driver/hspc-cr.yaml\`.`,
-      '6. Verify:',
+      '`install.sh` applies OLM Namespace / OperatorGroup / Subscription (`hspc-operator` from',
+      '`certified-operators`, channel `stable`, **Manual** update approval), approves the day-0',
+      'InstallPlan, waits for CSV Succeeded, applies `02-driver/hspc-cr.yaml`, and waits until READY.',
       '',
       '```bash',
+      `${cmd} get csv -n ${state.operatorNamespace}`,
       `${cmd} get hspc -n ${state.driverNamespace}`,
       '```',
       '',
@@ -320,14 +367,19 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     )
   }
 
-  lines.push(
-    '## Apply storage configuration',
-    '',
-    '```bash',
-    ...files.filter((f) => f.group === 'storage').map((f) => `${cmd} apply -f ${f.path}`),
-    '```',
-    '',
-  )
+  if (storageFiles.length) {
+    lines.push(
+      '## Apply storage configuration',
+      '',
+      hasQuickstart
+        ? ''
+        : 'StorageClass generation is off in this export — apply Secrets only, then create StorageClasses separately.',
+      '```bash',
+      ...storageFiles.map((f) => `${cmd} apply -f ${f.path}`),
+      '```',
+      '',
+    )
+  }
 
   if (state.components.replication) {
     lines.push(
@@ -354,20 +406,22 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     lines.push('## OpenShift Console Plugin', '', 'See `05-console/README.md`.', '')
   }
 
-  lines.push(
-    '## Test volume (smoke check)',
-    '',
-    '`install.sh` applies these automatically. To re-apply or verify by hand:',
-    '',
-    '```bash',
-    `${cmd} apply -f 06-quickstart/pvc.yaml`,
-    `${cmd} wait --for=jsonpath='{.status.phase}'=Bound pvc/${state.quickstart.pvcName} --timeout=180s`,
-    `${cmd} apply -f 06-quickstart/pod.yaml`,
-    `${cmd} get pvc ${state.quickstart.pvcName}`,
-    `${cmd} get pod ${state.quickstart.podName}`,
-    '```',
-    '',
-  )
+  if (hasQuickstart) {
+    lines.push(
+      '## Test volume (smoke check)',
+      '',
+      '`install.sh` applies these automatically. To re-apply or verify by hand:',
+      '',
+      '```bash',
+      `${cmd} apply -f 06-quickstart/pvc.yaml`,
+      `${cmd} wait --for=jsonpath='{.status.phase}'=Bound pvc/${state.quickstart.pvcName} --timeout=180s`,
+      `${cmd} apply -f 06-quickstart/pod.yaml`,
+      `${cmd} get pvc ${state.quickstart.pvcName}`,
+      `${cmd} get pod ${state.quickstart.podName}`,
+      '```',
+      '',
+    )
+  }
 
   if (state.airGapped) {
     lines.push(

@@ -2,6 +2,7 @@ import type { ComponentId } from './components'
 import type {
   ConnectionType,
   NodeEnvironment,
+  OpenShiftTopology,
   PlatformId,
   StorageClassKind,
   StorageEfficiency,
@@ -13,6 +14,7 @@ export type {
   ComponentId,
   ConnectionType,
   NodeEnvironment,
+  OpenShiftTopology,
   PlatformId,
   StorageClassKind,
   StorageEfficiency,
@@ -142,17 +144,22 @@ export interface MultipathConfig {
   enabled: boolean
   /**
    * Kubernetes / RKE2 / EKS: include standalone multipath.conf in the export.
-   * Always false on OpenShift / ROSA (conf is embedded in MachineConfig only).
+   * Always false on OpenShift / ROSA (conf is embedded in MachineConfig or DaemonSet).
    */
   includeConf: boolean
   /**
-   * OpenShift / ROSA only: generate MachineConfig wrapping the conf.
-   * Always false on Kubernetes / RKE2 / EKS.
+   * Classic OpenShift / ROSA only: generate MachineConfig wrapping the conf.
+   * False on hosted/HCP and on Kubernetes / RKE2 / EKS.
    */
   includeMachineConfig: boolean
   /**
-   * OpenShift / ROSA: user already applied the MachineConfig (e.g. from Prerequisites preview).
-   * install.sh skips apply when true or when the MC already exists on the cluster.
+   * Hosted / HCP OpenShift / ROSA: generate DaemonSet wrapping the conf.
+   * False on classic OpenShift and on Kubernetes / RKE2 / EKS.
+   */
+  includeDaemonSet: boolean
+  /**
+   * OpenShift / ROSA: user already applied multipath delivery (MachineConfig or DaemonSet).
+   * install.sh skips apply when true or when the target objects already exist.
    */
   alreadyApplied: boolean
   machineConfigName: string
@@ -165,6 +172,11 @@ export interface WizardState {
   version: number
   platform: PlatformId
   platformVersion: string
+  /**
+   * OpenShift / ROSA control plane topology. Ignored for other platforms.
+   * classic → MachineConfig; hosted → DaemonSet.
+   */
+  openshiftTopology: OpenShiftTopology
   /** Bare metal vs VM — restricts FC / NVMe-FC (guide server requirements) */
   nodeEnvironment: NodeEnvironment
   connectionType: ConnectionType
@@ -187,6 +199,8 @@ export interface WizardState {
   multipath: MultipathConfig
   storageSystems: StorageSystemConfig[]
   storageClasses: StorageClassConfig[]
+  /** When false, skip StorageClass / snapshot / quickstart generation and validation */
+  storageClassesEnabled: boolean
   snapshotClass: SnapshotClassConfig
   replication: ReplicationConfig
   metrics: MetricsConfig
@@ -204,6 +218,7 @@ export function createDefaultState(): WizardState {
     version: WIZARD_STATE_VERSION,
     platform: 'openshift',
     platformVersion: '4.22',
+    openshiftTopology: 'classic',
     nodeEnvironment: 'bare-metal',
     connectionType: 'fc',
     airGapped: false,
@@ -227,6 +242,7 @@ export function createDefaultState(): WizardState {
       enabled: true,
       includeConf: false,
       includeMachineConfig: true,
+      includeDaemonSet: false,
       alreadyApplied: false,
       machineConfigName: 'hitachi-csi-multipath',
       machineConfigRole: 'worker',
@@ -262,6 +278,7 @@ export function createDefaultState(): WizardState {
         allowVolumeExpansion: true,
       },
     ],
+    storageClassesEnabled: true,
     snapshotClass: {
       enabled: true,
       name: 'hitachi-csi-snapshot',

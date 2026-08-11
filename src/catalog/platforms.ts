@@ -4,6 +4,9 @@ export type PlatformId = 'openshift' | 'kubernetes' | 'rke2' | 'eks' | 'rosa'
 export type ConnectionType = 'fc' | 'iscsi' | 'nvme-fc' | 'nvme-tcp'
 /** Worker node form factor — HSPC server requirements restrict protocols per environment */
 export type NodeEnvironment = 'bare-metal' | 'virtual-machine'
+/** OpenShift/ROSA control plane — drives multipath delivery (MachineConfig vs DaemonSet) */
+export type OpenShiftTopology = 'classic' | 'hosted'
+export type MultipathDelivery = 'machineconfig' | 'daemonset' | 'conf' | 'none'
 export type StorageFamily = 'vsp' | 'vsp-one-sds-block'
 export type StorageClassKind = 'standard' | 'stretched' | 'stretched-adr' | 'vsp-one-sds-block'
 export type StorageEfficiency = 'Disabled' | 'Compression' | 'CompressionDeduplication'
@@ -21,6 +24,34 @@ export interface PlatformDef {
   /** Install CSI Driver via OperatorHub / Software Catalog */
   operatorHub: boolean
   multipathHint: 'machineconfig' | 'conf' | 'daemonset'
+}
+
+export function defaultOpenShiftTopology(platform: PlatformId): OpenShiftTopology {
+  return platform === 'rosa' ? 'hosted' : 'classic'
+}
+
+/** Resolve multipath packaging from platform + topology + whether dm-multipath is needed. */
+export function effectiveMultipathDelivery(opts: {
+  platform: PlatformId
+  openshiftTopology: OpenShiftTopology
+  needsDm: boolean
+}): MultipathDelivery {
+  if (!opts.needsDm) return 'none'
+  const plat = PLATFORMS[opts.platform]
+  if (!plat.useOc) return 'conf'
+  return opts.openshiftTopology === 'hosted' ? 'daemonset' : 'machineconfig'
+}
+
+export function multipathFlagsForDelivery(delivery: MultipathDelivery): {
+  includeMachineConfig: boolean
+  includeDaemonSet: boolean
+  includeConf: boolean
+} {
+  return {
+    includeMachineConfig: delivery === 'machineconfig',
+    includeDaemonSet: delivery === 'daemonset',
+    includeConf: delivery === 'conf',
+  }
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformDef> = {

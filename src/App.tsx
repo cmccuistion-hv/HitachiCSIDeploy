@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ThemeControls } from './components/ThemeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
+import { storageArtifactsInvalidReason, storageArtifactsValid } from './catalog/validation'
 import { useWizard } from './state/WizardContext'
 import { buildNavEntries, footerStepLabel, type NavEntry } from './state/steps'
 import { PlatformStep } from './steps/PlatformStep'
@@ -145,7 +146,7 @@ function StepBody({ id }: { id: string }) {
 }
 
 export default function App() {
-  const { visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
+  const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
   const { palette, mode, setPalette, setMode, headerLight } = useTheme()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
@@ -157,6 +158,9 @@ export default function App() {
     [visibleSteps, stepIndex],
   )
   const footerLabel = footerStepLabel(navEntries, stepIndex)
+  const storageContinueBlocked =
+    current?.id === 'storageclasses' && !storageArtifactsValid(state)
+  const storageContinueReason = storageContinueBlocked ? storageArtifactsInvalidReason(state) : null
 
   useEffect(() => {
     const el = mainScrollRef.current
@@ -302,14 +306,27 @@ export default function App() {
           >
             Back
           </button>
-          <span style={{ fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-            {footerLabel ||
-              `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`}
+          <span
+            style={{
+              fontSize: '0.85rem',
+              color: 'var(--hv-text-subtle)',
+              textAlign: 'center',
+              flex: 1,
+            }}
+          >
+            {storageContinueReason ? (
+              <span style={{ color: 'var(--hv-warn-fg, var(--hv-text-subtle))' }}>
+                {storageContinueReason}
+              </span>
+            ) : (
+              footerLabel ||
+              `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`
+            )}
           </span>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={stepIndex >= visibleSteps.length - 1}
+            disabled={stepIndex >= visibleSteps.length - 1 || storageContinueBlocked}
             onClick={() => setStepIndex(stepIndex + 1)}
           >
             Continue

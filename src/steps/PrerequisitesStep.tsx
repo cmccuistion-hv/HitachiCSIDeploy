@@ -1,4 +1,12 @@
-import { FIREWALL_DOMAINS, MULTIPATH_CONF, PLATFORMS, REQUIRED_LICENSES } from '../catalog/platforms'
+import {
+  FIREWALL_DOMAINS,
+  MULTIPATH_CONF,
+  PLATFORMS,
+  REQUIRED_LICENSES,
+  effectiveMultipathDelivery,
+  multipathFlagsForDelivery,
+  type OpenShiftTopology,
+} from '../catalog/platforms'
 import { CONNECTION_TYPES } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import {
@@ -6,8 +14,9 @@ import {
   generateMultipathMachineConfigs,
   getMultipathConf,
 } from '../generator/multipath'
+import { generateMultipathDaemonSetYaml } from '../generator/multipathDaemonSet'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, CopyButton, Field, Section } from '../components/ui'
+import { Callout, ChoiceCard, CodeBlock, CopyButton, Field, Section } from '../components/ui'
 
 /** Prerequisites 3.1 — multipath packaging / optional early apply */
 export function PrerequisitesMultipathStep() {
@@ -17,7 +26,9 @@ export function PrerequisitesMultipathStep() {
   const needsDm = conn.multipath === 'dm-multipath'
   const mp = state.multipath
   const confText = getMultipathConf(mp.customConf || undefined)
-  const showMachineConfig = mp.enabled && plat.useOc && mp.includeMachineConfig
+  const showMachineConfig = mp.enabled && mp.includeMachineConfig
+  const showDaemonSet = mp.enabled && mp.includeDaemonSet
+  const enableIscsi = state.connectionType === 'iscsi'
 
   const mcPreview =
     showMachineConfig && mp.machineConfigRole !== 'all'
@@ -36,15 +47,78 @@ export function PrerequisitesMultipathStep() {
             .join('\n')
         : ''
 
+  const dsPreview = showDaemonSet
+    ? generateMultipathDaemonSetYaml({
+        name: mp.machineConfigName,
+        conf: mp.customConf || undefined,
+        enableIscsi,
+      })
+    : ''
+
+  const ocDeliveryLabel = showDaemonSet ? 'DaemonSet' : 'MachineConfig'
+
   return (
     <div className="step-panel">
       <h2>Multipath</h2>
       <p className="lede">
-        Shape Device Mapper Multipath for the export package. This page does not talk to the cluster — you can
-        optionally apply the MachineConfig preview from a terminal while you finish the wizard.
+        Choose how multipath reaches the nodes, then shape the export package. This page does not talk to the
+        cluster — you can optionally apply the preview from a terminal while you finish the wizard.
       </p>
 
       <Callout variant="ok">{HELP.configuratorVsApply}</Callout>
+
+      {plat.useOc && (
+        <Section title="How to deliver multipath" help={HELP.openshiftTopology}>
+          <div className="card-grid">
+            {(
+              [
+                {
+                  id: 'classic' as OpenShiftTopology,
+                  title: 'Self-managed (MachineConfig)',
+                  description:
+                    'Classic OpenShift/ROSA with Machine Config Operator on the target cluster',
+                },
+                {
+                  id: 'hosted' as OpenShiftTopology,
+                  title: 'Hosted or HCP (DaemonSet)',
+                  description:
+                    'HyperShift / ROSA HCP / guests without MachineConfig — DaemonSet writes multipath.conf',
+                },
+              ] as const
+            ).map((opt) => (
+              <ChoiceCard
+                key={opt.id}
+                title={opt.title}
+                description={opt.description}
+                selected={state.openshiftTopology === opt.id}
+                onClick={() => {
+                  setState((s) => {
+                    const needs = s.connectionType === 'fc' || s.connectionType === 'iscsi'
+                    const delivery = effectiveMultipathDelivery({
+                      platform: s.platform,
+                      openshiftTopology: opt.id,
+                      needsDm: needs && s.multipath.enabled,
+                    })
+                    const flags = multipathFlagsForDelivery(
+                      s.multipath.enabled && needs ? delivery : 'none',
+                    )
+                    const deliveryActive = flags.includeMachineConfig || flags.includeDaemonSet
+                    return {
+                      ...s,
+                      openshiftTopology: opt.id,
+                      multipath: {
+                        ...s.multipath,
+                        ...flags,
+                        alreadyApplied: deliveryActive ? s.multipath.alreadyApplied : false,
+                      },
+                    }
+                  })
+                }}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section title="Multipath configuration" help={HELP.multipath}>
         {!needsDm && (
@@ -59,26 +133,45 @@ export function PrerequisitesMultipathStep() {
             type="checkbox"
             checked={mp.enabled}
             onChange={(e) =>
-              setState((s) => ({
-                ...s,
-                multipath: {
-                  ...s.multipath,
-                  enabled: e.target.checked,
-                  includeConf: e.target.checked && !plat.useOc,
-                  includeMachineConfig: e.target.checked && plat.useOc,
-                  alreadyApplied: e.target.checked && plat.useOc ? s.multipath.alreadyApplied : false,
-                },
-              }))
+              setState((s) => {
+                const on = e.target.checked
+                const delivery = on
+                  ? effectiveMultipathDelivery({
+                      platform: s.platform,
+                      openshiftTopology: s.openshiftTopology,
+                      needsDm: true,
+                    })
+                  : 'none'
+                const flags = multipathFlagsForDelivery(on ? delivery : 'none')
+                return {
+                  ...s,
+                  multipath: {
+                    ...s.multipath,
+                    enabled: on,
+                    ...flags,
+                    alreadyApplied:
+                      on && (flags.includeMachineConfig || flags.includeDaemonSet)
+                        ? s.multipath.alreadyApplied
+                        : false,
+                  },
+                }
+              })
             }
           />
           <div>
             <strong>
               {plat.useOc
-                ? 'Include multipath MachineConfig in the export'
+                ? `Include multipath ${ocDeliveryLabel} in the export`
                 : 'Include multipath.conf in the export'}
             </strong>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-              {plat.useOc ? (
+              {showDaemonSet ? (
+                <>
+                  Packages a DaemonSet that writes the Hitachi <code>multipath.conf</code> on nodes (hosted/HCP).
+                  Apply the preview now or let <code>install.sh</code> apply it after export. Required for Fibre
+                  Channel and iSCSI.
+                </>
+              ) : plat.useOc ? (
                 <>
                   Packages a MachineConfig that embeds the Hitachi <code>multipath-sample.conf</code>. You can
                   apply the preview now (nodes reboot while you finish the wizard) or let{' '}
@@ -97,7 +190,22 @@ export function PrerequisitesMultipathStep() {
 
         {mp.enabled && (
           <>
-            {plat.useOc ? (
+            {showDaemonSet ? (
+              mp.alreadyApplied ? (
+                <Callout variant="ok">
+                  <strong>Already applied:</strong> <code>install.sh</code> will skip applying the DaemonSet
+                  (and will also skip if it detects the same name). YAML stays in <code>00-prereq/</code> for
+                  reference.
+                </Callout>
+              ) : (
+                <Callout variant="ok">
+                  <strong>Optional early apply:</strong> copy the DaemonSet preview below and{' '}
+                  <code>oc apply -f …</code> from a machine with cluster access now. Check the box when done so{' '}
+                  <code>install.sh</code> skips re-apply. Or leave it unchecked and let <code>install.sh</code>{' '}
+                  apply after export. Use this path for HyperShift / HCP guests without MachineConfig.
+                </Callout>
+              )
+            ) : plat.useOc ? (
               mp.alreadyApplied ? (
                 <Callout variant="ok">
                   <strong>Already applied:</strong> <code>install.sh</code> will skip applying the MachineConfig
@@ -121,7 +229,7 @@ export function PrerequisitesMultipathStep() {
               </Callout>
             )}
 
-            {plat.useOc && (
+            {showMachineConfig && (
               <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
                 <Field
                   label="MachineConfig name"
@@ -162,10 +270,16 @@ export function PrerequisitesMultipathStep() {
             )}
 
             <Field
-              label={plat.useOc ? 'multipath.conf (embedded in MachineConfig)' : 'multipath.conf contents'}
+              label={
+                showDaemonSet
+                  ? 'multipath.conf (embedded in DaemonSet)'
+                  : plat.useOc
+                    ? 'multipath.conf (embedded in MachineConfig)'
+                    : 'multipath.conf contents'
+              }
               hint={
                 plat.useOc
-                  ? 'Hitachi CSI sample defaults. Edits update the MachineConfig payload (keep user_friendly_names yes). If you already applied, re-apply after editing or install.sh will skip.'
+                  ? 'Hitachi CSI sample defaults. Edits update the export payload (keep user_friendly_names yes). If you already applied, re-apply after editing or install.sh will skip.'
                   : 'Hitachi CSI sample defaults. Edit if needed; install on workers after you download the ZIP (keep user_friendly_names yes).'
               }
             >
@@ -184,6 +298,7 @@ export function PrerequisitesMultipathStep() {
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
               {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
               {showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig preview" />}
+              {showDaemonSet && <CopyButton text={dsPreview} label="Copy DaemonSet preview" />}
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -241,13 +356,6 @@ export function PrerequisitesMultipathStep() {
                       <strong>worker</strong> unless CSI must run on masters.
                     </>
                   ) : null}
-                  {plat.id === 'rosa' && (
-                    <>
-                      {' '}
-                      On ROSA, if MachineConfig is restricted, use the upstream{' '}
-                      <code>rosa-daemonset.yaml</code> approach instead.
-                    </>
-                  )}
                 </Callout>
                 <p
                   style={{
@@ -271,6 +379,58 @@ oc get mcp -w
                 )}
                 <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
                   {mcPreview}
+                </CodeBlock>
+              </>
+            )}
+
+            {showDaemonSet && (
+              <>
+                <label className="toggle-row" style={{ margin: '0.85rem 0' }}>
+                  <input
+                    type="checkbox"
+                    checked={mp.alreadyApplied}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        multipath: { ...s.multipath, alreadyApplied: e.target.checked },
+                      }))
+                    }
+                  />
+                  <div>
+                    <strong>I already applied this DaemonSet on the cluster</strong>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                      Tells <code>install.sh</code> to skip apply. The script also auto-skips if the DaemonSet
+                      already exists.
+                    </p>
+                  </div>
+                </label>
+
+                <Callout variant="warn">
+                  <strong>No MachineConfigPool reboot cycle.</strong> The DaemonSet init writes{' '}
+                  <code>/etc/multipath.conf</code> and enables <code>multipathd</code> on each node. Confirm
+                  multipath is healthy before creating volumes. Prefer Hosted/HCP topology when the guest API
+                  has no MachineConfig.
+                </Callout>
+                <p
+                  style={{
+                    margin: '0.75rem 0 0.35rem',
+                    fontSize: '0.85rem',
+                    color: 'var(--hv-text-subtle)',
+                  }}
+                >
+                  {mp.alreadyApplied
+                    ? 'DaemonSet YAML kept in 00-prereq/ for reference:'
+                    : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                </p>
+                {mp.alreadyApplied ? null : (
+                  <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
+                    {`# From a host with oc access (optional early apply):
+oc apply -f multipath-daemonset.yaml
+oc rollout status ds/hitachi-csi-multipath -n kube-system`}
+                  </CodeBlock>
+                )}
+                <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
+                  {dsPreview}
                 </CodeBlock>
               </>
             )}
@@ -298,6 +458,8 @@ export function PrerequisitesChecklistStep() {
     cmd,
     mp.enabled,
     mp.alreadyApplied,
+    state.openshiftTopology,
+    mp.includeDaemonSet,
   )
 
   const toggle = (id: string) => {
@@ -328,15 +490,22 @@ export function PrerequisitesChecklistStep() {
               type="button"
               className="btn btn-secondary"
               onClick={() =>
-                setState((s) => ({
-                  ...s,
-                  multipath: {
-                    ...s.multipath,
-                    enabled: true,
-                    includeConf: !plat.useOc,
-                    includeMachineConfig: plat.useOc,
-                  },
-                }))
+                setState((s) => {
+                  const delivery = effectiveMultipathDelivery({
+                    platform: s.platform,
+                    openshiftTopology: s.openshiftTopology,
+                    needsDm: true,
+                  })
+                  const flags = multipathFlagsForDelivery(delivery)
+                  return {
+                    ...s,
+                    multipath: {
+                      ...s.multipath,
+                      enabled: true,
+                      ...flags,
+                    },
+                  }
+                })
               }
             >
               Enable multipath
@@ -405,6 +574,8 @@ function buildPrereqs(
   cmd: string,
   multipathEnabled: boolean,
   multipathAlreadyApplied: boolean,
+  _openshiftTopology: string,
+  includeDaemonSet: boolean,
 ): { id: string; title: string; body: string; snippet?: string }[] {
   const plat = PLATFORMS[platform as keyof typeof PLATFORMS]
   const items: { id: string; title: string; body: string; snippet?: string }[] = [
@@ -427,7 +598,20 @@ function buildPrereqs(
   ]
 
   if (connection === 'fc' || connection === 'iscsi' || multipathEnabled) {
-    if (plat.useOc) {
+    if (plat.useOc && includeDaemonSet) {
+      items.push({
+        id: 'multipath',
+        title: multipathAlreadyApplied
+          ? 'Multipath DaemonSet already applied'
+          : 'Plan multipath DaemonSet (early apply or install.sh)',
+        body: multipathAlreadyApplied
+          ? 'You marked the DaemonSet as already applied. install.sh will skip apply (and auto-detect an existing DaemonSet). Confirm multipathd on workers before volumes.'
+          : 'Hosted/HCP path: oc apply the DaemonSet preview on the Multipath substep, or leave it for install.sh after export. No MachineConfigPool reboot cycle.',
+        snippet: multipathAlreadyApplied
+          ? `${cmd} get ds hitachi-csi-multipath -n kube-system`
+          : undefined,
+      })
+    } else if (plat.useOc) {
       items.push({
         id: 'multipath',
         title: multipathAlreadyApplied
@@ -484,8 +668,8 @@ function buildPrereqs(
   if (plat.operatorHub) {
     items.push({
       id: 'operatorhub',
-      title: 'OperatorHub / Software Catalog reachable',
-      body: 'After multipath is in place, you will install Hitachi Storage Plug-in for Containers from OperatorHub with Manual approval (install.sh prompts you).',
+      title: 'OperatorHub / certified-operators catalog reachable',
+      body: 'install.sh installs the CSI Driver via OLM (Subscription with Manual update approval). On air-gapped clusters, mirror certified-operators first.',
     })
   }
 

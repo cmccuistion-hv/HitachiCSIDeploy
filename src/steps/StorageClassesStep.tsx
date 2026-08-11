@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   CONNECTION_TYPES,
   coerceConnectionType,
@@ -6,7 +7,8 @@ import {
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import type { ConnectionType, NodeEnvironment, StorageClassConfig, StorageClassKind } from '../catalog/types'
-import { generateSnapshotClass, generateStorageClass } from '../generator/yaml'
+import { validateStorageClass } from '../catalog/validation'
+import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
@@ -58,6 +60,22 @@ export function StorageClassesStep() {
   const previewSc = state.storageClasses[0]
   const canImmutableSnapshots = supportsImmutableSnapshots(primary)
 
+  useEffect(() => {
+    if (!state.storageClassesEnabled) return
+    const serial = primary?.serial?.trim()
+    if (!serial) return
+    const needsUpdate = state.storageClasses.some(
+      (sc) => sc.kind === 'standard' && !sc.serialNumber?.trim(),
+    )
+    if (!needsUpdate) return
+    setState((s) => ({
+      ...s,
+      storageClasses: s.storageClasses.map((sc) =>
+        sc.kind === 'standard' && !sc.serialNumber?.trim() ? { ...sc, serialNumber: serial } : sc,
+      ),
+    }))
+  }, [state.storageClassesEnabled, primary?.serial, state.storageClasses, setState])
+
   const updateSc = (id: string, patch: Partial<StorageClassConfig>) => {
     setState((s) => ({
       ...s,
@@ -86,7 +104,48 @@ export function StorageClassesStep() {
 
       <Callout>{HELP.secretVsStorageClass.storageClassCallout}</Callout>
 
-      {state.storageClasses.map((sc) => {
+      <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
+        <input
+          type="checkbox"
+          checked={state.storageClassesEnabled}
+          onChange={(e) => {
+            const on = e.target.checked
+            if (!on) {
+              setState((s) => ({
+                ...s,
+                storageClassesEnabled: false,
+                snapshotClass: { ...s.snapshotClass, enabled: false },
+              }))
+            } else {
+              setState((s) => ({
+                ...s,
+                storageClassesEnabled: true,
+                storageClasses:
+                  s.storageClasses.length >= 1
+                    ? s.storageClasses
+                    : [defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)],
+              }))
+            }
+          }}
+        />
+        <div>
+          <strong>Generate StorageClass(es)</strong>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+            {HELP.storageClassesEnabled}
+          </p>
+        </div>
+      </label>
+
+      {!state.storageClassesEnabled && (
+        <Callout>
+          StorageClass, VolumeSnapshotClass, and test PVC/Pod manifests are skipped in the download when
+          generation is turned off.
+        </Callout>
+      )}
+
+      {state.storageClassesEnabled &&
+        state.storageClasses.map((sc) => {
+        const errors = validateStorageClass(sc, { storageSystems: state.storageSystems })
         const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
         const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
         const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
@@ -139,7 +198,11 @@ export function StorageClassesStep() {
                   <option value="vsp-one-sds-block">VSP One SDS Block</option>
                 </select>
               </Field>
-              <Field label="Name" hint="Kubernetes StorageClass metadata.name referenced by PVCs.">
+              <Field
+                label="Name"
+                hint="Kubernetes StorageClass metadata.name referenced by PVCs."
+                error={errors.name}
+              >
                 <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
               </Field>
               <Field label="Connection type" help={HELP.protocolMultipath}>
@@ -207,14 +270,14 @@ export function StorageClassesStep() {
 
             {sc.kind === 'standard' && (
               <div className="field-grid" style={{ marginTop: '1rem' }}>
-                <Field label="Serial number" hint="Storage system serial number.">
+                <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
                   <input
-                    value={sc.serialNumber || primary?.serial || ''}
+                    value={sc.serialNumber || ''}
                     onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
                     placeholder={primary?.serial || '54321'}
                   />
                 </Field>
-                <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning.">
+                <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning." error={errors.poolID}>
                   <input
                     value={sc.poolID || ''}
                     onChange={(e) => updateSc(sc.id, { poolID: e.target.value })}
@@ -232,7 +295,7 @@ export function StorageClassesStep() {
                         </Callout>
                       </div>
                     )}
-                    <Field label="Port ID(s)" hint={portIdHint}>
+                    <Field label="Port ID(s)" hint={portIdHint} error={errors.portID}>
                       <input
                         value={sc.portID || ''}
                         onChange={(e) => updateSc(sc.id, { portID: e.target.value })}
@@ -245,6 +308,7 @@ export function StorageClassesStep() {
                   <Field
                     label="NVMe subsystem ID"
                     hint="Required for NVMe-FC and NVMe/TCP — Port ID is not used."
+                    error={errors.nvmSubsystemID}
                   >
                     <input
                       value={sc.nvmSubsystemID || ''}
@@ -335,31 +399,47 @@ export function StorageClassesStep() {
                   </Callout>
                 )}
                 <div className="field-grid" style={{ marginTop: '1rem' }}>
-                  <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials.">
+                  <Field
+                    label="Stretched secret name"
+                    hint="Secret that holds primary and secondary array credentials."
+                    error={errors.stretchedSecretName}
+                  >
                     <input
                       value={sc.stretchedSecretName || ''}
                       onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })}
                     />
                   </Field>
-                  <Field label="Quorum ID" hint="Quorum disk ID for GAD.">
+                  <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
                     <input
                       value={sc.quorumID || ''}
                       onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Copy group name" hint="GAD copy group name on the arrays.">
+                  <Field
+                    label="Copy group name"
+                    hint="GAD copy group name on the arrays."
+                    error={errors.copyGroupName}
+                  >
                     <input
                       value={sc.copyGroupName || ''}
                       onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })}
                     />
                   </Field>
-                  <Field label="Consistency group ID" hint="Consistency group identifier for coordinated pairs.">
+                  <Field
+                    label="Consistency group ID"
+                    hint="Consistency group identifier for coordinated pairs."
+                    error={errors.consistencyGroupId}
+                  >
                     <input
                       value={sc.consistencyGroupId || ''}
                       onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })}
                     />
                   </Field>
-                  <Field label="Primary pool ID" hint="HDP pool on the primary array.">
+                  <Field
+                    label="Primary pool ID"
+                    hint="HDP pool on the primary array."
+                    error={errors.primaryPoolID}
+                  >
                     <input
                       value={sc.primaryPoolID || ''}
                       onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })}
@@ -372,6 +452,7 @@ export function StorageClassesStep() {
                         ? 'Prefer a single primary port when wizard multipath packaging is off (e.g. CL1-A).'
                         : 'Comma-separated primary ports (e.g. CL1-A,CL2-A).'
                     }
+                    error={errors.primaryPortID}
                   >
                     <input
                       value={sc.primaryPortID || ''}
@@ -379,7 +460,11 @@ export function StorageClassesStep() {
                       placeholder={portIdPlaceholder}
                     />
                   </Field>
-                  <Field label="Secondary pool ID" hint="HDP pool on the secondary array.">
+                  <Field
+                    label="Secondary pool ID"
+                    hint="HDP pool on the secondary array."
+                    error={errors.secondaryPoolID}
+                  >
                     <input
                       value={sc.secondaryPoolID || ''}
                       onChange={(e) => updateSc(sc.id, { secondaryPoolID: e.target.value })}
@@ -392,6 +477,7 @@ export function StorageClassesStep() {
                         ? 'Prefer a single secondary port when wizard multipath packaging is off (e.g. CL1-F).'
                         : 'Comma-separated secondary ports.'
                     }
+                    error={errors.secondaryPortID}
                   >
                     <input
                       value={sc.secondaryPortID || ''}
@@ -441,23 +527,26 @@ export function StorageClassesStep() {
         )
       })}
 
-      <button
-        type="button"
-        className="btn btn-secondary"
-        style={{ marginBottom: '1.25rem' }}
-        onClick={() =>
-          setState((s) => ({
-            ...s,
-            storageClasses: [
-              ...s.storageClasses,
-              defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace),
-            ],
-          }))
-        }
-      >
-        Add StorageClass
-      </button>
+      {state.storageClassesEnabled && (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ marginBottom: '1.25rem' }}
+          onClick={() =>
+            setState((s) => ({
+              ...s,
+              storageClasses: [
+                ...s.storageClasses,
+                defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace),
+              ],
+            }))
+          }
+        >
+          Add StorageClass
+        </button>
+      )}
 
+      {state.storageClassesEnabled && (
       <Section
         title="VolumeSnapshotClass"
         help="Enables CSI volume snapshots. Deletion policy controls whether snapshot content is removed when the VolumeSnapshot is deleted."
@@ -599,13 +688,14 @@ export function StorageClassesStep() {
           </>
         )}
       </Section>
+      )}
 
-      {previewSc && (
+      {state.storageClassesEnabled && previewSc && (
         <Section title="Live YAML preview">
           <CodeBlock className="yaml-preview">{generateStorageClass(previewSc)}</CodeBlock>
           {state.snapshotClass.enabled && (
             <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem' }}>
-              {generateSnapshotClass(state.snapshotClass)}
+              {generateSnapshotClass(state.snapshotClass, snapshotClassOpts(state))}
             </CodeBlock>
           )}
         </Section>

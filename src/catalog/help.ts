@@ -19,7 +19,10 @@ export const HELP = {
     'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
 
   multipath:
-    'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI. On OpenShift/ROSA, apply the MachineConfig early from the preview or let install.sh apply it (skips if already present). On Kubernetes/RKE2/EKS, you install multipath.conf on workers after download.',
+    'Makes multiple paths to the same LUN look like one disk to the OS — required for reliable FC and iSCSI. On self-managed OpenShift/ROSA, apply the MachineConfig early or let install.sh apply it. On hosted/HCP, use the DaemonSet path (no MachineConfig). On Kubernetes/RKE2/EKS, install multipath.conf on workers after download.',
+
+  openshiftTopology:
+    'Self-managed clusters have Machine Config Operator on the API you target. Hosted / HCP (HyperShift, ROSA HCP, many lab guests) often lack MachineConfig — choose DaemonSet so multipath.conf is written on nodes without MCO.',
 
   portIdWithoutMultipath:
     'Wizard multipath packaging is off. Prefer a single Port ID unless worker nodes already have multipathing configured another way.',
@@ -43,6 +46,12 @@ export const HELP = {
 
   configuratorVsApply:
     'This page only builds files. Download the ZIP and run install.sh from a machine that can reach the cluster — the wizard does not apply anything from the browser.',
+
+  storageClassesEnabled:
+    'When off, the package skips StorageClass, VolumeSnapshotClass, and test PVC/Pod. Turn on to generate provisioning profiles.',
+
+  storageClassSerial:
+    'For standard StorageClasses the serial goes on the StorageClass (not the Secret). GAD/stretched serials go on the Secret as primarySerial/secondarySerial.',
 } as const
 
 export const WELCOME_SEEN_KEY = 'hitachi-csi-wizard-welcome-seen'

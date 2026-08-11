@@ -1,3 +1,4 @@
+import { DOCS } from '../catalog/components'
 import { PLATFORMS } from '../catalog/platforms'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
@@ -128,7 +129,10 @@ export function MetricsStep() {
             <strong>Include Prometheus</strong>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
               Deploys Prometheus into the metrics namespace. Turn off if you already run Prometheus
-              elsewhere.
+              elsewhere.{' '}
+              <a href={DOCS.prometheusOverview} target="_blank" rel="noreferrer">
+                What is Prometheus?
+              </a>
             </p>
           </div>
         </label>
@@ -147,10 +151,21 @@ export function MetricsStep() {
             <strong>Include Grafana</strong>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
               Deploys Grafana with the Hitachi dashboard provisioned. Optional if you only need metrics
-              scrape.
+              scrape.{' '}
+              <a href={DOCS.grafanaIntro} target="_blank" rel="noreferrer">
+                What is Grafana?
+              </a>
             </p>
           </div>
         </label>
+        {plat.supportsConsolePlugin && (
+          <Callout>
+            On OpenShift, the <strong>Console Plugin</strong> already shows about 24 hours of metrics in
+            the web console — Grafana is often optional there. For longer historical views with the
+            current Console Plugin release, keep Grafana (or another long-term metrics UI) in addition to
+            the plugin.
+          </Callout>
+        )}
         {state.metrics.deployGrafana && !state.metrics.deployPrometheus && (
           <>
             <div className="field-grid" style={{ marginTop: '0.75rem' }}>

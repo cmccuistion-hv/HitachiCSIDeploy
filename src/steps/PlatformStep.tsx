@@ -4,35 +4,39 @@ import {
   coerceConnectionType,
   connectionsForNodeEnvironment,
   connectionsForStorageClassKind,
+  defaultOpenShiftTopology,
+  effectiveMultipathDelivery,
+  multipathFlagsForDelivery,
   type NodeEnvironment,
+  type OpenShiftTopology,
   type PlatformId,
 } from '../catalog/platforms'
+import type { MultipathConfig } from '../catalog/types'
 import { HELP } from '../catalog/help'
 import { useWizard } from '../state/WizardContext'
 import { Callout, ChoiceCard, Field, Section } from '../components/ui'
 
-function applyConnectionSideEffects(
+function applyMultipathSideEffects(
   connectionId: ReturnType<typeof coerceConnectionType>,
   platform: PlatformId,
-  multipath: {
-    enabled: boolean
-    includeConf: boolean
-    includeMachineConfig: boolean
-    alreadyApplied?: boolean
-  },
+  openshiftTopology: OpenShiftTopology,
+  multipath: MultipathConfig,
 ) {
   const needsDm = connectionId === 'fc' || connectionId === 'iscsi'
-  const plat = PLATFORMS[platform]
-  const includeMachineConfig = needsDm && plat.useOc
+  const delivery = effectiveMultipathDelivery({
+    platform,
+    openshiftTopology,
+    needsDm,
+  })
+  const flags = multipathFlagsForDelivery(needsDm ? delivery : 'none')
+  const deliveryActive = flags.includeMachineConfig || flags.includeDaemonSet
   return {
     connectionType: connectionId,
     multipath: {
       ...multipath,
       enabled: needsDm,
-      // OpenShift/ROSA deliver via MachineConfig; other platforms ship loose multipath.conf
-      includeConf: needsDm && !plat.useOc,
-      includeMachineConfig,
-      alreadyApplied: includeMachineConfig ? !!multipath.alreadyApplied : false,
+      ...flags,
+      alreadyApplied: deliveryActive ? !!multipath.alreadyApplied : false,
     },
   }
 }
@@ -65,11 +69,17 @@ export function PlatformStep() {
                 const operatorNs = 'hspc-operator-system'
                 const driverNs = p.operatorHub ? operatorNs : 'kube-system'
                 const prevDriverNs = state.driverNamespace
-                const needsDm =
-                  state.connectionType === 'fc' || state.connectionType === 'iscsi'
+                const topology = p.useOc ? defaultOpenShiftTopology(id) : state.openshiftTopology
+                const side = applyMultipathSideEffects(
+                  state.connectionType,
+                  id,
+                  topology,
+                  state.multipath,
+                )
                 patch({
                   platform: id,
                   platformVersion: p.versions[p.versions.length - 1],
+                  openshiftTopology: topology,
                   operatorNamespace: operatorNs,
                   driverNamespace: driverNs,
                   storageClasses: state.storageClasses.map((sc) =>
@@ -77,14 +87,7 @@ export function PlatformStep() {
                       ? { ...sc, secretNamespace: driverNs }
                       : sc,
                   ),
-                  multipath: {
-                    ...state.multipath,
-                    enabled: needsDm,
-                    includeConf: needsDm && !p.useOc,
-                    // OpenShift / ROSA: MachineConfig is the supported delivery method
-                    includeMachineConfig: p.useOc && needsDm,
-                    alreadyApplied: p.useOc && needsDm ? state.multipath.alreadyApplied : false,
-                  },
+                  ...side,
                   components: {
                     ...state.components,
                     consolePlugin: p.supportsConsolePlugin ? state.components.consolePlugin : false,
@@ -110,8 +113,9 @@ export function PlatformStep() {
         </div>
         {plat.operatorHub && (
           <Callout>
-            On OpenShift, the <strong>CSI Driver</strong> is installed from OperatorHub / Software Catalog
-            (not by applying operator YAML). The wizard will generate OperatorHub steps and the driver CR.
+            On OpenShift, the <strong>CSI Driver</strong> installs via OperatorHub catalogs (OLM). The export
+            includes Subscription manifests; <code>install.sh</code> applies them and approves the day-0
+            InstallPlan (update approval stays Manual).
           </Callout>
         )}
       </Section>
@@ -141,7 +145,12 @@ export function PlatformStep() {
                 setState((s) => {
                   const allowed = connectionsForNodeEnvironment(opt.id)
                   const nextConn = coerceConnectionType(s.connectionType, allowed)
-                  const side = applyConnectionSideEffects(nextConn, s.platform, s.multipath)
+                  const side = applyMultipathSideEffects(
+                    nextConn,
+                    s.platform,
+                    s.openshiftTopology,
+                    s.multipath,
+                  )
                   return {
                     ...s,
                     nodeEnvironment: opt.id,
@@ -180,7 +189,12 @@ export function PlatformStep() {
               selected={state.connectionType === c.id}
               onClick={() => {
                 setState((s) => {
-                  const side = applyConnectionSideEffects(c.id, s.platform, s.multipath)
+                  const side = applyMultipathSideEffects(
+                    c.id,
+                    s.platform,
+                    s.openshiftTopology,
+                    s.multipath,
+                  )
                   return {
                     ...s,
                     ...side,

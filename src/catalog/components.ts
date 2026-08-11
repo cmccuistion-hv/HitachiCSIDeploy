@@ -74,4 +74,6 @@ export const DOCS = {
   hrpc: 'https://docs.hitachivantara.com/r/en-us/mk-92adptr155/latest',
   hspp: 'https://docs.hitachivantara.com/r/en-us/mk-92adptr156/latest',
   compatibility: 'https://compatibility.hitachivantara.com/products/hspc',
+  prometheusOverview: 'https://prometheus.io/docs/introduction/overview/',
+  grafanaIntro: 'https://grafana.com/docs/grafana/latest/introduction/',
 } as const

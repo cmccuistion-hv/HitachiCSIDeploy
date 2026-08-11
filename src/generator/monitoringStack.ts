@@ -41,6 +41,19 @@ export function splitMonitoringStack(yaml: string): { prometheusYaml: string; gr
   }
 }
 
+/** Rewrite metadata.namespace (and OpenShift SCC serviceaccount subjects). */
+export function rewriteYamlNamespace(yaml: string, namespace: string): string {
+  return yaml
+    .replace(/^(\s*namespace:\s*).+$/gm, `$1${namespace}`)
+    .replace(/system:serviceaccount:[^:\s]+:/g, `system:serviceaccount:${namespace}:`)
+}
+
+/** Upstream stacks hardcode storageClassName: sc-sample. */
+export function rewriteStorageClassName(yaml: string, storageClassName: string): string {
+  if (!storageClassName.trim()) return yaml
+  return yaml.replace(/storageClassName:\s*sc-sample\b/g, `storageClassName: ${storageClassName}`)
+}
+
 /** Rewrite Grafana Prometheus datasource URL; leave other docs untouched. */
 export function patchGrafanaDatasource(
   grafanaYaml: string,
