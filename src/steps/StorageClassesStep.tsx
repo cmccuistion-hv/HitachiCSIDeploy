@@ -64,17 +64,34 @@ export function StorageClassesStep() {
     if (!state.storageClassesEnabled) return
     const serial = primary?.serial?.trim()
     if (!serial) return
-    const needsUpdate = state.storageClasses.some(
-      (sc) => sc.kind === 'standard' && !sc.serialNumber?.trim(),
-    )
+    // Only fill blank SC serials. With a single array the SC field is hidden and generation
+    // uses the storage-system serial; do not keep a stale duplicate in state.
+    const singleArray = state.storageSystems.length === 1
+    const needsUpdate = state.storageClasses.some((sc) => {
+      if (sc.kind !== 'standard') return false
+      if (singleArray && sc.serialNumber?.trim()) return true // clear duplicate
+      if (!sc.serialNumber?.trim()) return true
+      return false
+    })
     if (!needsUpdate) return
     setState((s) => ({
       ...s,
-      storageClasses: s.storageClasses.map((sc) =>
-        sc.kind === 'standard' && !sc.serialNumber?.trim() ? { ...sc, serialNumber: serial } : sc,
-      ),
+      storageClasses: s.storageClasses.map((sc) => {
+        if (sc.kind !== 'standard') return sc
+        if (s.storageSystems.length === 1) {
+          return sc.serialNumber ? { ...sc, serialNumber: '' } : sc
+        }
+        if (!sc.serialNumber?.trim()) return { ...sc, serialNumber: serial }
+        return sc
+      }),
     }))
-  }, [state.storageClassesEnabled, primary?.serial, state.storageClasses, setState])
+  }, [
+    state.storageClassesEnabled,
+    primary?.serial,
+    state.storageSystems.length,
+    state.storageClasses,
+    setState,
+  ])
 
   const updateSc = (id: string, patch: Partial<StorageClassConfig>) => {
     setState((s) => ({
@@ -270,13 +287,22 @@ export function StorageClassesStep() {
 
             {sc.kind === 'standard' && (
               <div className="field-grid" style={{ marginTop: '1rem' }}>
-                <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
-                  <input
-                    value={sc.serialNumber || ''}
-                    onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
-                    placeholder={primary?.serial || '54321'}
-                  />
-                </Field>
+                {state.storageSystems.length === 1 ? (
+                  <Field
+                    label="Serial number"
+                    hint="Taken from the Storage systems step (single array). Shown on the StorageClass when you add another array or need a different serial per class."
+                  >
+                    <input value={primary?.serial || ''} disabled readOnly />
+                  </Field>
+                ) : (
+                  <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
+                    <input
+                      value={sc.serialNumber || ''}
+                      onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
+                      placeholder={primary?.serial || '54321'}
+                    />
+                  </Field>
+                )}
                 <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning." error={errors.poolID}>
                   <input
                     value={sc.poolID || ''}

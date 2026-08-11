@@ -29,6 +29,7 @@ import {
   REMOTE_KUBECONFIG_SECRET_NAME,
 } from './remoteKubeconfig'
 import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, splitMonitoringStack } from './monitoringStack'
+import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { effectiveSerialNumber } from '../catalog/validation'
 
@@ -602,6 +603,10 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     if (f.path === '02-driver/hspc-csi-telemetry-config.yaml') {
       continue
     }
+    // Quickstart PVC/Pod: wait for Bound before creating the Pod (dedicated block below)
+    if (f.group === 'quickstart') {
+      continue
+    }
     lines.push(`apply "${f.path}"`)
   }
 
@@ -661,14 +666,38 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
   const hasQuickstart =
     state.storageClassesEnabled || files.some((f) => f.group === 'quickstart')
   if (hasQuickstart) {
+    const pvcName = state.quickstart.pvcName
+    const podName = state.quickstart.podName
+    const pvcFile = files.find((f) => f.path === '06-quickstart/pvc.yaml')?.path || '06-quickstart/pvc.yaml'
+    const podFile = files.find((f) => f.path === '06-quickstart/pod.yaml')?.path || '06-quickstart/pod.yaml'
     lines.push(
       '',
-      `echo "Waiting for PVC Bound..."`,
-      `"$CMD" wait --for=jsonpath='{.status.phase}'=Bound pvc/${state.quickstart.pvcName} --timeout=180s || true`,
+      'echo "==> Test volume (PVC then Pod)"',
+      `apply "${pvcFile}"`,
+      '',
+      `echo "Waiting for PVC Bound (${pvcName})..."`,
+      `if ! "$CMD" wait --for=jsonpath='{.status.phase}'=Bound pvc/${pvcName} --timeout=300s; then`,
+      '  echo "ERROR: PVC did not become Bound." >&2',
+      '  echo "Common causes: wrong array serial/URL/credentials in the Secret, pool/port IDs on the StorageClass, multipath not ready, or CSI controller errors." >&2',
+      `  "$CMD" get pvc ${pvcName} -o wide || true`,
+      `  "$CMD" describe pvc ${pvcName} || true`,
+      `  "$CMD" get events --field-selector involvedObject.name=${pvcName} --sort-by=.lastTimestamp 2>/dev/null | tail -n 30 || true`,
+      `  "$CMD" logs -n ${state.driverNamespace} -l app=hspc-csi-controller -c hspc-csi-controller --tail=80 2>/dev/null || true`,
+      '  exit 1',
+      'fi',
+      '',
+      `apply "${podFile}"`,
+      `echo "Waiting for Pod Running (${podName})..."`,
+      `if ! "$CMD" wait --for=jsonpath='{.status.phase}'=Running pod/${podName} --timeout=180s; then`,
+      '  echo "ERROR: test Pod did not become Running." >&2',
+      `  "$CMD" get pod ${podName} -o wide || true`,
+      `  "$CMD" describe pod ${podName} || true`,
+      '  exit 1',
+      'fi',
       '',
       'echo "Done. Verify with:"',
-      `echo "  $CMD get pvc ${state.quickstart.pvcName}"`,
-      `echo "  $CMD get pod ${state.quickstart.podName}"`,
+      `echo "  $CMD get pvc ${pvcName}"`,
+      `echo "  $CMD get pod ${podName}"`,
     )
   } else {
     lines.push('', 'echo "Done. Verify CSI Driver:"', `"$CMD" get hspc -n ${state.driverNamespace}`)
@@ -1162,20 +1191,36 @@ ${stackNotes}
 
   // Console plugin
   if (state.components.consolePlugin && plat.supportsConsolePlugin) {
+    const cmd = plat.useOc ? 'oc' : 'kubectl'
+    const pluginUrls = templatePaths('hspc', state.versions.driver).consolePlugin ?? []
+    const pluginRaw = await fetchFirstAvailable(pluginUrls)
+    if (pluginRaw) {
+      files.push({
+        path: '05-console/consoleplugin-ocp-ui.yaml',
+        content: patchConsolePluginManifest(pluginRaw, state.consolePlugin),
+        description: 'OpenShift Console Plugin manifests (Prometheus target patched from wizard)',
+        group: 'console',
+      })
+    }
     files.push({
       path: '05-console/README.md',
       content: `# OpenShift Console Plugin
 
-Apply the upstream console plugin manifest (version ${state.versions.driver}) and ensure Prometheus settings match Performance Metrics:
+Version: ${state.versions.driver}
+
+\`install.sh\` applies \`consoleplugin-ocp-ui.yaml\` (includes a Job that registers the plugin on the
+cluster Console). Prometheus target embedded in the ConfigMap:
 
 - namespace: \`${state.consolePlugin.prometheusNamespace}\`
 - service: \`${state.consolePlugin.prometheusService}\`
 - port: \`${state.consolePlugin.prometheusPort}\`
 
 \`\`\`bash
-oc apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspc/${state.versions.driver}/sample/consoleplugin-ocp-ui.yaml
-oc get consoleplugin console-plugin-vsp360-dcm
+${cmd} apply -f consoleplugin-ocp-ui.yaml
+${cmd} get consoleplugin console-plugin-vsp360-dcm
+${cmd} get consoles.operator.openshift.io cluster -o jsonpath='{.spec.plugins}{"\\n"}'
 \`\`\`
+${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-export when GitHub is reachable.\n'}
 `,
       description: 'Console plugin install notes',
       group: 'console',

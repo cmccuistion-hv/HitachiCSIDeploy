@@ -41,12 +41,19 @@ export function ExportStep() {
   const [files, setFiles] = useState<GeneratedFile[]>([])
   const [activePath, setActivePath] = useState<string>('')
   const [importText, setImportText] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const next = await generateAll(state)
-      if (!cancelled) setFiles(next)
+      setGenerating(true)
+      try {
+        const next = await generateAll(state)
+        if (!cancelled) setFiles(next)
+      } finally {
+        if (!cancelled) setGenerating(false)
+      }
     })()
     return () => {
       cancelled = true
@@ -73,27 +80,36 @@ export function ExportStep() {
   })).filter((g) => g.files.length > 0)
 
   const downloadZip = async () => {
-    const zip = new JSZip()
-    zip.file('INSTALL.md', guide)
-    zip.file('wizard-config.json', exportConfig())
-    for (const f of files) {
-      zip.file(f.path, f.content)
+    setDownloading(true)
+    try {
+      // Always regenerate at click time so Secret/SC YAML match the latest Storage step edits.
+      const latest = await generateAll(state)
+      setFiles(latest)
+      const zip = new JSZip()
+      zip.file('INSTALL.md', buildGuide(state, latest, cmd))
+      zip.file('wizard-config.json', exportConfig())
+      for (const f of latest) {
+        zip.file(f.path, f.content)
+      }
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `hitachi-csi-deployment-${state.versions.driver}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloading(false)
     }
-    const blob = await zip.generateAsync({ type: 'blob' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `hitachi-csi-deployment-${state.versions.driver}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
     <div className="step-panel">
       <h2>Review &amp; export</h2>
       <p className="lede">
-        Download a complete package: ordered install guide, manifests, and <code>install.sh</code>. Config
-        is also saved in this browser for resume.
+        Download a complete package: ordered install guide, manifests, and <code>install.sh</code>. Answers
+        are saved in this browser for resume. <strong>Download ZIP</strong> rebuilds from your current
+        answers — re-download after edits; an already-unzipped folder is not updated.
       </p>
 
       <Callout>{HELP.configuratorVsApply}</Callout>
@@ -105,10 +121,10 @@ export function ExportStep() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={storageExportBlocked}
-              onClick={downloadZip}
+              disabled={storageExportBlocked || downloading || generating}
+              onClick={() => void downloadZip()}
             >
-              Download ZIP
+              {downloading ? 'Building ZIP…' : 'Download ZIP'}
             </button>
             <CopyButton text={guide} label="Copy install guide" />
             <button
@@ -137,7 +153,8 @@ export function ExportStep() {
         ) : (
           <Callout variant="ok">
             Generated {files.length} files for <strong>{plat.displayName}</strong> / CSI Driver{' '}
-            <strong>{state.versions.driver}</strong>. Upstream templates:{' '}
+            <strong>{state.versions.driver}</strong>
+            {generating ? ' (updating preview…)' : ''}. Upstream templates:{' '}
             <a href={REPO.githubUrl} target="_blank" rel="noreferrer">
               {REPO.owner}/{REPO.name}
             </a>
