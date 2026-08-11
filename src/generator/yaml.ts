@@ -674,15 +674,50 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     lines.push(
       '',
       'echo "==> Remote kubeconfig Secrets"',
-      'echo "Required input: KUBECONFIG_P and KUBECONFIG_S (paths to both cluster kubeconfigs)."',
-      'echo "install.sh then runs the helper script to build + apply both Secrets."',
+      '# Two equal options: packaged wizard Secret YAML, or KUBECONFIG_P/S helper (both sites).',
       'if [[ -n "${KUBECONFIG_P:-}" && -n "${KUBECONFIG_S:-}" ]]; then',
+      '  echo "Using KUBECONFIG_P / KUBECONFIG_S helper (applies Secret on each site)."',
       '  chmod +x ./03-replication/create-remote-kubeconfig-secrets.sh',
       '  APPLY=1 ./03-replication/create-remote-kubeconfig-secrets.sh',
+      'elif [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" || -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
+      '  # Wizard-packaged Secrets: apply the one for THIS cluster (default: primary).',
+      '  # On the secondary cluster: REPLICATION_SITE=secondary ./install.sh',
+      '  site="${REPLICATION_SITE:-primary}"',
+      '  case "$site" in',
+      '    primary|p)',
+      '      if [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" ]]; then',
+      '        echo "Applying wizard Secret YAML for PRIMARY site (current kubeconfig/context)."',
+      '        apply "03-replication/remote-kubeconfig-for-primary-site.yaml"',
+      '      else',
+      '        echo "ERROR: REPLICATION_SITE=primary but remote-kubeconfig-for-primary-site.yaml is missing." >&2',
+      '        exit 1',
+      '      fi',
+      '      if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
+      '        echo "Note: secondary-site Secret is in the package — apply on the other cluster with:"',
+      '        echo "  REPLICATION_SITE=secondary ./install.sh"',
+      '        echo "  # or: $CMD apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml"',
+      '      fi',
+      '      ;;',
+      '    secondary|s)',
+      '      if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
+      '        echo "Applying wizard Secret YAML for SECONDARY site (current kubeconfig/context)."',
+      '        apply "03-replication/remote-kubeconfig-for-secondary-site.yaml"',
+      '      else',
+      '        echo "ERROR: REPLICATION_SITE=secondary but remote-kubeconfig-for-secondary-site.yaml is missing." >&2',
+      '        exit 1',
+      '      fi',
+      '      ;;',
+      '    *)',
+      '      echo "ERROR: REPLICATION_SITE must be primary or secondary (got: $site)." >&2',
+      '      exit 1',
+      '      ;;',
+      '  esac',
       'else',
-      '  echo "Set KUBECONFIG_P and KUBECONFIG_S, then re-run install.sh to finish remote Secrets."',
+      '  echo "No packaged remote-kubeconfig Secret YAML and KUBECONFIG_P/S not set."',
+      '  echo "Either re-export after pasting both kubeconfigs in the wizard, or:"',
       '  echo "  export KUBECONFIG_P=/path/to/primary-kubeconfig"',
       '  echo "  export KUBECONFIG_S=/path/to/secondary-kubeconfig"',
+      '  echo "  # then re-run install.sh (or APPLY=1 ./03-replication/create-remote-kubeconfig-secrets.sh)"',
       '  read -r -p "Or press Enter after you have applied those Secrets another way... "',
       'fi',
     )
@@ -1043,11 +1078,15 @@ Version: ${state.versions.replication}
 2. Applies \`storage-secrets.yaml\` when present
 3. Applies cert-manager, **waits for the webhook**, then applies the Disaster Recovery operator
 4. DR operator PVC \`hspc-dr-operator-pvc\` uses StorageClass \`${drScName}\` (from this wizard — not the upstream \`<storage-class-name>\` placeholder)
-5. Runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
+5. Remote kubeconfig Secrets — **either**:
+   - Applies packaged \`remote-kubeconfig-for-*-site.yaml\` (from wizard paste/upload) to the current cluster (\`REPLICATION_SITE=primary\` default; use \`secondary\` on the other site), **or**
+   - Runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
 
 ## What you provide
 
-Before \`./install.sh\`, set paths to both cluster kubeconfigs:
+**Option A — wizard Secret YAML (already in this ZIP if you pasted kubeconfigs):** nothing else for this cluster; \`install.sh\` applies the primary-site Secret by default.
+
+**Option B — helper script:** set paths to both cluster kubeconfigs before \`./install.sh\`:
 
 \`\`\`bash
 export KUBECONFIG_P=/path/to/primary-kubeconfig
@@ -1077,16 +1116,27 @@ Target Secret: \`${state.replication.remoteKubeconfigSecretName || REMOTE_KUBECO
 Data key: \`remote-kubeconfig\`
 Namespace: \`${state.replication.namespace}\`
 
-## What you provide
+## Option A — wizard Secret YAML (in this ZIP when you pasted kubeconfigs)
 
-Paths to both cluster kubeconfigs (environment variables):
+\`install.sh\` applies the Secret for the current site automatically:
+
+- Default: \`remote-kubeconfig-for-primary-site.yaml\` (this cluster is primary)
+- Other cluster: \`REPLICATION_SITE=secondary ./install.sh\`
+
+Or apply by hand:
+
+\`\`\`bash
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml
+# on secondary:
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml
+\`\`\`
+
+## Option B — helper script (KUBECONFIG_P / KUBECONFIG_S)
 
 \`\`\`bash
 export KUBECONFIG_P=/path/to/primary-kubeconfig
 export KUBECONFIG_S=/path/to/secondary-kubeconfig
 \`\`\`
-
-## What happens automatically
 
 \`install.sh\` (or \`APPLY=1 ./create-remote-kubeconfig-secrets.sh\`) will:
 
