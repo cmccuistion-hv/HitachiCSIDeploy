@@ -5,14 +5,13 @@ export function migrateMetricsConfig(raw: unknown, defaults: MetricsConfig): Met
   const incoming = (raw && typeof raw === 'object' ? raw : {}) as Partial<MetricsConfig> & {
     deployTestStack?: boolean
   }
-  const { deployTestStack, ...rest } = incoming
-  const merged: MetricsConfig = { ...defaults, ...rest }
+  const { deployTestStack, deployPrometheus: inProm, deployGrafana: inGraf, ...rest } = incoming
+  const both = typeof deployTestStack === 'boolean' ? deployTestStack : true
 
-  if (typeof merged.deployPrometheus !== 'boolean' || typeof merged.deployGrafana !== 'boolean') {
-    const both = deployTestStack !== false // undefined or true → both on; explicit false → both off
-    merged.deployPrometheus = typeof merged.deployPrometheus === 'boolean' ? merged.deployPrometheus : both
-    merged.deployGrafana = typeof merged.deployGrafana === 'boolean' ? merged.deployGrafana : both
+  return {
+    ...defaults,
+    ...rest,
+    deployPrometheus: typeof inProm === 'boolean' ? inProm : both,
+    deployGrafana: typeof inGraf === 'boolean' ? inGraf : both,
   }
-
-  return merged
 }
