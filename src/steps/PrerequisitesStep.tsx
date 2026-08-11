@@ -1,12 +1,13 @@
 import { FIREWALL_DOMAINS, MULTIPATH_CONF, PLATFORMS, REQUIRED_LICENSES } from '../catalog/platforms'
 import { CONNECTION_TYPES } from '../catalog/platforms'
+import { HELP } from '../catalog/help'
 import {
   generateMultipathMachineConfig,
   generateMultipathMachineConfigs,
   getMultipathConf,
 } from '../generator/multipath'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CopyButton, Field, Section } from '../components/ui'
+import { Callout, CodeBlock, CopyButton, Field, Section } from '../components/ui'
 
 export function PrerequisitesStep() {
   const { state, setState } = useWizard()
@@ -60,7 +61,7 @@ export function PrerequisitesStep() {
       </Callout>
 
       {(needsDm || mp.enabled) && (
-        <Section title="Multipath configuration">
+        <Section title="Multipath configuration" help={HELP.multipath}>
           {!needsDm && (
             <Callout variant="warn">
               Your connection type uses Native NVMe Multipath, not Device Mapper Multipath. You can still
@@ -104,7 +105,10 @@ export function PrerequisitesStep() {
 
               {plat.useOc && (
                 <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
-                  <Field label="MachineConfig name">
+                  <Field
+                    label="MachineConfig name"
+                    hint="OpenShift MachineConfig metadata.name for the multipath.conf delivery."
+                  >
                     <input
                       value={mp.machineConfigName}
                       onChange={(e) =>
@@ -169,7 +173,6 @@ export function PrerequisitesStep() {
                 >
                   Reset to sample
                 </button>
-                {showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig" />}
               </div>
 
               {showMachineConfig && (
@@ -195,7 +198,7 @@ export function PrerequisitesStep() {
                       </>
                     )}
                   </Callout>
-                  <pre className="code-block" style={{ marginTop: '0.75rem' }}>{`${cmd} apply -f 00-prereq/
+                  <CodeBlock className="code-block" style={{ marginTop: '0.75rem' }}>{`${cmd} apply -f 00-prereq/
 # Watch pools — nodes reboot while UPDATING=True
 ${cmd} get mcp -w
 # When ready:
@@ -204,10 +207,10 @@ ${cmd} get mcp -w
 
 ${cmd} get mc | grep multipath
 # On a rebooted node:
-# cat /etc/multipath.conf && multipath -ll`}</pre>
-                  <pre className="yaml-preview" style={{ marginTop: '0.75rem', maxHeight: 280 }}>
+# cat /etc/multipath.conf && multipath -ll`}</CodeBlock>
+                  <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem', maxHeight: 280 }}>
                     {mcPreview}
-                  </pre>
+                  </CodeBlock>
                 </>
               )}
 
@@ -238,12 +241,7 @@ ${cmd} get mc | grep multipath
                   {item.body}
                 </p>
                 {item.snippet && (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <CopyButton text={item.snippet} label="Copy snippet" />
-                    </div>
-                    <pre>{item.snippet}</pre>
-                  </>
+                  <CodeBlock>{item.snippet}</CodeBlock>
                 )}
               </div>
             </li>

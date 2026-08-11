@@ -25,7 +25,10 @@ export function ComponentsStep() {
           </Callout>
         )}
         <div className="field-grid">
-          <Field label="CSI Driver version" hint={COMPONENTS.driver.acronym}>
+          <Field
+            label="CSI Driver version"
+            hint="Latest tag from GitHub when available. Match a supported release for your platform."
+          >
             <select
               value={state.versions.driver}
               onChange={(e) =>
@@ -39,7 +42,10 @@ export function ComponentsStep() {
               ))}
             </select>
           </Field>
-          <Field label="Replication version" hint={COMPONENTS.replication.acronym}>
+          <Field
+            label="Replication version"
+            hint="Latest tag from GitHub when available. Used for Replication and the included DR Operator."
+          >
             <select
               value={state.versions.replication}
               onChange={(e) =>
@@ -53,7 +59,10 @@ export function ComponentsStep() {
               ))}
             </select>
           </Field>
-          <Field label="Performance Metrics version" hint={COMPONENTS.metrics.acronym}>
+          <Field
+            label="Performance Metrics version"
+            hint="Latest tag from GitHub when available."
+          >
             <select
               value={state.versions.metrics}
               onChange={(e) =>
@@ -142,7 +151,14 @@ export function ComponentsStep() {
         )}
       </Section>
 
-      <Section title="Namespaces">
+      <Section
+        title="Namespaces"
+        help={
+          plat.operatorHub
+            ? 'On OpenShift/ROSA, OperatorHub installs into one namespace and the CSI Driver instance must live in that same namespace (OwnNamespace).'
+            : 'On Kubernetes/RKE2/EKS, the operator typically runs in hspc-operator-system and the CSI Driver instance in kube-system.'
+        }
+      >
         <div className="field-grid">
           {plat.operatorHub ? (
             <Field
@@ -165,7 +181,7 @@ export function ComponentsStep() {
             <>
               <Field
                 label="Operator namespace"
-                hint="Upstream default for the operator deployment."
+                hint="Upstream default for the operator deployment (hspc-operator-system)."
               >
                 <input
                   value={state.operatorNamespace}

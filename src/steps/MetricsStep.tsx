@@ -28,7 +28,7 @@ export function MetricsStep() {
 
       <Section title="Deployment options">
         <div className="field-grid">
-          <Field label="Namespace">
+          <Field label="Namespace" hint="Where the metrics exporter Deployment runs.">
             <input
               value={state.metrics.namespace}
               onChange={(e) => {
@@ -41,7 +41,10 @@ export function MetricsStep() {
               }}
             />
           </Field>
-          <Field label="Secret name">
+          <Field
+            label="Secret name"
+            hint="Secret listing the arrays the exporter scrapes for metrics."
+          >
             <input
               value={state.metrics.secretName}
               onChange={(e) =>
@@ -52,7 +55,10 @@ export function MetricsStep() {
               }
             />
           </Field>
-          <Field label="Max batch size">
+          <Field
+            label="Max batch size"
+            hint="Increasing batch size or worker count may raise memory use."
+          >
             <input
               value={state.metrics.maxBatchSize}
               onChange={(e) =>
@@ -63,7 +69,10 @@ export function MetricsStep() {
               }
             />
           </Field>
-          <Field label="Max worker count">
+          <Field
+            label="Max worker count"
+            hint="Parallel workers for metric collection. Higher values may use more memory."
+          >
             <input
               value={state.metrics.maxWorkerCount}
               onChange={(e) =>
@@ -117,6 +126,9 @@ export function MetricsStep() {
       </Section>
 
       <Section title="Exporter storage credentials">
+        <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
+          Arrays the exporter authenticates to when collecting performance metrics.
+        </p>
         {storages.map((sec, idx) => (
           <div key={idx} className="field-grid" style={{ marginBottom: '0.75rem' }}>
             <Field label="Serial">

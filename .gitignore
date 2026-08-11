@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Cursor local project memory (not published)
+.cursor/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

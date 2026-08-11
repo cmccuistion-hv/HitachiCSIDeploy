@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
+import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import type { WizardState } from '../catalog/types'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CopyButton, DownloadButton, Section } from '../components/ui'
+import { Callout, CodeBlock, CopyButton, DownloadButton, Section } from '../components/ui'
 
 const FILE_GROUPS: {
   id: GeneratedFile['group']
@@ -18,7 +19,7 @@ const FILE_GROUPS: {
   { id: 'replication', title: 'Replication', folder: '03-replication/' },
   { id: 'metrics', title: 'Performance Metrics', folder: '04-metrics/' },
   { id: 'console', title: 'Console Plugin', folder: '05-console/' },
-  { id: 'quickstart', title: 'First PV', folder: '06-quickstart/' },
+  { id: 'quickstart', title: 'Test volume', folder: '06-quickstart/' },
   { id: 'scripts', title: 'Install script', folder: './' },
 ]
 
@@ -81,6 +82,8 @@ export function ExportStep() {
         is also saved in this browser for resume.
       </p>
 
+      <Callout>{HELP.configuratorVsApply}</Callout>
+
       <Section
         title="Actions"
         actions={
@@ -120,23 +123,20 @@ export function ExportStep() {
       </Section>
 
       <Section title="Install guide">
-        <pre className="yaml-preview" style={{ maxHeight: 360 }}>
+        <CodeBlock className="yaml-preview" style={{ maxHeight: 360 }}>
           {guide}
-        </pre>
+        </CodeBlock>
       </Section>
 
       <Section
         title="Generated files"
         actions={
           current ? (
-            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-              <CopyButton text={current.content} label="Copy file" />
-              <DownloadButton
-                filename={current.path.split('/').pop() || 'file'}
-                content={current.content}
-                label="Download file"
-              />
-            </div>
+            <DownloadButton
+              filename={current.path.split('/').pop() || 'file'}
+              content={current.content}
+              label="Download file"
+            />
           ) : null
         }
       >
@@ -179,7 +179,7 @@ export function ExportStep() {
             <p style={{ fontSize: '0.85rem', color: 'var(--hv-text-subtle)', marginTop: 0 }}>
               <code>{current.path}</code> — {current.description}
             </p>
-            <pre className="yaml-preview">{current.content}</pre>
+            <CodeBlock className="yaml-preview">{current.content}</CodeBlock>
           </>
         )}
       </Section>
@@ -243,12 +243,11 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     state.components.replication ? `Replication: ${state.versions.replication}` : '',
     state.components.metrics ? `Performance Metrics: ${state.versions.metrics}` : '',
     '',
-    '## Goal: First PV in ~10 minutes',
+    '## After install',
     '',
-    '1. Complete prerequisites (multipath / initiator / licenses).',
-    '2. Install the CSI Driver.',
-    '3. Apply Secret + StorageClass.',
-    '4. Apply test PVC + Pod; confirm Bound / Running.',
+    '1. Prerequisites complete (multipath / initiator / licenses as required).',
+    '2. Run `./install.sh` — applies driver path, Secret, StorageClass, and the test PVC/Pod.',
+    '3. Confirm PVC Bound and test Pod Running.',
     '',
   ]
 
@@ -348,7 +347,9 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
   }
 
   lines.push(
-    '## First PV quickstart',
+    '## Test volume (smoke check)',
+    '',
+    '`install.sh` applies these automatically. To re-apply or verify by hand:',
     '',
     '```bash',
     `${cmd} apply -f 06-quickstart/pvc.yaml`,
@@ -357,8 +358,6 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     `${cmd} get pvc ${state.quickstart.pvcName}`,
     `${cmd} get pod ${state.quickstart.podName}`,
     '```',
-    '',
-    'Or run `./install.sh` after making it executable.',
     '',
   )
 

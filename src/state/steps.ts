@@ -7,6 +7,6 @@ export const STEPS_BASE = [
   { id: 'replication', title: 'Replication', description: 'Cross-site replication' },
   { id: 'metrics', title: 'Performance Metrics', description: 'Prometheus observability' },
   { id: 'console', title: 'Console Plugin', description: 'OpenShift UI plugin' },
-  { id: 'quickstart', title: 'First PV', description: '10-minute path to first volume' },
+  { id: 'quickstart', title: 'Test volume', description: 'Sample PVC and Pod for install.sh' },
   { id: 'export', title: 'Review & export', description: 'Download manifests and guide' },
 ] as const

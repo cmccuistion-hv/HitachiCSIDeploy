@@ -1,9 +1,6 @@
 # Hitachi CSI Deployment Wizard
 
-Interactive wizard that walks you through deploying the **Hitachi CSI** stack and generates ready-to-apply manifests.
-
-**Goal:** first persistent volume in about **10 minutes**.
-
+Interactive wizard that walks you through deploying the **Hitachi CSI** stack and generates ready-to-apply manifests, including an `install.sh` and a sample PVC/Pod smoke test.
 ## Components (plain-language names)
 
 | Wizard name | Role | Legacy acronym |

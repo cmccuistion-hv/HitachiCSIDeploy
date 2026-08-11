@@ -1,8 +1,9 @@
 import { CONNECTION_TYPES, SDS_BLOCK_CONNECTIONS } from '../catalog/platforms'
+import { HELP } from '../catalog/help'
 import type { StorageClassConfig, StorageClassKind } from '../catalog/types'
 import { generateSnapshotClass, generateStorageClass } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CopyButton, Field, Section } from '../components/ui'
+import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
 function defaultSc(kind: StorageClassKind, connectionType: StorageClassConfig['connectionType']): StorageClassConfig {
   const base: StorageClassConfig = {
@@ -59,10 +60,9 @@ export function StorageClassesStep() {
   return (
     <div className="step-panel">
       <h2>StorageClasses & snapshots</h2>
-      <p className="lede">
-        Define provisioning profiles. Fields and restrictions change with StorageClass type, protocol, and
-        array family.
-      </p>
+      <p className="lede">{HELP.secretVsStorageClass.storageClassLede}</p>
+
+      <Callout>{HELP.secretVsStorageClass.storageClassCallout}</Callout>
 
       {state.storageClasses.map((sc) => {
         const conn = CONNECTION_TYPES.find((c) => c.id === sc.connectionType)!
@@ -93,7 +93,7 @@ export function StorageClassesStep() {
             }
           >
             <div className="field-grid">
-              <Field label="Type">
+              <Field label="Type" help={HELP.gad.type}>
                 <select
                   value={sc.kind}
                   onChange={(e) => {
@@ -112,10 +112,10 @@ export function StorageClassesStep() {
                   <option value="vsp-one-sds-block">VSP One SDS Block</option>
                 </select>
               </Field>
-              <Field label="Name">
+              <Field label="Name" hint="Kubernetes StorageClass metadata.name referenced by PVCs.">
                 <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
               </Field>
-              <Field label="Connection type">
+              <Field label="Connection type" help={HELP.protocolMultipath}>
                 <select
                   value={sc.connectionType}
                   onChange={(e) =>
@@ -131,13 +131,13 @@ export function StorageClassesStep() {
                   ))}
                 </select>
               </Field>
-              <Field label="Secret name">
+              <Field label="Secret name" hint="Must match the Secret generated from the Storage systems step.">
                 <input
                   value={sc.secretName}
                   onChange={(e) => updateSc(sc.id, { secretName: e.target.value })}
                 />
               </Field>
-              <Field label="Secret namespace">
+              <Field label="Secret namespace" hint="Namespace where that storage Secret will be applied.">
                 <input
                   value={sc.secretNamespace}
                   onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
@@ -153,14 +153,14 @@ export function StorageClassesStep() {
 
             {sc.kind === 'standard' && (
               <div className="field-grid" style={{ marginTop: '1rem' }}>
-                <Field label="Serial number">
+                <Field label="Serial number" hint="Storage system serial number.">
                   <input
                     value={sc.serialNumber || primary?.serial || ''}
                     onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
                     placeholder={primary?.serial || '54321'}
                   />
                 </Field>
-                <Field label="Pool ID">
+                <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning.">
                   <input
                     value={sc.poolID || ''}
                     onChange={(e) => updateSc(sc.id, { poolID: e.target.value })}
@@ -168,7 +168,10 @@ export function StorageClassesStep() {
                   />
                 </Field>
                 {conn.needsPortId && (
-                  <Field label="Port ID(s)" hint="Comma-separated for multipath.">
+                  <Field
+                    label="Port ID(s)"
+                    hint="Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe."
+                  >
                     <input
                       value={sc.portID || ''}
                       onChange={(e) => updateSc(sc.id, { portID: e.target.value })}
@@ -177,7 +180,10 @@ export function StorageClassesStep() {
                   </Field>
                 )}
                 {conn.needsNvmSubsystem && (
-                  <Field label="NVMe subsystem ID" hint="Required for NVMe connection types.">
+                  <Field
+                    label="NVMe subsystem ID"
+                    hint="Required for NVMe-FC and NVMe/TCP — Port ID is not used."
+                  >
                     <input
                       value={sc.nvmSubsystemID || ''}
                       onChange={(e) => updateSc(sc.id, { nvmSubsystemID: e.target.value })}
@@ -186,6 +192,7 @@ export function StorageClassesStep() {
                 )}
                 <Field
                   label="Storage efficiency"
+                  hint="Adaptive data reduction. VSP One B20 does not support Disabled."
                   error={
                     efficiencyBlocked
                       ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
@@ -208,7 +215,10 @@ export function StorageClassesStep() {
                   </select>
                 </Field>
                 {sc.storageEfficiency && sc.storageEfficiency !== 'Disabled' && (
-                  <Field label="Efficiency mode">
+                  <Field
+                    label="Efficiency mode"
+                    hint="Inline compresses on write; PostProcess reduces data after write."
+                  >
                     <select
                       value={sc.storageEfficiencyMode || 'PostProcess'}
                       onChange={(e) =>
@@ -223,7 +233,7 @@ export function StorageClassesStep() {
                     </select>
                   </Field>
                 )}
-                <Field label="Filesystem">
+                <Field label="Filesystem" hint="ext4 (default) or xfs. Ignored for raw Block volumeMode.">
                   <select
                     value={sc.fstype || 'ext4'}
                     onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}
@@ -232,7 +242,10 @@ export function StorageClassesStep() {
                     <option value="xfs">xfs</option>
                   </select>
                 </Field>
-                <Field label="Allow volume expansion">
+                <Field
+                  label="Allow volume expansion"
+                  hint="Must be false for stretched StorageClasses."
+                >
                   <select
                     value={String(sc.allowVolumeExpansion)}
                     onChange={(e) =>
@@ -253,49 +266,49 @@ export function StorageClassesStep() {
                   <code>allowVolumeExpansion: false</code>.
                 </Callout>
                 <div className="field-grid" style={{ marginTop: '1rem' }}>
-                  <Field label="Stretched secret name">
+                  <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials.">
                     <input
                       value={sc.stretchedSecretName || ''}
                       onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })}
                     />
                   </Field>
-                  <Field label="Quorum ID">
+                  <Field label="Quorum ID" hint="Quorum disk ID for GAD.">
                     <input
                       value={sc.quorumID || ''}
                       onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Copy group name">
+                  <Field label="Copy group name" hint="GAD copy group name on the arrays.">
                     <input
                       value={sc.copyGroupName || ''}
                       onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })}
                     />
                   </Field>
-                  <Field label="Consistency group ID">
+                  <Field label="Consistency group ID" hint="Consistency group identifier for coordinated pairs.">
                     <input
                       value={sc.consistencyGroupId || ''}
                       onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })}
                     />
                   </Field>
-                  <Field label="Primary pool ID">
+                  <Field label="Primary pool ID" hint="HDP pool on the primary array.">
                     <input
                       value={sc.primaryPoolID || ''}
                       onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Primary port ID(s)">
+                  <Field label="Primary port ID(s)" hint="Comma-separated primary ports (e.g. CL1-A,CL2-A).">
                     <input
                       value={sc.primaryPortID || ''}
                       onChange={(e) => updateSc(sc.id, { primaryPortID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Secondary pool ID">
+                  <Field label="Secondary pool ID" hint="HDP pool on the secondary array.">
                     <input
                       value={sc.secondaryPoolID || ''}
                       onChange={(e) => updateSc(sc.id, { secondaryPoolID: e.target.value })}
                     />
                   </Field>
-                  <Field label="Secondary port ID(s)">
+                  <Field label="Secondary port ID(s)" hint="Comma-separated secondary ports.">
                     <input
                       value={sc.secondaryPortID || ''}
                       onChange={(e) => updateSc(sc.id, { secondaryPortID: e.target.value })}
@@ -312,7 +325,7 @@ export function StorageClassesStep() {
                   hint={
                     primary?.multitenancy
                       ? 'Cannot set when multitenancy is enabled — follows VPS.'
-                      : undefined
+                      : 'Compression or Disabled. SDS Block does not use CompressionDeduplication here.'
                   }
                 >
                   <select
@@ -328,7 +341,7 @@ export function StorageClassesStep() {
                     <option value="Compression">Compression</option>
                   </select>
                 </Field>
-                <Field label="Filesystem">
+                <Field label="Filesystem" hint="ext4 (default) or xfs.">
                   <select
                     value={sc.fstype || 'ext4'}
                     onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}
@@ -357,7 +370,10 @@ export function StorageClassesStep() {
         Add StorageClass
       </button>
 
-      <Section title="VolumeSnapshotClass">
+      <Section
+        title="VolumeSnapshotClass"
+        help="Enables CSI volume snapshots. Deletion policy controls whether snapshot content is removed when the VolumeSnapshot is deleted."
+      >
         <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
           <input
             type="checkbox"
@@ -375,7 +391,7 @@ export function StorageClassesStep() {
         </label>
         {state.snapshotClass.enabled && (
           <div className="field-grid">
-            <Field label="Name">
+            <Field label="Name" hint="Kubernetes VolumeSnapshotClass metadata.name.">
               <input
                 value={state.snapshotClass.name}
                 onChange={(e) =>
@@ -386,7 +402,10 @@ export function StorageClassesStep() {
                 }
               />
             </Field>
-            <Field label="Deletion policy">
+            <Field
+              label="Deletion policy"
+              hint="Delete removes snapshot content with the VolumeSnapshot; Retain keeps it."
+            >
               <select
                 value={state.snapshotClass.deletionPolicy}
                 onChange={(e) =>
@@ -416,6 +435,9 @@ export function StorageClassesStep() {
               />
               <div>
                 <strong>Immutable snapshot class variant</strong>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                  Generates the immutable VolumeSnapshotClass sample when enabled.
+                </p>
               </div>
             </label>
           </div>
@@ -423,15 +445,12 @@ export function StorageClassesStep() {
       </Section>
 
       {previewSc && (
-        <Section
-          title="Live YAML preview"
-          actions={<CopyButton text={generateStorageClass(previewSc)} label="Copy SC" />}
-        >
-          <pre className="yaml-preview">{generateStorageClass(previewSc)}</pre>
+        <Section title="Live YAML preview">
+          <CodeBlock className="yaml-preview">{generateStorageClass(previewSc)}</CodeBlock>
           {state.snapshotClass.enabled && (
-            <pre className="yaml-preview" style={{ marginTop: '0.75rem' }}>
+            <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem' }}>
               {generateSnapshotClass(state.snapshotClass)}
-            </pre>
+            </CodeBlock>
           )}
         </Section>
       )}

@@ -1,4 +1,5 @@
 import type { StorageFamily, StorageSystemConfig } from '../catalog/types'
+import { HELP } from '../catalog/help'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
 
@@ -35,10 +36,9 @@ export function StorageStep() {
   return (
     <div className="step-panel">
       <h2>Storage systems</h2>
-      <p className="lede">
-        Enter array connection details. Secrets are generated with base64-encoded credentials. Add a second
-        array for stretched (GAD) StorageClasses.
-      </p>
+      <p className="lede">{HELP.secretVsStorageClass.storageLede}</p>
+
+      <Callout>{HELP.secretVsStorageClass.storageCallout}</Callout>
 
       {state.storageSystems.map((sys, idx) => (
         <Section
@@ -53,10 +53,13 @@ export function StorageStep() {
           }
         >
           <div className="field-grid">
-            <Field label="Display name">
+            <Field label="Display name" hint="Label used in this wizard only (not a Kubernetes name).">
               <input value={sys.name} onChange={(e) => updateSys(sys.id, { name: e.target.value })} />
             </Field>
-            <Field label="Storage family">
+            <Field
+              label="Storage family"
+              hint="VSP / VSP One Block vs VSP One SDS Block — changes StorageClass shape later."
+            >
               <select
                 value={sys.family}
                 onChange={(e) => updateSys(sys.id, { family: e.target.value as StorageFamily })}
@@ -74,7 +77,7 @@ export function StorageStep() {
             </Field>
             <Field
               label="REST URL"
-              hint="Use service IP for VSP One B20 / Block High End. IPv4 only (80/443)."
+              hint="Controller / SVP URL. Use service IP for VSP One B20 / Block High End. IPv4 only (80/443)."
             >
               <input
                 value={sys.url}
@@ -82,30 +85,39 @@ export function StorageStep() {
                 placeholder="https://172.16.1.1"
               />
             </Field>
-            <Field label="Username">
+            <Field
+              label="Username"
+              hint="Storage Administrator (View & Modify) or equivalent. SDS Block with multitenancy: VpsStorage role."
+            >
               <input value={sys.user} onChange={(e) => updateSys(sys.id, { user: e.target.value })} />
             </Field>
-            <Field label="Password">
+            <Field label="Password" hint="Encoded into the generated Kubernetes Secret.">
               <input
                 type="password"
                 value={sys.password}
                 onChange={(e) => updateSys(sys.id, { password: e.target.value })}
               />
             </Field>
-            <Field label="Host mode options (optional)" hint="Defaults include 2,22,25,68,91.">
+            <Field
+              label="Host mode options (optional)"
+              hint="Comma-separated. Driver defaults include 2,22,25,68,91 — specify only additional options."
+            >
               <input
                 value={sys.hostModeOptions || ''}
                 onChange={(e) => updateSys(sys.id, { hostModeOptions: e.target.value })}
                 placeholder="88,81"
               />
             </Field>
-            <Field label="Resource group ID (optional)">
+            <Field
+              label="Resource group ID (optional)"
+              hint="Required only if the user can access multiple resource groups."
+            >
               <input
                 value={sys.resourceGroupID || ''}
                 onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
               />
             </Field>
-            <Field label="Stretched / GAD role">
+            <Field label="Stretched / GAD role" help={HELP.gad.role}>
               <select
                 value={sys.stretchedRole || 'none'}
                 onChange={(e) =>

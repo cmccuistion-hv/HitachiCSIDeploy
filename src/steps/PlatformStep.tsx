@@ -1,4 +1,5 @@
 import { CONNECTION_TYPES, PLATFORMS, type PlatformId } from '../catalog/platforms'
+import { HELP } from '../catalog/help'
 import { useWizard } from '../state/WizardContext'
 import { Callout, ChoiceCard, Field, Section } from '../components/ui'
 
@@ -73,7 +74,7 @@ export function PlatformStep() {
         )}
       </Section>
 
-      <Section title="Storage connection type">
+      <Section title="Storage connection type" help={HELP.protocolMultipath}>
         <div className="card-grid">
           {CONNECTION_TYPES.map((c) => (
             <ChoiceCard
@@ -140,8 +141,8 @@ function ToggleAirGapped() {
         <div>
           <strong>Air-gapped / disconnected cluster</strong>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-            Use the offline bundle workflow (<code>hvcsi-offline-bundle.sh</code>) and mirror registries /
-            OperatorHub catalogs before install.
+            You’ll mirror images and catalogs offline — see Prerequisites. Uses the offline bundle workflow
+            (<code>hvcsi-offline-bundle.sh</code>).
           </p>
         </div>
       </label>

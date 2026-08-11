@@ -1,7 +1,7 @@
 import { PLATFORMS } from '../catalog/platforms'
 import { generatePvc, generateTestPod } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CopyButton, Field, Section } from '../components/ui'
+import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
 export function QuickstartStep() {
   const { state, setState } = useWizard()
@@ -9,64 +9,25 @@ export function QuickstartStep() {
   const cmd = plat.useOc ? 'oc' : 'kubectl'
   const qs = state.quickstart
 
-  // Keep SC name synced if empty
-  if (!qs.storageClassName && state.storageClasses[0]) {
-    // render-time sync avoided; use effect-less default in select
-  }
-
-  const checklist = [
-    {
-      mins: '2–15+',
-      label: 'Prereqs & multipath',
-      detail: plat.useOc
-        ? 'MachineConfig reboots workers — wait for MCP updated before continuing.'
-        : 'Confirm multipath / initiator and storage reachability.',
-    },
-    {
-      mins: '3',
-      label: 'Install CSI Driver',
-      detail: plat.operatorHub
-        ? 'OperatorHub install + create HSPC instance.'
-        : 'Apply operator YAML + HSPC CR.',
-    },
-    {
-      mins: '2',
-      label: 'Secret + StorageClass',
-      detail: 'Apply generated Secret and StorageClass.',
-    },
-    {
-      mins: '3',
-      label: 'PVC + Pod',
-      detail: 'Create test PVC, wait Bound, run test Pod.',
-    },
-  ]
-
   return (
     <div className="step-panel">
-      <h2>First PV in 10 minutes</h2>
+      <h2>Test volume</h2>
       <p className="lede">
-        A focused path to your first Bound volume. Tune the test PVC, then follow the timed checklist on
-        Review &amp; export.
+        Configure the sample PVC and Pod packaged into the export. After prerequisites and{' '}
+        <code>install.sh</code> have applied the driver, Secret, and StorageClass, these manifests confirm
+        provisioning works (Bound PVC + Running Pod).
         {plat.useOc && state.multipath.enabled ? (
           <>
             {' '}
-            On OpenShift, apply multipath MachineConfig <strong>first</strong> and wait for node reboots to
-            finish — that step is outside the 10-minute driver/PVC window.
+            On OpenShift, finish multipath MachineConfig / node reboots before expecting a Bound volume.
           </>
         ) : null}
       </p>
 
-      <div className="time-budget">
-        {checklist.map((c) => (
-          <div key={c.label} className="time-card">
-            <div className="mins">{c.mins}m</div>
-            <div className="label">
-              <strong>{c.label}</strong>
-              <div>{c.detail}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Callout>
+        <code>install.sh</code> applies <code>06-quickstart/</code> automatically and waits for the PVC to
+        Bound. Use the verification commands below if you apply the YAML yourself or want to double-check.
+      </Callout>
 
       <Section title="Test workload">
         <div className="field-grid">
@@ -78,7 +39,7 @@ export function QuickstartStep() {
               }
             />
           </Field>
-          <Field label="Size">
+          <Field label="Size" hint="Requested capacity for the test PVC (for example 1Gi).">
             <input
               value={qs.pvcSize}
               onChange={(e) =>
@@ -103,7 +64,10 @@ export function QuickstartStep() {
               ))}
             </select>
           </Field>
-          <Field label="Access mode">
+          <Field
+            label="Access mode"
+            hint="ReadWriteOnce: one node at a time. ReadWriteMany: shared filesystem across nodes (when supported)."
+          >
             <select
               value={qs.accessMode}
               onChange={(e) =>
@@ -121,7 +85,10 @@ export function QuickstartStep() {
               <option value="ReadOnlyMany">ReadOnlyMany</option>
             </select>
           </Field>
-          <Field label="Volume mode">
+          <Field
+            label="Volume mode"
+            hint="Filesystem mounts a formatted volume. Block presents a raw device to the container."
+          >
             <select
               value={qs.volumeMode}
               onChange={(e) =>
@@ -149,28 +116,28 @@ export function QuickstartStep() {
         </div>
       </Section>
 
-      <Section title="Verification commands" actions={<CopyButton text={`${cmd} get pvc ${qs.pvcName}\n${cmd} get pod ${qs.podName}\n${cmd} get pv`} />}>
-        <pre className="code-block">{`# After applying Secret, StorageClass, PVC, Pod:
+      <Section title="Verification commands">
+        <CodeBlock>{`# After install.sh (or after applying Secret, StorageClass, PVC, Pod):
 ${cmd} get hspc -n ${state.driverNamespace}
 ${cmd} get pvc ${qs.pvcName}
 # Expect: STATUS Bound
 ${cmd} get pod ${qs.podName}
 # Expect: Running
 ${cmd} get pv
-# Expect: a PV provisioned by hspc.csi.hitachi.com`}</pre>
+# Expect: a PV provisioned by hspc.csi.hitachi.com`}</CodeBlock>
       </Section>
 
       <div className="split-layout">
-        <Section title="PVC YAML" actions={<CopyButton text={generatePvc({ ...qs, storageClassName: qs.storageClassName || state.storageClasses[0]?.name || 'hitachi-csi' })} />}>
-          <pre className="yaml-preview">
+        <Section title="PVC YAML">
+          <CodeBlock className="yaml-preview">
             {generatePvc({
               ...qs,
               storageClassName: qs.storageClassName || state.storageClasses[0]?.name || 'hitachi-csi',
             })}
-          </pre>
+          </CodeBlock>
         </Section>
-        <Section title="Pod YAML" actions={<CopyButton text={generateTestPod(qs)} />}>
-          <pre className="yaml-preview">{generateTestPod(qs)}</pre>
+        <Section title="Pod YAML">
+          <CodeBlock className="yaml-preview">{generateTestPod(qs)}</CodeBlock>
         </Section>
       </div>
 

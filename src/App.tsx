@@ -1,5 +1,6 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { ThemeControls } from './components/ThemeControls'
+import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
 import { useWizard } from './state/WizardContext'
 import { PlatformStep } from './steps/PlatformStep'
@@ -45,6 +46,7 @@ export default function App() {
   const { palette, mode, setPalette, toggleMode, headerLight } = useTheme()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
+  const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
 
   const onImportFile = (file: File) => {
     const reader = new FileReader()
@@ -87,6 +89,14 @@ export default function App() {
             onPalette={setPalette}
             onToggleMode={toggleMode}
           />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            title="About this wizard"
+            onClick={() => setWelcomeOpen(true)}
+          >
+            About
+          </button>
           <input
             ref={importRef}
             type="file"
@@ -168,6 +178,8 @@ export default function App() {
           </button>
         </footer>
       </main>
+
+      <WelcomeModal open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
     </div>
   )
 }

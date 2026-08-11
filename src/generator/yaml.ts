@@ -297,7 +297,7 @@ spec:
   containers:
     - name: app
       image: busybox:1.36
-      command: ["sh", "-c", "echo Hitachi CSI first PV OK > /data/hello.txt && sleep 3600"]
+      command: ["sh", "-c", "echo Hitachi CSI test volume OK > /data/hello.txt && sleep 3600"]
       volumeMounts:
         - name: data
           mountPath: /data

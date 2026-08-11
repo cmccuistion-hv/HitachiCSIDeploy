@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CopyButton, DownloadButton, Field, Section } from '../components/ui'
+import { Callout, CodeBlock, DownloadButton, Field, Section } from '../components/ui'
 import { PLATFORMS } from '../catalog/platforms'
+import { HELP } from '../catalog/help'
 import {
   generateRemoteKubeconfigSecret,
   generateRemoteKubeconfigScript,
@@ -82,7 +83,10 @@ export function ReplicationStep() {
       </Callout>
 
       <Section title="Operator namespace">
-        <Field label="Replication operator namespace">
+        <Field
+          label="Replication operator namespace"
+          hint="Upstream default is hspc-replication-operator-system."
+        >
           <input
             value={state.replication.namespace}
             onChange={(e) =>
@@ -95,14 +99,15 @@ export function ReplicationStep() {
         </Field>
       </Section>
 
-      <Section title="Storage secrets (journals)">
+      <Section title="Storage secrets (journals)" help={HELP.journalsVsRemote}>
         <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
           Primary and secondary arrays with journal IDs used by the Replication operator. These become{' '}
-          <code>storage-secrets.yaml</code> in the export.
+          <code>storage-secrets.yaml</code> in the export. Journals are the storage side; remote kubeconfig
+          (below) is the cluster side.
         </p>
         {secrets.map((sec, idx) => (
           <div key={idx} className="field-grid" style={{ marginBottom: '0.75rem' }}>
-            <Field label="Serial">
+            <Field label="Serial" hint="Array serial for this replication site.">
               <input
                 value={sec.serial}
                 onChange={(e) => {
@@ -115,7 +120,7 @@ export function ReplicationStep() {
                 }}
               />
             </Field>
-            <Field label="URL">
+            <Field label="URL" hint="Array REST endpoint for this site.">
               <input
                 value={sec.url}
                 onChange={(e) => {
@@ -155,7 +160,7 @@ export function ReplicationStep() {
                 }}
               />
             </Field>
-            <Field label="Journal ID">
+            <Field label="Journal ID" help={HELP.journal}>
               <input
                 value={sec.journal}
                 onChange={(e) => {
@@ -186,181 +191,189 @@ export function ReplicationStep() {
         )}
       </Section>
 
-      <Section title="Remote kubeconfig (both sites)">
-        <Callout variant="ok">
-          <strong>Nothing to run on this step.</strong> The export ZIP includes{' '}
-          <code>create-remote-kubeconfig-secrets.sh</code>. When you run <code>install.sh</code> with both
-          kubeconfig paths set, that script builds Secret <code>{secretName}</code> in <code>{ns}</code> and
-          applies it on each site (each gets the other site&apos;s kubeconfig).
-        </Callout>
-
-        <p style={{ fontSize: '0.9rem', margin: '0.75rem 0 0.35rem' }}>
-          <strong>Your only input later:</strong> set these two environment variables to real file paths
-          before <code>./install.sh</code> (or before running the helper script alone).
-        </p>
-        <pre className="code-block">{`export KUBECONFIG_P=/path/to/primary-kubeconfig
-export KUBECONFIG_S=/path/to/secondary-kubeconfig`}</pre>
-
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-          <DownloadButton
-            filename="create-remote-kubeconfig-secrets.sh"
-            content={helperScript}
-            label="Download helper script (.sh)"
-            mime="text/x-shellscript"
-          />
-        </div>
-        <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--hv-text-subtle)' }}>
-          Prefer the ZIP export — the same script is already inside{' '}
-          <code>03-replication/</code>. Download here only if you want the file early.
+      <Section title="Remote kubeconfig (both sites)" help={HELP.remoteKubeconfig}>
+        <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
+          Each site needs Secret <code>{secretName}</code> in <code>{ns}</code> containing the{' '}
+          <em>other</em> site&apos;s kubeconfig (data key <code>remote-kubeconfig</code>). Use either
+          path below — both produce the same Secret.
         </p>
 
-        <details style={{ marginTop: '1rem' }}>
-          <summary style={{ cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}>
-            Advanced: preview Secret YAML in the browser
-          </summary>
-          <Callout variant="warn">
-            Optional. Upload/paste builds YAML for inspection only — not saved in browser storage. Prefer
-            the helper script so kubeconfigs never enter the browser.
-          </Callout>
-
-          <div className="field-grid" style={{ marginTop: '0.75rem' }}>
-            <Field
-              label="Primary site kubeconfig"
-              hint="Becomes the Secret applied on the secondary site."
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <input
-                  ref={primaryFileRef}
-                  type="file"
-                  accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) readFile(f, 'primary')
-                  }}
-                />
-                <textarea
-                  rows={6}
-                  style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.75rem', width: '100%' }}
-                  placeholder="Paste primary kubeconfig YAML…"
-                  value={state.replication.primaryKubeconfig || ''}
-                  onChange={(e) =>
-                    setState((s) => ({
-                      ...s,
-                      replication: { ...s.replication, primaryKubeconfig: e.target.value },
-                    }))
-                  }
-                />
-                {(state.replication.primaryKubeconfig || '').trim() && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() =>
-                      setState((s) => ({
-                        ...s,
-                        replication: { ...s.replication, primaryKubeconfig: '' },
-                      }))
-                    }
-                  >
-                    Clear primary
-                  </button>
-                )}
-              </div>
-            </Field>
-
-            <Field
-              label="Secondary site kubeconfig"
-              hint="Becomes the Secret applied on the primary site."
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <input
-                  ref={secondaryFileRef}
-                  type="file"
-                  accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) readFile(f, 'secondary')
-                  }}
-                />
-                <textarea
-                  rows={6}
-                  style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.75rem', width: '100%' }}
-                  placeholder="Paste secondary kubeconfig YAML…"
-                  value={state.replication.secondaryKubeconfig || ''}
-                  onChange={(e) =>
-                    setState((s) => ({
-                      ...s,
-                      replication: { ...s.replication, secondaryKubeconfig: e.target.value },
-                    }))
-                  }
-                />
-                {(state.replication.secondaryKubeconfig || '').trim() && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() =>
-                      setState((s) => ({
-                        ...s,
-                        replication: { ...s.replication, secondaryKubeconfig: '' },
-                      }))
-                    }
-                  >
-                    Clear secondary
-                  </button>
-                )}
-              </div>
-            </Field>
+        <div className="option-stack">
+          <div className="option-panel">
+            <h4 className="option-panel-title">At install time (helper script)</h4>
+            <p className="option-panel-body">
+              The export ZIP already includes <code>create-remote-kubeconfig-secrets.sh</code>. Set these
+              paths on the machine that runs <code>install.sh</code> (or run the helper alone); the script
+              builds and applies the Secret on each site.
+            </p>
+            <CodeBlock>{`export KUBECONFIG_P=/path/to/primary-kubeconfig
+export KUBECONFIG_S=/path/to/secondary-kubeconfig`}</CodeBlock>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+              <DownloadButton
+                filename="create-remote-kubeconfig-secrets.sh"
+                content={helperScript}
+                label="Download helper script (.sh)"
+                mime="text/x-shellscript"
+              />
+            </div>
+            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--hv-text-subtle)' }}>
+              Optional early download — the same script ships in <code>03-replication/</code> inside the
+              ZIP.
+            </p>
           </div>
 
-          {(primarySecretYaml || secondarySecretYaml) && (
-            <div style={{ marginTop: '1rem' }}>
-              {primarySecretYaml && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '0.9rem' }}>Primary-site Secret (preview)</strong>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
-                      <CopyButton text={primarySecretYaml} label="Copy YAML" />
+          <div className="option-panel">
+            <h4 className="option-panel-title">In this wizard (Secret YAML)</h4>
+            <p className="option-panel-body">
+              Upload or paste both kubeconfigs to generate the Secret YAML now. Download and apply with{' '}
+              <code>{cmd} apply -f …</code> on each site. Values stay in this session only — they are not
+              written to browser storage or the exported config JSON.
+            </p>
+
+            <div className="field-grid" style={{ marginTop: '0.75rem' }}>
+              <Field
+                label="Primary site kubeconfig"
+                hint="Becomes the Secret applied on the secondary site."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <input
+                    ref={primaryFileRef}
+                    type="file"
+                    accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) readFile(f, 'primary')
+                    }}
+                  />
+                  <textarea
+                    rows={6}
+                    style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.75rem', width: '100%' }}
+                    placeholder="Paste primary kubeconfig YAML…"
+                    value={state.replication.primaryKubeconfig || ''}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        replication: { ...s.replication, primaryKubeconfig: e.target.value },
+                      }))
+                    }
+                  />
+                  {(state.replication.primaryKubeconfig || '').trim() && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        setState((s) => ({
+                          ...s,
+                          replication: { ...s.replication, primaryKubeconfig: '' },
+                        }))
+                      }
+                    >
+                      Clear primary
+                    </button>
+                  )}
+                </div>
+              </Field>
+
+              <Field
+                label="Secondary site kubeconfig"
+                hint="Becomes the Secret applied on the primary site."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <input
+                    ref={secondaryFileRef}
+                    type="file"
+                    accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) readFile(f, 'secondary')
+                    }}
+                  />
+                  <textarea
+                    rows={6}
+                    style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.75rem', width: '100%' }}
+                    placeholder="Paste secondary kubeconfig YAML…"
+                    value={state.replication.secondaryKubeconfig || ''}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        replication: { ...s.replication, secondaryKubeconfig: e.target.value },
+                      }))
+                    }
+                  />
+                  {(state.replication.secondaryKubeconfig || '').trim() && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        setState((s) => ({
+                          ...s,
+                          replication: { ...s.replication, secondaryKubeconfig: '' },
+                        }))
+                      }
+                    >
+                      Clear secondary
+                    </button>
+                  )}
+                </div>
+              </Field>
+            </div>
+
+            {(primarySecretYaml || secondarySecretYaml) && (
+              <div style={{ marginTop: '1rem' }}>
+                {primarySecretYaml && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '0.9rem' }}>
+                        Secret for primary site (contains secondary kubeconfig)
+                      </strong>
                       <DownloadButton
                         filename="remote-kubeconfig-for-primary-site.yaml"
                         content={primarySecretYaml}
                         label="Download"
                       />
                     </div>
-                  </div>
-                  <pre className="yaml-preview" style={{ maxHeight: 180, marginTop: '0.35rem' }}>
-                    {primarySecretYaml.slice(0, 400)}…
-                  </pre>
-                </>
-              )}
-              {secondarySecretYaml && (
-                <>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginTop: '0.75rem',
-                    }}
-                  >
-                    <strong style={{ fontSize: '0.9rem' }}>Secondary-site Secret (preview)</strong>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
-                      <CopyButton text={secondarySecretYaml} label="Copy YAML" />
+                    <CodeBlock
+                      className="yaml-preview"
+                      style={{ maxHeight: 180, marginTop: '0.35rem' }}
+                      text={primarySecretYaml}
+                    >
+                      {primarySecretYaml.slice(0, 400)}…
+                    </CodeBlock>
+                  </>
+                )}
+                {secondarySecretYaml && (
+                  <>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginTop: '0.75rem',
+                      }}
+                    >
+                      <strong style={{ fontSize: '0.9rem' }}>
+                        Secret for secondary site (contains primary kubeconfig)
+                      </strong>
                       <DownloadButton
                         filename="remote-kubeconfig-for-secondary-site.yaml"
                         content={secondarySecretYaml}
                         label="Download"
                       />
                     </div>
-                  </div>
-                  <pre className="yaml-preview" style={{ maxHeight: 180, marginTop: '0.35rem' }}>
-                    {secondarySecretYaml.slice(0, 400)}…
-                  </pre>
-                </>
-              )}
-            </div>
-          )}
-        </details>
+                    <CodeBlock
+                      className="yaml-preview"
+                      style={{ maxHeight: 180, marginTop: '0.35rem' }}
+                      text={secondarySecretYaml}
+                    >
+                      {secondarySecretYaml.slice(0, 400)}…
+                    </CodeBlock>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </Section>
-
     </div>
   )
 }
