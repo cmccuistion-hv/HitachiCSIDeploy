@@ -612,6 +612,10 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
 
   if (state.components.replication) {
     const hrpcBase = `https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/${state.versions.replication}`
+    const drScName =
+      (state.storageClassesEnabled && state.storageClasses[0]?.name?.trim()) ||
+      state.quickstart.storageClassName?.trim() ||
+      'hitachi-csi'
     lines.push(
       '',
       'echo "==> Replication operator + Disaster Recovery (automatic)"',
@@ -622,9 +626,52 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     if (files.some((f) => f.path === '03-replication/storage-secrets.yaml')) {
       lines.push('apply "03-replication/storage-secrets.yaml"')
     }
+    const hasLocalCert = files.some((f) => f.path === '03-replication/cert-manager.yaml')
+    const hasLocalDr = files.some((f) => f.path === '03-replication/dr-operator-install.yaml')
+    if (hasLocalCert) {
+      lines.push('apply "03-replication/cert-manager.yaml"')
+    } else {
+      lines.push(`apply_url "${hrpcBase}/dr-operator/yaml/cert-manager.yaml"`)
+    }
     lines.push(
-      `apply_url "${hrpcBase}/dr-operator/yaml/cert-manager.yaml"`,
-      `apply_url "${hrpcBase}/dr-operator/yaml/dr-operator-install.yaml"`,
+      '',
+      'echo "==> Waiting for cert-manager webhook (required before DR Certificates)..."',
+      'wait_cert_manager() {',
+      '  local end=$((SECONDS + 300))',
+      '  while (( SECONDS < end )); do',
+      '    if "$CMD" get deploy -n cert-manager cert-manager-webhook >/dev/null 2>&1 \\',
+      '      && "$CMD" wait --for=condition=Available deploy/cert-manager-webhook -n cert-manager --timeout=30s >/dev/null 2>&1 \\',
+      '      && "$CMD" wait --for=condition=Available deploy/cert-manager -n cert-manager --timeout=30s >/dev/null 2>&1 \\',
+      '      && "$CMD" wait --for=condition=Available deploy/cert-manager-cainjector -n cert-manager --timeout=30s >/dev/null 2>&1; then',
+      '      # Webhook Service needs endpoints before Certificate validates',
+      '      local eps',
+      '      eps="$("$CMD" get endpoints -n cert-manager cert-manager-webhook -o jsonpath="{.subsets[*].addresses[*].ip}" 2>/dev/null || true)"',
+      '      if [[ -n "$eps" ]]; then',
+      '        echo "    cert-manager webhook is Available"',
+      '        return 0',
+      '      fi',
+      '    fi',
+      '    sleep 5',
+      '  done',
+      '  echo "Timed out waiting for cert-manager webhook." >&2',
+      '  "$CMD" get pods -n cert-manager -o wide || true',
+      '  return 1',
+      '}',
+      'wait_cert_manager',
+      '',
+    )
+    if (hasLocalDr) {
+      lines.push(
+        `echo "==> Applying DR operator (PVC storageClassName=${JSON.stringify(drScName)})"`,
+        'apply "03-replication/dr-operator-install.yaml"',
+      )
+    } else {
+      lines.push(
+        `echo "==> Applying DR operator from upstream (warning: replace <storage-class-name> if apply fails)"`,
+        `apply_url "${hrpcBase}/dr-operator/yaml/dr-operator-install.yaml"`,
+      )
+    }
+    lines.push(
       '',
       'echo "==> Remote kubeconfig Secrets"',
       'echo "Required input: KUBECONFIG_P and KUBECONFIG_S (paths to both cluster kubeconfigs)."',
@@ -956,6 +1003,34 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
 
   // Replication
   if (state.components.replication) {
+    const hrpcPaths = templatePaths('hrpc', state.versions.replication)
+    const drScName =
+      (state.storageClassesEnabled && state.storageClasses[0]?.name?.trim()) ||
+      state.quickstart.storageClassName?.trim() ||
+      'hitachi-csi'
+
+    const certRaw = await fetchFirstAvailable(hrpcPaths.certManager ?? [])
+    if (certRaw) {
+      files.push({
+        path: '03-replication/cert-manager.yaml',
+        content: certRaw,
+        description: 'cert-manager (required by Disaster Recovery operator)',
+        group: 'replication',
+      })
+    }
+
+    const drRaw = await fetchFirstAvailable(hrpcPaths.drInstall ?? [])
+    if (drRaw) {
+      // Upstream ships a literal placeholder that fails API validation until substituted.
+      const patched = drRaw.replaceAll('<storage-class-name>', drScName)
+      files.push({
+        path: '03-replication/dr-operator-install.yaml',
+        content: patched,
+        description: `Disaster Recovery operator install (PVC uses StorageClass ${drScName})`,
+        group: 'replication',
+      })
+    }
+
     files.push({
       path: '03-replication/README.md',
       content: `# Replication + Disaster Recovery
@@ -966,8 +1041,9 @@ Version: ${state.versions.replication}
 
 1. Applies the Replication operator (namespace + operator manifests)
 2. Applies \`storage-secrets.yaml\` when present
-3. Applies cert-manager + Disaster Recovery operator
-4. Runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
+3. Applies cert-manager, **waits for the webhook**, then applies the Disaster Recovery operator
+4. DR operator PVC \`hspc-dr-operator-pvc\` uses StorageClass \`${drScName}\` (from this wizard — not the upstream \`<storage-class-name>\` placeholder)
+5. Runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
 
 ## What you provide
 
@@ -979,6 +1055,8 @@ export KUBECONFIG_S=/path/to/secondary-kubeconfig
 \`\`\`
 
 Details: \`remote-kubeconfig-notes.md\`.
+
+${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream HRPC/DR YAML; re-export when GitHub is reachable.\n'}
 `,
       description: 'Replication and DR Operator install notes',
       group: 'replication',

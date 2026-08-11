@@ -405,7 +405,7 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
     lines.push(
       '## Replication + Disaster Recovery',
       '',
-      '`install.sh` applies the Replication operator, storage secrets, cert-manager, and the DR operator.',
+      '`install.sh` applies the Replication operator, storage secrets, cert-manager (waits for webhook), then the DR operator with your StorageClass on the DR PVC.',
       '',
       '**Your only input:** set both kubeconfig paths before running `install.sh` so remote Secrets are created automatically:',
       '',
