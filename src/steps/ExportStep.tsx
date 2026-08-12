@@ -11,10 +11,9 @@ import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Section } from '../components/ui'
 
 export function ExportStep() {
-  const { state, exportConfig, importConfig, reset, goToFix } = useWizard()
+  const { state, exportConfig, reset, goToFix } = useWizard()
   const plat = PLATFORMS[state.platform]
   const [files, setFiles] = useState<GeneratedFile[]>([])
-  const [importText, setImportText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [topoOpen, setTopoOpen] = useState(true)
@@ -168,31 +167,6 @@ export function ExportStep() {
             </li>
           ))}
         </ol>
-      </Section>
-
-      <Section title="Import saved config">
-        <textarea
-          rows={5}
-          style={{ width: '100%', fontFamily: 'var(--hv-mono)', fontSize: '0.8rem' }}
-          placeholder="Paste wizard-config.json here"
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-        />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ marginTop: '0.5rem' }}
-          onClick={() => {
-            try {
-              importConfig(importText)
-              alert('Config imported.')
-            } catch {
-              alert('Invalid JSON config.')
-            }
-          }}
-        >
-          Import
-        </button>
       </Section>
 
       <Section title="Documentation">
