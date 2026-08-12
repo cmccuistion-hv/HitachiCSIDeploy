@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import { useWizard } from '../state/WizardContext'
 import { ResourcePartitioningDiagram } from '../components/ResourcePartitioningDiagram'
 import { Callout, CodeBlock, DownloadButton, Field, HelpTip, Section } from '../components/ui'
-import { STORAGE_SITE_FOCUS_KEY } from '../catalog/types'
 import { PLATFORMS } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../catalog/sites'
@@ -44,7 +43,7 @@ const RESOURCE_PARTITIONING_ITEMS = [
 ] as const
 
 export function ReplicationStep() {
-  const { state, setState, visibleSteps, setStepIndex } = useWizard()
+  const { state, setState, goToFix } = useWizard()
   const { isAdvanced } = useUiMode()
   const [stepAdvanced, setStepAdvanced] = useState(false)
   const showFull = isAdvanced || stepAdvanced
@@ -122,13 +121,7 @@ export function ReplicationStep() {
   )
   const goToStorage = () => {
     const focus: 'primary' | 'secondary' = rgIds.primary ? 'secondary' : 'primary'
-    try {
-      sessionStorage.setItem(STORAGE_SITE_FOCUS_KEY, focus)
-    } catch {
-      /* private mode */
-    }
-    const idx = visibleSteps.findIndex((s) => s.id === 'storage')
-    if (idx >= 0) setStepIndex(idx)
+    goToFix({ message: '', stepId: 'storage', site: focus })
   }
   const storageJump = (
     <button type="button" className="btn btn-secondary" onClick={goToStorage}>

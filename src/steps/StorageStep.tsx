@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react'
-import { STORAGE_SITE_FOCUS_KEY, type StorageFamily, type StorageSystemConfig } from '../catalog/types'
+import { type StorageFamily, type StorageSystemConfig } from '../catalog/types'
 import { supportsImmutableSnapshots } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
-import type { SiteId } from '../catalog/sites'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
 import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
+import { useSiteTab } from '../state/useSiteTab'
 import { Callout, Field, Section } from '../components/ui'
 
 function newSystem(n: number): StorageSystemConfig {
@@ -25,21 +24,8 @@ function newSystem(n: number): StorageSystemConfig {
 
 export function StorageStep() {
   const { state, setState } = useWizard()
-  const [site, setSite] = useState<SiteId>('primary')
   const replicationOn = state.components.replication
-
-  useEffect(() => {
-    if (!replicationOn) return
-    try {
-      const focus = sessionStorage.getItem(STORAGE_SITE_FOCUS_KEY)
-      if (focus === 'primary' || focus === 'secondary') {
-        setSite(focus)
-        sessionStorage.removeItem(STORAGE_SITE_FOCUS_KEY)
-      }
-    } catch {
-      /* private mode */
-    }
-  }, [replicationOn])
+  const [site, setSite] = useSiteTab(replicationOn)
   const storage = replicationOn ? getSiteStorage(state, site) : null
   const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
 

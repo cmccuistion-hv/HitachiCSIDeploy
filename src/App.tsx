@@ -6,10 +6,11 @@ import { useTheme } from './state/ThemeContext'
 import { useUiMode } from './state/UiModeContext'
 import {
   needsNoReplicationStorageClassConfirm,
-  storageArtifactsContinueInvalidReason,
+  storageArtifactsContinueInvalidFix,
   storageArtifactsValidForContinue,
-  storageSystemsContinueInvalidReason,
+  storageSystemsContinueInvalidFix,
   storageSystemsValidForContinue,
+  wizardFixCta,
 } from './catalog/validation'
 import { useWizard } from './state/WizardContext'
 import { buildNavEntries, footerStepLabel, type NavEntry } from './state/steps'
@@ -154,7 +155,7 @@ function StepBody({ id }: { id: string }) {
 }
 
 export default function App() {
-  const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
+  const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig, goToFix } = useWizard()
   const { palette, mode, setPalette, setMode, headerLight } = useTheme()
   const { uiMode, setUiMode } = useUiMode()
   const current = visibleSteps[stepIndex]
@@ -172,10 +173,10 @@ export default function App() {
   const storageContinueBlocked =
     (current?.id === 'storageclasses' && !storageArtifactsValidForContinue(state)) ||
     (current?.id === 'storage' && !storageSystemsValidForContinue(state))
-  const storageContinueReason = storageContinueBlocked
+  const storageContinueFix = storageContinueBlocked
     ? current?.id === 'storage'
-      ? storageSystemsContinueInvalidReason(state)
-      : storageArtifactsContinueInvalidReason(state)
+      ? storageSystemsContinueInvalidFix(state)
+      : storageArtifactsContinueInvalidFix(state)
     : null
 
   useEffect(() => {
@@ -341,10 +342,15 @@ export default function App() {
               flex: 1,
             }}
           >
-            {storageContinueReason ? (
-              <span style={{ color: 'var(--hv-warn-fg, var(--hv-text-subtle))' }}>
-                {storageContinueReason}
-              </span>
+            {storageContinueFix ? (
+              <button
+                type="button"
+                className="footer-fix"
+                onClick={() => goToFix(storageContinueFix)}
+              >
+                {storageContinueFix.message}
+                <span className="footer-fix-cta">{wizardFixCta(storageContinueFix)}</span>
+              </button>
             ) : (
               footerLabel ||
               `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`
