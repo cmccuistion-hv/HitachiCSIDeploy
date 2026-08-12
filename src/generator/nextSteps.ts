@@ -72,14 +72,18 @@ export function buildNextSteps(state: WizardState): NextStep[] {
 
   const hasPrimaryKubeconfig = Boolean(state.replication.primaryKubeconfig?.trim())
   const hasSecondaryKubeconfig = Boolean(state.replication.secondaryKubeconfig?.trim())
-  if (
-    state.components.replication &&
-    (!hasPrimaryKubeconfig || !hasSecondaryKubeconfig)
-  ) {
+  const packagedRemoteKubeconfig = hasPrimaryKubeconfig && hasSecondaryKubeconfig
+  if (state.components.replication && packagedRemoteKubeconfig) {
     steps.push({
       id: 'replication-kubeconfigs',
-      title: 'Set both site kubeconfig paths',
-      body: 'Provide paths to both cluster kubeconfigs so install.sh can create each remote-kubeconfig Secret with the other site’s kubeconfig.',
+      title: 'Remote kubeconfig Secrets are already in the ZIP',
+      body: 'You generated the Secret YAML in the wizard (In this wizard). install.sh applies each site’s packaged remote-kubeconfig Secret from that site’s folder. Do not set KUBECONFIG_P or KUBECONFIG_S — those are only for the helper-script path.',
+    })
+  } else if (state.components.replication) {
+    steps.push({
+      id: 'replication-kubeconfigs',
+      title: 'Remote kubeconfig at install time',
+      body: 'If you did not generate Secret YAML in the wizard, set both kubeconfig paths on the install host so install.sh can create each remote-kubeconfig Secret with the other site’s kubeconfig. Skip this if those YAML files are already in 03-replication/ from the wizard.',
       command:
         'export KUBECONFIG_P=/path/to/primary-kubeconfig\nexport KUBECONFIG_S=/path/to/secondary-kubeconfig',
     })
@@ -136,10 +140,17 @@ export function buildNextSteps(state: WizardState): NextStep[] {
   }
 
   if (state.components.consolePlugin) {
+    const exampleSc =
+      (state.quickstart.storageClassName || '').trim() ||
+      (state.storageClasses[0]?.name || '').trim() ||
+      (state.sites?.primary.storageClasses[0]?.name || '').trim()
+    const scHint = exampleSc
+      ? ` Open a Hitachi-backed StorageClass such as ${exampleSc}.`
+      : ' Open a StorageClass provisioned by the Hitachi CSI Driver.'
     steps.push({
       id: 'open-console-dashboard',
-      title: 'Open the Hitachi dashboard',
-      body: 'After installation succeeds, open the OpenShift Console and select the Hitachi dashboard. The packaged Job already enables the console plugin.',
+      title: 'Open the HitachiCSI tab on a StorageClass',
+      body: `In the OpenShift web console, go to Storage → StorageClasses.${scHint} The HitachiCSI tab on that StorageClass is the dashboard. install.sh already applied the plugin and enabled it — you do not turn it on by hand.`,
     })
   }
 

@@ -72,10 +72,7 @@ function ArrayBox({
         {title}
       </text>
       <text x={cx} y="288" textAnchor="middle" className="rp-diagram-muted">
-        Journal in this array’s resource group
-      </text>
-      <text x={cx} y="304" textAnchor="middle" className="rp-diagram-muted">
-        Host group spc-replication
+        Journal ID
       </text>
     </g>
   )
@@ -122,7 +119,7 @@ export function ReplicationArchitectureDiagram({
 
       <line x1="284" y1="132" x2="356" y2="132" className="rp-diagram-link" />
       <text x="320" y="124" textAnchor="middle" className="rp-diagram-link-label">
-        remote kubeconfig
+        API Path
       </text>
 
       <line x1="150" y1="216" x2="150" y2="248" className="rp-diagram-link" markerEnd="url(#hrpc-arr)" />
@@ -133,7 +130,7 @@ export function ReplicationArchitectureDiagram({
 
       <line x1="284" y1="284" x2="356" y2="284" className="rp-diagram-link" />
       <text x="320" y="276" textAnchor="middle" className="rp-diagram-link-label">
-        journals / copy
+        Replication Path
       </text>
 
       <text x="320" y="342" textAnchor="middle" className="rp-diagram-muted">

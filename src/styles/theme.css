@@ -965,6 +965,80 @@ textarea {
   overflow: hidden;
 }
 
+.review-topo {
+  border: 1px solid var(--hv-border);
+  border-radius: var(--hv-radius);
+  overflow: hidden;
+}
+
+.yaml-dialog {
+  border: 1px solid var(--hv-border);
+  border-radius: var(--hv-radius-lg);
+  padding: 0;
+  max-width: min(920px, calc(100vw - 2rem));
+  width: 100%;
+  background: var(--hv-bg-container);
+  color: var(--hv-text);
+  box-shadow: var(--hv-shadow);
+}
+
+.yaml-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.yaml-dialog-body {
+  padding: 1.15rem 1.25rem 1.2rem;
+  max-height: min(88vh, 820px);
+  overflow: auto;
+}
+
+.yaml-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.yaml-dialog-head h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.2rem;
+}
+
+.yaml-dialog-why {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--hv-text-subtle);
+}
+
+.yaml-dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.82rem;
+  color: var(--hv-text-subtle);
+}
+
+.yaml-dialog-meta code {
+  font-family: var(--hv-mono);
+  font-size: 0.78rem;
+}
+
+.yaml-dialog-meta .btn {
+  margin-left: auto;
+}
+
+.rp-diagram-hit {
+  cursor: pointer;
+}
+
+.rp-diagram-hit.is-selected rect:first-of-type {
+  stroke: var(--hv-primary);
+  stroke-width: 2;
+}
+
 .toggle-row input[type='checkbox'] {
   width: 18px;
   height: 18px;

@@ -36,6 +36,9 @@ export const HELP = {
   replicationArchitecture:
     'Replication installs the Replication operator and the DR Operator on both clusters. Each site stores the other site’s kubeconfig. Journals and copy run between the two arrays. CSI Driver still provisions volumes; day-2 protection is DR policies after install.',
 
+  reviewTopology:
+    'This is the package you configured. Click an object to open the YAML files that make it.',
+
   protocolMultipath:
     'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
 
