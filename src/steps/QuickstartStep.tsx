@@ -1,4 +1,5 @@
 import { PLATFORMS } from '../catalog/platforms'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
 
@@ -28,15 +29,71 @@ export function QuickstartStep() {
       </Callout>
 
       <Section title="Test workload">
+        <AdvancedSection
+          title="Advanced test workload options"
+        >
+          <div className="field-grid">
+            <Field label="PVC name">
+              <input
+                value={qs.pvcName}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, quickstart: { ...s.quickstart, pvcName: e.target.value } }))
+                }
+              />
+            </Field>
+            <Field
+              label="Access mode"
+              hint="ReadWriteOnce: one node at a time. ReadWriteMany: shared filesystem across nodes (when supported)."
+            >
+              <select
+                value={qs.accessMode}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    quickstart: {
+                      ...s.quickstart,
+                      accessMode: e.target.value as typeof qs.accessMode,
+                    },
+                  }))
+                }
+              >
+                <option value="ReadWriteOnce">ReadWriteOnce</option>
+                <option value="ReadWriteMany">ReadWriteMany</option>
+                <option value="ReadOnlyMany">ReadOnlyMany</option>
+              </select>
+            </Field>
+            <Field
+              label="Volume mode"
+              hint="Filesystem mounts a formatted volume. Block presents a raw device to the container."
+            >
+              <select
+                value={qs.volumeMode}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    quickstart: {
+                      ...s.quickstart,
+                      volumeMode: e.target.value as typeof qs.volumeMode,
+                    },
+                  }))
+                }
+              >
+                <option value="Filesystem">Filesystem</option>
+                <option value="Block">Block</option>
+              </select>
+            </Field>
+            <Field label="Pod name">
+              <input
+                value={qs.podName}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, quickstart: { ...s.quickstart, podName: e.target.value } }))
+                }
+              />
+            </Field>
+          </div>
+        </AdvancedSection>
+
         <div className="field-grid">
-          <Field label="PVC name">
-            <input
-              value={qs.pvcName}
-              onChange={(e) =>
-                setState((s) => ({ ...s, quickstart: { ...s.quickstart, pvcName: e.target.value } }))
-              }
-            />
-          </Field>
           <Field label="Size" hint="Requested capacity for the test PVC (for example 1Gi).">
             <input
               value={qs.pvcSize}
@@ -45,72 +102,29 @@ export function QuickstartStep() {
               }
             />
           </Field>
-          <Field label="StorageClass">
-            <select
-              value={qs.storageClassName || state.storageClasses[0]?.name}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  quickstart: { ...s.quickstart, storageClassName: e.target.value },
-                }))
-              }
-            >
-              {state.storageClasses.map((sc) => (
-                <option key={sc.id} value={sc.name}>
-                  {sc.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Access mode"
-            hint="ReadWriteOnce: one node at a time. ReadWriteMany: shared filesystem across nodes (when supported)."
-          >
-            <select
-              value={qs.accessMode}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  quickstart: {
-                    ...s.quickstart,
-                    accessMode: e.target.value as typeof qs.accessMode,
-                  },
-                }))
-              }
-            >
-              <option value="ReadWriteOnce">ReadWriteOnce</option>
-              <option value="ReadWriteMany">ReadWriteMany</option>
-              <option value="ReadOnlyMany">ReadOnlyMany</option>
-            </select>
-          </Field>
-          <Field
-            label="Volume mode"
-            hint="Filesystem mounts a formatted volume. Block presents a raw device to the container."
-          >
-            <select
-              value={qs.volumeMode}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  quickstart: {
-                    ...s.quickstart,
-                    volumeMode: e.target.value as typeof qs.volumeMode,
-                  },
-                }))
-              }
-            >
-              <option value="Filesystem">Filesystem</option>
-              <option value="Block">Block</option>
-            </select>
-          </Field>
-          <Field label="Pod name">
-            <input
-              value={qs.podName}
-              onChange={(e) =>
-                setState((s) => ({ ...s, quickstart: { ...s.quickstart, podName: e.target.value } }))
-              }
-            />
-          </Field>
+          {state.storageClasses.length > 1 ? (
+            <Field label="StorageClass">
+              <select
+                value={qs.storageClassName || state.storageClasses[0]?.name}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    quickstart: { ...s.quickstart, storageClassName: e.target.value },
+                  }))
+                }
+              >
+                {state.storageClasses.map((sc) => (
+                  <option key={sc.id} value={sc.name}>
+                    {sc.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="StorageClass" hint="Uses the only StorageClass in this package.">
+              <input value={state.storageClasses[0]?.name || ''} disabled readOnly />
+            </Field>
+          )}
         </div>
       </Section>
     </div>

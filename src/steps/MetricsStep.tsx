@@ -1,5 +1,6 @@
 import { DOCS } from '../catalog/components'
 import { PLATFORMS } from '../catalog/platforms'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
 
@@ -28,83 +29,85 @@ export function MetricsStep() {
       </Callout>
 
       <Section title="Deployment options">
-        <div className="field-grid">
-          <Field label="Namespace" hint="Where the metrics exporter Deployment runs.">
-            <input
-              value={state.metrics.namespace}
-              onChange={(e) => {
-                const ns = e.target.value
-                setState((s) => ({
-                  ...s,
-                  metrics: { ...s.metrics, namespace: ns },
-                  consolePlugin: s.metrics.deployPrometheus
-                    ? { ...s.consolePlugin, prometheusNamespace: ns }
-                    : s.consolePlugin,
-                }))
-              }}
-            />
-          </Field>
-          <Field
-            label="Secret name"
-            hint="Secret listing the arrays the exporter scrapes for metrics."
-          >
-            <input
-              value={state.metrics.secretName}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  metrics: { ...s.metrics, secretName: e.target.value },
-                }))
-              }
-            />
-          </Field>
-          <Field
-            label="Max batch size"
-            hint="Increasing batch size or worker count may raise memory use."
-          >
-            <input
-              value={state.metrics.maxBatchSize}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  metrics: { ...s.metrics, maxBatchSize: e.target.value },
-                }))
-              }
-            />
-          </Field>
-          <Field
-            label="Max worker count"
-            hint="Parallel workers for metric collection. Higher values may use more memory."
-          >
-            <input
-              value={state.metrics.maxWorkerCount}
-              onChange={(e) =>
-                setState((s) => ({
-                  ...s,
-                  metrics: { ...s.metrics, maxWorkerCount: e.target.value },
-                }))
-              }
-            />
-          </Field>
-        </div>
-        <label className="toggle-row" style={{ marginTop: '0.75rem' }}>
-          <input
-            type="checkbox"
-            checked={state.metrics.enableDebugLog}
-            onChange={(e) =>
-              setState((s) => ({
-                ...s,
-                metrics: { ...s.metrics, enableDebugLog: e.target.checked },
-              }))
-            }
-          />
-          <div>
-            <strong>Enable debug logging</strong>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-              Disable in production to reduce log volume.
-            </p>
+        <AdvancedSection
+          title="Advanced deployment settings"
+        >
+          <div className="field-grid">
+            <Field label="Namespace" hint="Where the metrics exporter Deployment runs.">
+              <input
+                value={state.metrics.namespace}
+                onChange={(e) => {
+                  const ns = e.target.value
+                  setState((s) => ({
+                    ...s,
+                    metrics: { ...s.metrics, namespace: ns },
+                    consolePlugin: s.metrics.deployPrometheus
+                      ? { ...s.consolePlugin, prometheusNamespace: ns }
+                      : s.consolePlugin,
+                  }))
+                }}
+              />
+            </Field>
+            <Field label="Secret name" hint="Secret listing the arrays the exporter scrapes for metrics.">
+              <input
+                value={state.metrics.secretName}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    metrics: { ...s.metrics, secretName: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field
+              label="Max batch size"
+              hint="Increasing batch size or worker count may raise memory use."
+            >
+              <input
+                value={state.metrics.maxBatchSize}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    metrics: { ...s.metrics, maxBatchSize: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+            <Field
+              label="Max worker count"
+              hint="Parallel workers for metric collection. Higher values may use more memory."
+            >
+              <input
+                value={state.metrics.maxWorkerCount}
+                onChange={(e) =>
+                  setState((s) => ({
+                    ...s,
+                    metrics: { ...s.metrics, maxWorkerCount: e.target.value },
+                  }))
+                }
+              />
+            </Field>
           </div>
-        </label>
+          <label className="toggle-row" style={{ marginTop: '0.75rem' }}>
+            <input
+              type="checkbox"
+              checked={state.metrics.enableDebugLog}
+              onChange={(e) =>
+                setState((s) => ({
+                  ...s,
+                  metrics: { ...s.metrics, enableDebugLog: e.target.checked },
+                }))
+              }
+            />
+            <div>
+              <strong>Enable debug logging</strong>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                Disable in production to reduce log volume.
+              </p>
+            </div>
+          </label>
+        </AdvancedSection>
+
         <label className="toggle-row" style={{ marginTop: '0.65rem' }}>
           <input
             type="checkbox"

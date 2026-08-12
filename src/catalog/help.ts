@@ -69,4 +69,12 @@ export const HELP = {
     'Hitachi Telemetry (enabled by default with the CSI Driver) sends anonymized cluster and storage usage to Hitachi over HTTPS to AWS. Data is vendor-only. Turn off to opt out; the package then disables it via ConfigMap hspc-csi-telemetry-config (awsEnabled: false).',
 } as const
 
+/** Short Simple-mode ledes (no default-name dumps). */
+export const RECAP = {
+  componentsLede:
+    'Versions and install namespaces use Hitachi defaults — open Advanced on this step only if you need to change them.',
+  multipathLede:
+    'Package multipath so worker nodes see redundant paths as one disk. Advanced lets you rename objects and edit multipath.conf.',
+} as const
+
 export const WELCOME_SEEN_KEY = 'hitachi-csi-wizard-welcome-seen'

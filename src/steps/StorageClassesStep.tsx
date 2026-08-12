@@ -17,7 +17,9 @@ import { nextUniqueName, validateStorageClass } from '../catalog/validation'
 import type { SiteId } from '../catalog/sites'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
+import { useUiMode } from '../state/UiModeContext'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
 /** Count comma-separated Port ID values (empty segments ignored). */
@@ -64,6 +66,7 @@ function defaultSc(
 
 export function StorageClassesStep() {
   const { state, setState } = useWizard()
+  const { isAdvanced } = useUiMode()
   const [site, setSite] = useState<SiteId>('primary')
   const replicationOn = state.components.replication
   const ensured = replicationOn ? ensureSitesForReplication(state) : state
@@ -435,6 +438,14 @@ export function StorageClassesStep() {
             ? 'Prefer a single port when wizard multipath packaging is off (e.g. CL1-A).'
             : 'Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe.'
           const portIdPlaceholder = multipathOff ? 'CL1-A' : 'CL1-A,CL2-A'
+          const advancedError =
+            errors.name ||
+            errors.secretName ||
+            (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.stretchedSecretName : undefined) ||
+            (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyGroupName : undefined) ||
+            (efficiencyBlocked
+              ? 'VSP One B20 does not support Disabled storage efficiency. Use Compression or Compression + Deduplication.'
+              : undefined)
 
           return (
             <Section
@@ -493,17 +504,6 @@ export function StorageClassesStep() {
                     )}
                   </select>
                 </Field>
-                <Field
-                  label="Name"
-                  hint={
-                    usedForReplication
-                      ? 'Must be the same on both sites. Changing it here updates the other site too.'
-                      : 'Kubernetes StorageClass metadata.name referenced by PVCs.'
-                  }
-                  error={errors.name}
-                >
-                  <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
-                </Field>
                 <Field label="Connection type" help={HELP.protocolMultipath}>
                   <select
                     value={effectiveConn}
@@ -520,17 +520,142 @@ export function StorageClassesStep() {
                     ))}
                   </select>
                 </Field>
-                <Field
-                  label="Secret name"
-                  hint="Must match the Secret generated from the Storage systems step. Multiple StorageClasses may share one Secret when they use the same array."
-                  error={errors.secretName}
-                >
-                  <input value={sc.secretName} onChange={(e) => updateSc(sc.id, { secretName: e.target.value })} />
-                </Field>
-                <Field label="Secret namespace" hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere.">
-                  <input value={sc.secretNamespace} onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })} />
-                </Field>
               </div>
+
+              <AdvancedSection
+                title="Advanced StorageClass options"
+                error={advancedError}
+              >
+                <div className="field-grid">
+                  <Field
+                    label="Name"
+                    hint={
+                      usedForReplication
+                        ? 'Must be the same on both sites. Changing it here updates the other site too.'
+                        : 'Kubernetes StorageClass metadata.name referenced by PVCs.'
+                    }
+                    error={errors.name}
+                  >
+                    <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
+                  </Field>
+                  <Field
+                    label="Secret name"
+                    hint="Must match the Secret generated from the Storage systems step. Multiple StorageClasses may share one Secret when they use the same array."
+                    error={errors.secretName}
+                  >
+                    <input
+                      value={sc.secretName}
+                      onChange={(e) => updateSc(sc.id, { secretName: e.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label="Secret namespace"
+                    hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
+                  >
+                    <input
+                      value={sc.secretNamespace}
+                      onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
+                    />
+                  </Field>
+
+                  {sc.kind === 'standard' && (
+                    <>
+                      <Field
+                        label="Filesystem"
+                        hint={
+                          usedForReplication
+                            ? 'Must be the same on both sites. Changing it here updates the other site too.'
+                            : 'ext4 (default) or xfs. Ignored for raw Block volumeMode.'
+                        }
+                      >
+                        <select
+                          value={sc.fstype || 'ext4'}
+                          onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}
+                        >
+                          <option value="ext4">ext4</option>
+                          <option value="xfs">xfs</option>
+                        </select>
+                      </Field>
+                      <Field label="Allow volume expansion" hint="Must be false for stretched StorageClasses.">
+                        <select
+                          value={String(sc.allowVolumeExpansion)}
+                          onChange={(e) =>
+                            updateSc(sc.id, { allowVolumeExpansion: e.target.value === 'true' })
+                          }
+                        >
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                      </Field>
+                      <Field
+                        label="Storage efficiency"
+                        hint="Adaptive data reduction. VSP One B20 does not support Disabled."
+                        error={
+                          efficiencyBlocked
+                            ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
+                            : undefined
+                        }
+                      >
+                        <select
+                          value={sc.storageEfficiency || 'Disabled'}
+                          onChange={(e) =>
+                            updateSc(sc.id, {
+                              storageEfficiency: e.target.value as StorageClassConfig['storageEfficiency'],
+                            })
+                          }
+                        >
+                          <option value="Disabled" disabled={!!primary?.isB20Series}>
+                            Disabled
+                          </option>
+                          <option value="Compression">Compression</option>
+                          <option value="CompressionDeduplication">Compression + Deduplication</option>
+                        </select>
+                      </Field>
+                      {sc.storageEfficiency && sc.storageEfficiency !== 'Disabled' && (
+                        <Field label="Efficiency mode" hint="Inline compresses on write; PostProcess reduces data after write.">
+                          <select
+                            value={sc.storageEfficiencyMode || 'PostProcess'}
+                            onChange={(e) =>
+                              updateSc(sc.id, {
+                                storageEfficiencyMode:
+                                  e.target.value as StorageClassConfig['storageEfficiencyMode'],
+                              })
+                            }
+                          >
+                            <option value="Inline">Inline</option>
+                            <option value="PostProcess">PostProcess</option>
+                          </select>
+                        </Field>
+                      )}
+                    </>
+                  )}
+
+                  {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
+                    <>
+                      <Field
+                        label="Stretched secret name"
+                        hint="Secret that holds primary and secondary array credentials."
+                        error={errors.stretchedSecretName}
+                      >
+                        <input
+                          value={sc.stretchedSecretName || ''}
+                          onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })}
+                        />
+                      </Field>
+                      <Field
+                        label="Copy group name"
+                        hint="GAD copy group name on the arrays."
+                        error={errors.copyGroupName}
+                      >
+                        <input
+                          value={sc.copyGroupName || ''}
+                          onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })}
+                        />
+                      </Field>
+                    </>
+                  )}
+                </div>
+              </AdvancedSection>
 
               {replicationOn && sc.kind === 'standard' && (
                 <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
@@ -632,67 +757,6 @@ export function StorageClassesStep() {
                       <input value={sc.nvmSubsystemID || ''} onChange={(e) => updateSc(sc.id, { nvmSubsystemID: e.target.value })} />
                     </Field>
                   )}
-                  <Field
-                    label="Storage efficiency"
-                    hint="Adaptive data reduction. VSP One B20 does not support Disabled."
-                    error={
-                      efficiencyBlocked
-                        ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
-                        : undefined
-                    }
-                  >
-                    <select
-                      value={sc.storageEfficiency || 'Disabled'}
-                      onChange={(e) =>
-                        updateSc(sc.id, {
-                          storageEfficiency: e.target.value as StorageClassConfig['storageEfficiency'],
-                        })
-                      }
-                    >
-                      <option value="Disabled" disabled={!!primary?.isB20Series}>
-                        Disabled
-                      </option>
-                      <option value="Compression">Compression</option>
-                      <option value="CompressionDeduplication">Compression + Deduplication</option>
-                    </select>
-                  </Field>
-                  {sc.storageEfficiency && sc.storageEfficiency !== 'Disabled' && (
-                    <Field label="Efficiency mode" hint="Inline compresses on write; PostProcess reduces data after write.">
-                      <select
-                        value={sc.storageEfficiencyMode || 'PostProcess'}
-                        onChange={(e) =>
-                          updateSc(sc.id, {
-                            storageEfficiencyMode: e.target.value as StorageClassConfig['storageEfficiencyMode'],
-                          })
-                        }
-                      >
-                        <option value="Inline">Inline</option>
-                        <option value="PostProcess">PostProcess</option>
-                      </select>
-                    </Field>
-                  )}
-                  <Field
-                    label="Filesystem"
-                    hint={
-                      usedForReplication
-                        ? 'Must be the same on both sites. Changing it here updates the other site too.'
-                        : 'ext4 (default) or xfs. Ignored for raw Block volumeMode.'
-                    }
-                  >
-                    <select value={sc.fstype || 'ext4'} onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}>
-                      <option value="ext4">ext4</option>
-                      <option value="xfs">xfs</option>
-                    </select>
-                  </Field>
-                  <Field label="Allow volume expansion" hint="Must be false for stretched StorageClasses.">
-                    <select
-                      value={String(sc.allowVolumeExpansion)}
-                      onChange={(e) => updateSc(sc.id, { allowVolumeExpansion: e.target.value === 'true' })}
-                    >
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
-                  </Field>
                 </div>
               )}
 
@@ -710,14 +774,8 @@ export function StorageClassesStep() {
                     </Callout>
                   )}
                   <div className="field-grid" style={{ marginTop: '1rem' }}>
-                    <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials." error={errors.stretchedSecretName}>
-                      <input value={sc.stretchedSecretName || ''} onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })} />
-                    </Field>
                     <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
                       <input value={sc.quorumID || ''} onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })} />
-                    </Field>
-                    <Field label="Copy group name" hint="GAD copy group name on the arrays." error={errors.copyGroupName}>
-                      <input value={sc.copyGroupName || ''} onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })} />
                     </Field>
                     <Field label="Consistency group ID" hint="Consistency group identifier for coordinated pairs." error={errors.consistencyGroupId}>
                       <input value={sc.consistencyGroupId || ''} onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })} />
@@ -781,7 +839,9 @@ export function StorageClassesStep() {
           </div>
         </label>
         {state.snapshotClass.enabled && (
-          <>
+          <AdvancedSection
+            title="Advanced snapshot options"
+          >
             <div className="field-grid">
               <Field label="Name" hint="Kubernetes VolumeSnapshotClass metadata.name.">
                 <input
@@ -899,12 +959,12 @@ export function StorageClassesStep() {
                 </Field>
               </div>
             )}
-          </>
+          </AdvancedSection>
         )}
       </Section>
       )}
 
-      {state.storageClassesEnabled && previewSc && (
+      {isAdvanced && state.storageClassesEnabled && previewSc && (
         <Section title="Live YAML preview">
           <CodeBlock className="yaml-preview">{generateStorageClass(previewSc)}</CodeBlock>
           {state.snapshotClass.enabled && (

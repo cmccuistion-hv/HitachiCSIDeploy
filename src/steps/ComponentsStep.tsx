@@ -1,7 +1,8 @@
 import { COMPONENTS } from '../catalog/components'
-import { HELP } from '../catalog/help'
+import { HELP, RECAP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { ensureSitesForReplication } from '../catalog/sites'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, HelpTip, Section, ToggleRow } from '../components/ui'
 
@@ -13,73 +14,9 @@ export function ComponentsStep() {
     <div className="step-panel">
       <h2>Hitachi CSI components</h2>
       <p className="lede">
-        Select what to deploy under the Hitachi CSI umbrella. The CSI Driver is always included. Component
-        versions default to the latest discovered from the public operator repository.
+        Select what to deploy under the Hitachi CSI umbrella. The CSI Driver is always included.{' '}
+        {RECAP.componentsLede}
       </p>
-
-      <Section title="Versions">
-        {versionsLoading && <p>Detecting latest versions from GitHub…</p>}
-        {versions && (
-          <Callout variant="ok">
-            Latest detected ({versions.source}): CSI Driver <strong>{versions.latest.hspc}</strong>,
-            Replication <strong>{versions.latest.hrpc}</strong>, Performance Metrics{' '}
-            <strong>{versions.latest.hspp}</strong>
-          </Callout>
-        )}
-        <div className="field-grid">
-          <Field
-            label="CSI Driver version"
-            hint="Latest tag from GitHub when available. Match a supported release for your platform."
-          >
-            <select
-              value={state.versions.driver}
-              onChange={(e) =>
-                setState((s) => ({ ...s, versions: { ...s.versions, driver: e.target.value } }))
-              }
-            >
-              {(versions?.hspc || [state.versions.driver]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Replication version"
-            hint="Latest tag from GitHub when available. Used for Replication and the included DR Operator."
-          >
-            <select
-              value={state.versions.replication}
-              onChange={(e) =>
-                setState((s) => ({ ...s, versions: { ...s.versions, replication: e.target.value } }))
-              }
-            >
-              {(versions?.hrpc || [state.versions.replication]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Performance Metrics version"
-            hint="Latest tag from GitHub when available."
-          >
-            <select
-              value={state.versions.metrics}
-              onChange={(e) =>
-                setState((s) => ({ ...s, versions: { ...s.versions, metrics: e.target.value } }))
-              }
-            >
-              {(versions?.hspp || [state.versions.metrics]).map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      </Section>
 
       <Section title="Select components">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
@@ -194,58 +131,91 @@ export function ComponentsStep() {
         )}
       </Section>
 
-      <Section
-        title="Namespaces"
-        help={
-          plat.operatorHub
-            ? 'On OpenShift/ROSA, OperatorHub installs into one namespace and the CSI Driver instance must live in that same namespace (OwnNamespace).'
-            : 'On Kubernetes/RKE2/EKS, the operator typically runs in hspc-operator-system and the CSI Driver instance in kube-system.'
-        }
+      <AdvancedSection
+        title="Install defaults"
       >
-        <div className="field-grid">
-          {plat.operatorHub ? (
+        <Section title="Versions">
+          {versionsLoading && <p>Detecting latest versions from GitHub…</p>}
+          {versions && (
+            <Callout variant="ok">
+              Latest detected ({versions.source}): CSI Driver <strong>{versions.latest.hspc}</strong>,
+              Replication <strong>{versions.latest.hrpc}</strong>, Performance Metrics{' '}
+              <strong>{versions.latest.hspp}</strong>
+            </Callout>
+          )}
+          <div className="field-grid">
             <Field
-              label="Operator & CSI Driver namespace"
-              hint="OperatorHub installs into a specific namespace; the CSI Driver instance must be created in the same namespace."
+              label="CSI Driver version"
+              hint="Latest tag from GitHub when available. Match a supported release for your platform."
             >
-              <input
-                value={state.operatorNamespace}
-                onChange={(e) => {
-                  const ns = e.target.value
-                  setState((s) => ({
-                    ...s,
-                    operatorNamespace: ns,
-                    driverNamespace: ns,
-                    storageClasses: s.storageClasses.map((sc) =>
-                      sc.secretNamespace === s.driverNamespace || sc.secretNamespace === 'default'
-                        ? { ...sc, secretNamespace: ns }
-                        : sc,
-                    ),
-                  }))
-                }}
-              />
+              <select
+                value={state.versions.driver}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, versions: { ...s.versions, driver: e.target.value } }))
+                }
+              >
+                {(versions?.hspc || [state.versions.driver]).map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
             </Field>
-          ) : (
-            <>
+            <Field
+              label="Replication version"
+              hint="Latest tag from GitHub when available. Used for Replication and the included DR Operator."
+            >
+              <select
+                value={state.versions.replication}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, versions: { ...s.versions, replication: e.target.value } }))
+                }
+              >
+                {(versions?.hrpc || [state.versions.replication]).map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Performance Metrics version" hint="Latest tag from GitHub when available.">
+              <select
+                value={state.versions.metrics}
+                onChange={(e) =>
+                  setState((s) => ({ ...s, versions: { ...s.versions, metrics: e.target.value } }))
+                }
+              >
+                {(versions?.hspp || [state.versions.metrics]).map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </Section>
+
+        <Section
+          title="Namespaces"
+          help={
+            plat.operatorHub
+              ? 'On OpenShift/ROSA, OperatorHub installs into one namespace and the CSI Driver instance must live in that same namespace (OwnNamespace).'
+              : 'On Kubernetes/RKE2/EKS, the operator typically runs in hspc-operator-system and the CSI Driver instance in kube-system.'
+          }
+        >
+          <div className="field-grid">
+            {plat.operatorHub ? (
               <Field
-                label="Operator namespace"
-                hint="Upstream default for the operator deployment (hspc-operator-system)."
+                label="Operator & CSI Driver namespace"
+                hint="OperatorHub installs into a specific namespace; the CSI Driver instance must be created in the same namespace."
               >
                 <input
                   value={state.operatorNamespace}
-                  onChange={(e) => setState((s) => ({ ...s, operatorNamespace: e.target.value }))}
-                />
-              </Field>
-              <Field
-                label="CSI Driver namespace"
-                hint="Namespace for the CSI Driver instance (upstream sample uses kube-system)."
-              >
-                <input
-                  value={state.driverNamespace}
                   onChange={(e) => {
                     const ns = e.target.value
                     setState((s) => ({
                       ...s,
+                      operatorNamespace: ns,
                       driverNamespace: ns,
                       storageClasses: s.storageClasses.map((sc) =>
                         sc.secretNamespace === s.driverNamespace || sc.secretNamespace === 'default'
@@ -256,10 +226,42 @@ export function ComponentsStep() {
                   }}
                 />
               </Field>
-            </>
-          )}
-        </div>
-      </Section>
+            ) : (
+              <>
+                <Field
+                  label="Operator namespace"
+                  hint="Upstream default for the operator deployment (hspc-operator-system)."
+                >
+                  <input
+                    value={state.operatorNamespace}
+                    onChange={(e) => setState((s) => ({ ...s, operatorNamespace: e.target.value }))}
+                  />
+                </Field>
+                <Field
+                  label="CSI Driver namespace"
+                  hint="Namespace for the CSI Driver instance (upstream sample uses kube-system)."
+                >
+                  <input
+                    value={state.driverNamespace}
+                    onChange={(e) => {
+                      const ns = e.target.value
+                      setState((s) => ({
+                        ...s,
+                        driverNamespace: ns,
+                        storageClasses: s.storageClasses.map((sc) =>
+                          sc.secretNamespace === s.driverNamespace || sc.secretNamespace === 'default'
+                            ? { ...sc, secretNamespace: ns }
+                            : sc,
+                        ),
+                      }))
+                    }}
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        </Section>
+      </AdvancedSection>
     </div>
   )
 }

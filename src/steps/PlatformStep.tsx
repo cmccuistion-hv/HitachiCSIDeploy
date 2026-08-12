@@ -50,8 +50,8 @@ export function PlatformStep() {
     <div className="step-panel">
       <h2>Platform & connectivity</h2>
       <p className="lede">
-        Choose your orchestrator and storage protocol. This drives install steps, multipath guidance,
-        and which Hitachi CSI components are available.
+        Choose your orchestrator and how worker nodes reach the storage array. This drives install steps,
+        multipath guidance, and which Hitachi CSI components are available.
       </p>
 
       <Section title="Container platform">

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ThemeControls } from './components/ThemeControls'
+import { UiModeControls } from './components/UiModeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
+import { useUiMode } from './state/UiModeContext'
 import {
   needsNoReplicationStorageClassConfirm,
   storageArtifactsContinueInvalidReason,
@@ -154,6 +156,7 @@ function StepBody({ id }: { id: string }) {
 export default function App() {
   const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig } = useWizard()
   const { palette, mode, setPalette, setMode, headerLight } = useTheme()
+  const { uiMode, setUiMode } = useUiMode()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
@@ -228,6 +231,7 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <UiModeControls uiMode={uiMode} onUiMode={setUiMode} />
           <ThemeControls
             palette={palette}
             mode={mode}
