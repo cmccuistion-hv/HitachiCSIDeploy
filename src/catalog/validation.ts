@@ -20,6 +20,38 @@ function siteLabel(site: 'primary' | 'secondary'): string {
   return site === 'primary' ? 'Primary site' : 'Secondary site'
 }
 
+/** Resource group IDs on the arrays marked for Replication (Storage step). */
+export function hrpcPairResourceGroupIds(state: WizardState): { primary: string; secondary: string } {
+  const ensured = ensureSitesForReplication(state)
+  const primary = getSiteStorage(ensured, 'primary')
+  const secondary = getSiteStorage(ensured, 'secondary')
+  return {
+    primary: t(hrpcPairSystem(primary.storageSystems)?.resourceGroupID),
+    secondary: t(hrpcPairSystem(secondary.storageSystems)?.resourceGroupID),
+  }
+}
+
+/**
+ * Null when resource partitioning is consistent across both Replication arrays.
+ * Resource group IDs are per-array (they need not match across sites).
+ * When requireBoth is false, empty on both sites is allowed.
+ */
+export function hrpcResourceGroupIdReason(
+  state: WizardState,
+  opts: { requireBoth?: boolean } = {},
+): string | null {
+  const { primary, secondary } = hrpcPairResourceGroupIds(state)
+  if (!primary && !secondary) {
+    return opts.requireBoth
+      ? 'Resource partitioning is on: set Resource group ID on both sites’ Replication arrays (Storage step, Advanced array options).'
+      : null
+  }
+  if (!primary || !secondary) {
+    return 'Resource partitioning must be configured on both sites. Set Resource group ID on both Replication arrays (Storage step, Advanced array options).'
+  }
+  return null
+}
+
 export function effectiveSerialNumber(
   sc: StorageClassConfig,
   storageSystems: StorageSystemConfig[],
@@ -360,16 +392,8 @@ export function validateHrpc(state: WizardState): string | null {
   const primaryPairSerial = t(primaryPairSys?.serial)
   const secondaryPairSerial = t(secondaryPairSys?.serial)
 
-  const rgP = t(primaryPairSys?.resourceGroupID)
-  const rgS = t(secondaryPairSys?.resourceGroupID)
-  if (rgP || rgS) {
-    if (!rgP || !rgS) {
-      return 'If you set Resource group ID on one site’s Replication array, you must set the same ID on the other site.'
-    }
-    if (rgP !== rgS) {
-      return 'Both sites’ Replication arrays must use the same Resource group ID.'
-    }
-  }
+  const rgReason = hrpcResourceGroupIdReason(ensured)
+  if (rgReason) return rgReason
 
   const secrets = ensured.replication.storageSecrets || []
   if (secrets.length < 1) {

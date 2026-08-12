@@ -1,7 +1,9 @@
 import { COMPONENTS } from '../catalog/components'
 import { HELP, RECAP } from '../catalog/help'
-import { PLATFORMS } from '../catalog/platforms'
+import { CONNECTION_TYPES, PLATFORMS } from '../catalog/platforms'
 import { ensureSitesForReplication } from '../catalog/sites'
+import { CsiDriverArchitectureDiagram } from '../components/CsiDriverArchitectureDiagram'
+import { ReplicationArchitectureDiagram } from '../components/ReplicationArchitectureDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, HelpTip, Section, ToggleRow } from '../components/ui'
@@ -27,7 +29,19 @@ export function ComponentsStep() {
             title={COMPONENTS.driver.displayName}
             description={COMPONENTS.driver.description}
             acronym={COMPONENTS.driver.acronym}
+            help={HELP.csiDriver}
+            collapsible
+            defaultExpanded
           >
+            <div className="toggle-row-diagram">
+              <CsiDriverArchitectureDiagram
+                clusterLabel={plat.useOc ? 'OpenShift cluster' : 'Kubernetes cluster'}
+                dataPathLabel={
+                  CONNECTION_TYPES.find((c) => c.id === state.connectionType)?.label ??
+                  'FC / iSCSI / NVMe'
+                }
+              />
+            </div>
             <label
               style={{
                 display: 'flex',
@@ -86,7 +100,16 @@ export function ComponentsStep() {
             title={COMPONENTS.replication.displayName}
             description={COMPONENTS.replication.description}
             acronym={COMPONENTS.replication.acronym}
-          />
+            help={HELP.replicationArchitecture}
+            collapsible
+            defaultExpanded={false}
+          >
+            <div className="toggle-row-diagram">
+              <ReplicationArchitectureDiagram
+                clusterLabel={plat.useOc ? 'OpenShift cluster' : 'Kubernetes cluster'}
+              />
+            </div>
+          </ToggleRow>
           <ToggleRow
             checked={state.components.metrics}
             onChange={(v) =>

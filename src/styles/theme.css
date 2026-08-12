@@ -923,6 +923,48 @@ textarea {
   background: var(--hv-bg-elevated);
 }
 
+.toggle-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.toggle-row-collapse {
+  appearance: none;
+  flex-shrink: 0;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--hv-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.toggle-row-collapse:hover {
+  color: var(--hv-primary-strong);
+}
+
+.toggle-row-body {
+  margin-left: 1.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--hv-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.toggle-row-diagram {
+  border: 1px solid var(--hv-border);
+  border-radius: var(--hv-radius);
+  overflow: hidden;
+}
+
 .toggle-row input[type='checkbox'] {
   width: 18px;
   height: 18px;
@@ -1302,6 +1344,188 @@ textarea {
   box-shadow: var(--hv-shadow);
   pointer-events: none;
   box-sizing: border-box;
+}
+
+.help-tip-popover.has-diagram {
+  pointer-events: auto;
+  max-height: min(90vh, 560px);
+  overflow: auto;
+}
+
+.help-tip-diagram {
+  margin-top: 0.55rem;
+}
+
+.rp-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--hv-font);
+}
+
+.rp-diagram-bg {
+  fill: var(--hv-bg-elevated);
+}
+
+.rp-diagram-card rect,
+.rp-diagram-rg rect {
+  stroke-width: 1.25;
+}
+
+.rp-diagram-card rect {
+  fill: var(--hv-bg-container);
+  stroke: var(--hv-border);
+}
+
+.rp-diagram-rg-primary rect {
+  fill: color-mix(in srgb, var(--hv-primary) 12%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-primary) 42%, var(--hv-border));
+}
+
+.rp-diagram-rg-secondary rect {
+  fill: color-mix(in srgb, var(--hv-info) 14%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-info) 42%, var(--hv-border));
+}
+
+.rp-diagram-title {
+  fill: var(--hv-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rp-diagram-site {
+  fill: var(--hv-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rp-diagram-card-title {
+  fill: var(--hv-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rp-diagram-body {
+  fill: var(--hv-text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.rp-diagram-muted {
+  fill: var(--hv-text-subtle);
+  font-size: 9.5px;
+}
+
+.rp-diagram-link {
+  fill: none;
+  stroke: var(--hv-text-subtle);
+  stroke-width: 1.15;
+}
+
+.rp-diagram-link-dashed {
+  stroke-dasharray: 4 3;
+}
+
+.rp-diagram-link-label {
+  fill: var(--hv-text-subtle);
+  font-size: 8px;
+  font-family: var(--hv-mono);
+}
+
+.rp-diagram-cluster {
+  fill: color-mix(in srgb, var(--hv-info) 8%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-info) 42%, var(--hv-border));
+  stroke-width: 1.5;
+  stroke-dasharray: 7 4;
+}
+
+.rp-diagram-plane rect {
+  fill: color-mix(in srgb, var(--hv-info) 16%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-info) 45%, var(--hv-border));
+  stroke-width: 1.25;
+}
+
+.rp-diagram-worker rect {
+  fill: color-mix(in srgb, var(--hv-positive) 14%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-positive) 42%, var(--hv-border));
+  stroke-width: 1.25;
+}
+
+.rp-diagram-pill rect {
+  fill: var(--hv-bg-container);
+  stroke: var(--hv-border);
+  stroke-width: 1;
+}
+
+.rp-diagram-chip-ctrl rect {
+  fill: var(--hv-info);
+  stroke: none;
+}
+
+.rp-diagram-chip-node rect {
+  fill: var(--hv-positive);
+  stroke: none;
+}
+
+.rp-diagram-chip-dr rect {
+  fill: var(--hv-primary);
+  stroke: none;
+}
+
+.rp-diagram-chip-title {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rp-diagram-chip-sub {
+  fill: color-mix(in srgb, #fff 78%, transparent);
+  font-size: 9px;
+}
+
+.rp-diagram-link-rest {
+  fill: none;
+  stroke: var(--hv-info);
+  stroke-width: 1.35;
+  stroke-dasharray: 5 3;
+}
+
+.rp-diagram-link-data {
+  fill: none;
+  stroke: color-mix(in srgb, var(--hv-primary) 40%, var(--hv-info));
+  stroke-width: 1.35;
+}
+
+.rp-diagram-marker-rest {
+  fill: var(--hv-info);
+}
+
+.rp-diagram-marker-data {
+  fill: color-mix(in srgb, var(--hv-primary) 40%, var(--hv-info));
+}
+
+.rp-diagram-dot-rest {
+  fill: var(--hv-bg-container);
+  stroke: var(--hv-info);
+  stroke-width: 1.4;
+}
+
+.rp-diagram-dot-data {
+  fill: var(--hv-bg-container);
+  stroke: color-mix(in srgb, var(--hv-primary) 40%, var(--hv-info));
+  stroke-width: 1.4;
+}
+
+.rp-diagram-card .rp-diagram-volume-cap {
+  fill: color-mix(in srgb, var(--hv-info) 22%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-info) 50%, var(--hv-border));
+  stroke-width: 1.15;
+}
+
+.rp-diagram-card .rp-diagram-volume-body {
+  fill: color-mix(in srgb, var(--hv-info) 12%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-info) 50%, var(--hv-border));
+  stroke-width: 1.15;
 }
 
 .welcome-dialog {

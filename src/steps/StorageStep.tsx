@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import type { StorageFamily, StorageSystemConfig } from '../catalog/types'
+import { useEffect, useState } from 'react'
+import { STORAGE_SITE_FOCUS_KEY, type StorageFamily, type StorageSystemConfig } from '../catalog/types'
 import { supportsImmutableSnapshots } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import type { SiteId } from '../catalog/sites'
-import { getSiteStorage, hrpcPairSystem, setHrpcPair, withSiteStorage } from '../catalog/sites'
+import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
+import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
@@ -26,9 +27,21 @@ export function StorageStep() {
   const { state, setState } = useWizard()
   const [site, setSite] = useState<SiteId>('primary')
   const replicationOn = state.components.replication
+
+  useEffect(() => {
+    if (!replicationOn) return
+    try {
+      const focus = sessionStorage.getItem(STORAGE_SITE_FOCUS_KEY)
+      if (focus === 'primary' || focus === 'secondary') {
+        setSite(focus)
+        sessionStorage.removeItem(STORAGE_SITE_FOCUS_KEY)
+      }
+    } catch {
+      /* private mode */
+    }
+  }, [replicationOn])
   const storage = replicationOn ? getSiteStorage(state, site) : null
   const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
-  const pair = replicationOn ? hrpcPairSystem(storageSystems) : null
 
   const updateSys = (id: string, patch: Partial<StorageSystemConfig>) => {
     setState((s) => {
@@ -103,10 +116,6 @@ export function StorageStep() {
           </div>
 
           <Callout>{HELP.replicationPairArrayCallout}</Callout>
-
-          {(pair?.resourceGroupID?.trim() || state.replication.resourcePartitioningGuide) && (
-            <Callout>{HELP.replicationResourcePartitioningHint}</Callout>
-          )}
         </>
       )}
 
@@ -199,6 +208,19 @@ export function StorageStep() {
                 onChange={(e) => updateSys(sys.id, { password: e.target.value })}
               />
             </Field>
+            {replicationOn && sys.hrpcPair && sys.family !== 'vsp-one-sds-block' && (
+              <Field
+                label="Resource group ID (optional)"
+                hint="If you use resource partitioning, set this on both sites’ Replication arrays. IDs are per array and do not need to match. CSI Driver and Replication use the same ID on this array."
+                help={HELP.resourceGroupId}
+                helpDiagram={<ResourceGroupOverviewDiagram resourceGroupID={sys.resourceGroupID} />}
+              >
+                <input
+                  value={sys.resourceGroupID || ''}
+                  onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
+                />
+              </Field>
+            )}
             {!(replicationOn && sys.hrpcPair) && (
               <Field label="Stretched / GAD role" help={HELP.gad.role}>
                 <select
@@ -272,15 +294,19 @@ export function StorageStep() {
                   placeholder="88,81"
                 />
               </Field>
-              <Field
-                label="Resource group ID (optional)"
-                hint="Required only if the user can access multiple resource groups."
-              >
-                <input
-                  value={sys.resourceGroupID || ''}
-                  onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
-                />
-              </Field>
+              {!(replicationOn && sys.hrpcPair && sys.family !== 'vsp-one-sds-block') && (
+                <Field
+                  label="Resource group ID (optional)"
+                  hint="Required only if the user can access multiple resource groups."
+                  help={HELP.resourceGroupId}
+                  helpDiagram={<ResourceGroupOverviewDiagram resourceGroupID={sys.resourceGroupID} />}
+                >
+                  <input
+                    value={sys.resourceGroupID || ''}
+                    onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
+                  />
+                </Field>
+              )}
             </div>
 
             {sys.family === 'vsp' && (

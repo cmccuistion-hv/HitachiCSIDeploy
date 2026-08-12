@@ -25,7 +25,16 @@ export const HELP = {
     'On a standard StorageClass, check “Use this StorageClass for Replication.” Name and filesystem type must match on both sites. Fill this site’s pool, ports, and other fields, then open the Secondary site tab and fill that site’s fields before continuing.',
 
   replicationResourcePartitioningHint:
-    'If you are using resource partitioning for Replication, review the checklist on the Replication step to confirm journal and access requirements for both sites.',
+    'Set Resource group ID on each site’s Replication array on the Storage step. Both sites must have an ID (one-sided is not supported); the IDs are per array and do not need to match. The Replication step then shows journal, host group, and CSI Driver user checks.',
+
+  resourceGroupId:
+    'This Secret’s Resource group ID selects which group on the array CSI Driver provisions into (LDEV IDs, host groups, pool). Required if the storage user can access more than one group. Multiple clusters can share one array by using different IDs.',
+
+  csiDriver:
+    'The CSI Driver always deploys a controller (provisioning over the array REST API) and a node plugin on each worker (attach). Pods then use the data path — FC, iSCSI, or NVMe — to the volume.',
+
+  replicationArchitecture:
+    'Replication installs the Replication operator and the DR Operator on both clusters. Each site stores the other site’s kubeconfig. Journals and copy run between the two arrays. CSI Driver still provisions volumes; day-2 protection is DR policies after install.',
 
   protocolMultipath:
     'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
