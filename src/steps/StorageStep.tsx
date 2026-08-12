@@ -1,6 +1,10 @@
+import { useState } from 'react'
 import type { StorageFamily, StorageSystemConfig } from '../catalog/types'
 import { supportsImmutableSnapshots } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
+import type { SiteId } from '../catalog/sites'
+import { getSiteStorage, hrpcPairSystem, setHrpcPair, withSiteStorage } from '../catalog/sites'
+import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
 
@@ -19,47 +23,135 @@ function newSystem(n: number): StorageSystemConfig {
 
 export function StorageStep() {
   const { state, setState } = useWizard()
+  const [site, setSite] = useState<SiteId>('primary')
+  const replicationOn = state.components.replication
+  const storage = replicationOn ? getSiteStorage(state, site) : null
+  const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
+  const pair = replicationOn ? hrpcPairSystem(storageSystems) : null
 
   const updateSys = (id: string, patch: Partial<StorageSystemConfig>) => {
     setState((s) => {
-      const storageSystems = s.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys))
-      const primary = storageSystems[0]
+      if (!s.components.replication) {
+        const storageSystems = s.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys))
+        const primary = storageSystems[0]
+        const snapshotClass =
+          s.snapshotClass.immutable && !supportsImmutableSnapshots(primary)
+            ? { ...s.snapshotClass, immutable: false }
+            : s.snapshotClass
+        return { ...s, storageSystems, snapshotClass }
+      }
+
+      const current = getSiteStorage(s, site)
+      const nextSystems = current.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys))
+
+      // Snapshot class is packaged per site; keep guardrails stable by keying off the primary site.
+      const primarySite = getSiteStorage(s, 'primary')
+      const primaryArray = primarySite.storageSystems[0]
       const snapshotClass =
-        s.snapshotClass.immutable && !supportsImmutableSnapshots(primary)
+        s.snapshotClass.immutable && !supportsImmutableSnapshots(primaryArray)
           ? { ...s.snapshotClass, immutable: false }
           : s.snapshotClass
-      return { ...s, storageSystems, snapshotClass }
+
+      const next = withSiteStorage(s, site, { ...current, storageSystems: nextSystems })
+      return { ...next, snapshotClass }
     })
   }
 
   const removeSys = (id: string) => {
-    setState((s) => ({
-      ...s,
-      storageSystems: s.storageSystems.filter((sys) => sys.id !== id),
-    }))
+    setState((s) => {
+      if (!s.components.replication) {
+        return {
+          ...s,
+          storageSystems: s.storageSystems.filter((sys) => sys.id !== id),
+        }
+      }
+      const current = getSiteStorage(s, site)
+      return withSiteStorage(s, site, {
+        ...current,
+        storageSystems: current.storageSystems.filter((sys) => sys.id !== id),
+      })
+    })
   }
 
   return (
     <div className="step-panel">
       <h2>Storage systems</h2>
-      <p className="lede">{HELP.secretVsStorageClass.storageLede}</p>
+      <p className="lede">{replicationOn ? HELP.replicationSitesLede : HELP.secretVsStorageClass.storageLede}</p>
 
       <Callout>{HELP.secretVsStorageClass.storageCallout}</Callout>
 
-      {state.storageSystems.map((sys, idx) => (
+      {replicationOn && (
+        <>
+          <div className="tabs" style={{ marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className={`tab${site === 'primary' ? ' active' : ''}`}
+              onClick={() => setSite('primary')}
+            >
+              Primary site
+            </button>
+            <button
+              type="button"
+              className={`tab${site === 'secondary' ? ' active' : ''}`}
+              onClick={() => setSite('secondary')}
+            >
+              Secondary site
+            </button>
+          </div>
+
+          <Callout>{HELP.replicationPairArrayCallout}</Callout>
+
+          {(pair?.resourceGroupID?.trim() || state.replication.resourcePartitioningGuide) && (
+            <Callout>{HELP.replicationResourcePartitioningHint}</Callout>
+          )}
+        </>
+      )}
+
+      {storageSystems.map((sys, idx) => {
+        const sysErrors = validateStorageSystem(sys, storageSystems)
+        return (
         <Section
           key={sys.id}
           title={`Array: ${sys.name || sys.id}`}
           actions={
-            state.storageSystems.length > 1 ? (
+            storageSystems.length > 1 ? (
               <button type="button" className="btn btn-danger" onClick={() => removeSys(sys.id)}>
                 Remove
               </button>
             ) : null
           }
         >
+          {replicationOn && (
+            <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={!!sys.hrpcPair}
+                onChange={(e) => {
+                  if (!e.target.checked) return
+                  const id = sys.id
+                  setState((s) => {
+                    const current = getSiteStorage(s, site)
+                    const nextSystems = setHrpcPair(current.storageSystems, id)
+                    return withSiteStorage(s, site, { ...current, storageSystems: nextSystems })
+                  })
+                }}
+              />
+              <div>
+                <strong>Use this array for Replication</strong>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                  Each site picks exactly one array that Replication will use. Extra arrays stay on this
+                  site for local or stretched (GAD) StorageClasses.
+                </p>
+              </div>
+            </label>
+          )}
+
           <div className="field-grid">
-            <Field label="Display name" hint="Label used in this wizard only (not a Kubernetes name).">
+            <Field
+              label="Display name"
+              hint="Label used in this wizard only (not a Kubernetes name). Also used in generated Secret file names."
+              error={sysErrors.name}
+            >
               <input value={sys.name} onChange={(e) => updateSys(sys.id, { name: e.target.value })} />
             </Field>
             <Field
@@ -74,7 +166,7 @@ export function StorageStep() {
                 <option value="vsp-one-sds-block">VSP One SDS Block</option>
               </select>
             </Field>
-            <Field label="Serial number" hint="Required for standard StorageClasses.">
+            <Field label="Serial number" hint="Required for standard StorageClasses." error={sysErrors.serial}>
               <input
                 value={sys.serial}
                 onChange={(e) => updateSys(sys.id, { serial: e.target.value })}
@@ -123,20 +215,22 @@ export function StorageStep() {
                 onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
               />
             </Field>
-            <Field label="Stretched / GAD role" help={HELP.gad.role}>
-              <select
-                value={sys.stretchedRole || 'none'}
-                onChange={(e) =>
-                  updateSys(sys.id, {
-                    stretchedRole: e.target.value as StorageSystemConfig['stretchedRole'],
-                  })
-                }
-              >
-                <option value="none">None</option>
-                <option value="primary">Primary</option>
-                <option value="secondary">Secondary</option>
-              </select>
-            </Field>
+            {!(replicationOn && sys.hrpcPair) && (
+              <Field label="Stretched / GAD role" help={HELP.gad.role}>
+                <select
+                  value={sys.stretchedRole || 'none'}
+                  onChange={(e) =>
+                    updateSys(sys.id, {
+                      stretchedRole: e.target.value as StorageSystemConfig['stretchedRole'],
+                    })
+                  }
+                >
+                  <option value="none">None</option>
+                  <option value="primary">Primary</option>
+                  <option value="secondary">Secondary</option>
+                </select>
+              </Field>
+            )}
           </div>
 
           {sys.family === 'vsp' && (
@@ -212,16 +306,32 @@ export function StorageStep() {
             <Callout variant="warn">Enter at least URL, user, and password to generate a usable Secret.</Callout>
           )}
         </Section>
-      ))}
+        )
+      })}
 
       <button
         type="button"
         className="btn btn-secondary"
         onClick={() =>
-          setState((s) => ({
-            ...s,
-            storageSystems: [...s.storageSystems, newSystem(s.storageSystems.length + 1)],
-          }))
+          setState((s) => {
+            const currentSystems = s.components.replication
+              ? getSiteStorage(s, site).storageSystems
+              : s.storageSystems
+            const next = newSystem(currentSystems.length + 1)
+            next.id = `storage-${Date.now()}`
+            next.name = nextUniqueName(
+              currentSystems.length === 0 ? 'primary' : 'array',
+              currentSystems.map((x) => x.name),
+            )
+            if (!s.components.replication) {
+              return { ...s, storageSystems: [...s.storageSystems, next] }
+            }
+            const current = getSiteStorage(s, site)
+            return withSiteStorage(s, site, {
+              ...current,
+              storageSystems: [...current.storageSystems, next],
+            })
+          })
         }
       >
         Add storage system

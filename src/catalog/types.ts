@@ -39,6 +39,8 @@ export interface StorageSystemConfig {
   alternativeCloneMode?: boolean
   /** For SDS Block multitenancy */
   multitenancy?: boolean
+  /** Replication: this site’s array used by Replication (not a TrueCopy/UR copy pair) */
+  hrpcPair?: boolean
   /** Role in stretched pair */
   stretchedRole?: 'primary' | 'secondary' | 'none'
 }
@@ -52,6 +54,8 @@ export interface StorageClassConfig {
   secretNamespace: string
   /** Cluster default StorageClass (at most one in the package) */
   isDefault?: boolean
+  /** Replication: links the same StorageClass name/fstype across primary and secondary sites */
+  hrpcPairId?: string
   serialNumber?: string
   poolID?: string
   portID?: string
@@ -74,6 +78,13 @@ export interface StorageClassConfig {
   stretchedSecretName?: string
 }
 
+export type SiteId = 'primary' | 'secondary'
+
+export interface SiteStorageConfig {
+  storageSystems: StorageSystemConfig[]
+  storageClasses: StorageClassConfig[]
+}
+
 export interface SnapshotClassConfig {
   enabled: boolean
   name: string
@@ -93,6 +104,11 @@ export interface ReplicationConfig {
   /** Always true when Replication is selected — DR Operator is part of the stack */
   disasterRecovery: boolean
   namespace: string
+  /**
+   * Optional beginner checklist toggle for resource partitioning requirements.
+   * (Does not change generated manifests; guidance only.)
+   */
+  resourcePartitioningGuide?: boolean
   storageSecrets: {
     serial: string
     url: string
@@ -199,6 +215,10 @@ export interface WizardState {
   multipath: MultipathConfig
   storageSystems: StorageSystemConfig[]
   storageClasses: StorageClassConfig[]
+  sites?: {
+    primary: SiteStorageConfig
+    secondary: SiteStorageConfig
+  }
   /** When false, skip StorageClass / snapshot / quickstart generation and validation */
   storageClassesEnabled: boolean
   snapshotClass: SnapshotClassConfig

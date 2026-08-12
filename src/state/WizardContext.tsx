@@ -14,6 +14,7 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
+import { ensureSitesForReplication } from '../catalog/sites'
 import {
   PLATFORMS,
   coerceConnectionType,
@@ -50,7 +51,7 @@ function loadState(): WizardState {
     if (!raw) return createDefaultState()
     const parsed = JSON.parse(raw) as WizardState
     if (parsed.version !== WIZARD_STATE_VERSION) return createDefaultState()
-    const merged = { ...createDefaultState(), ...parsed }
+    let merged = { ...createDefaultState(), ...parsed }
     if (merged.storageClassesEnabled === undefined) {
       merged.storageClassesEnabled = true
     }
@@ -135,6 +136,9 @@ function loadState(): WizardState {
       merged.snapshotClass.retentionPeriod = '24'
     }
     merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
+    if (merged.components.replication) {
+      merged = ensureSitesForReplication(merged)
+    }
     return merged
   } catch {
     return createDefaultState()

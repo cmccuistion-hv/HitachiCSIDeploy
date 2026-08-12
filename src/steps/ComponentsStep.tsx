@@ -1,6 +1,7 @@
 import { COMPONENTS } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
+import { ensureSitesForReplication } from '../catalog/sites'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, HelpTip, Section, ToggleRow } from '../components/ui'
 
@@ -128,16 +129,22 @@ export function ComponentsStep() {
           <ToggleRow
             checked={state.components.replication}
             onChange={(v) =>
-              setState((s) => ({
-                ...s,
-                components: {
-                  ...s.components,
-                  replication: v,
-                  // DR Operator is always part of Replication
-                  disasterRecovery: v,
-                },
-                replication: { ...s.replication, enabled: v, disasterRecovery: v },
-              }))
+              setState((s) => {
+                let next = {
+                  ...s,
+                  components: {
+                    ...s.components,
+                    replication: v,
+                    // DR Operator is always part of Replication
+                    disasterRecovery: v,
+                  },
+                  replication: { ...s.replication, enabled: v, disasterRecovery: v },
+                }
+                if (v) {
+                  next = ensureSitesForReplication(next)
+                }
+                return next
+              })
             }
             title={COMPONENTS.replication.displayName}
             description={COMPONENTS.replication.description}

@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ThemeControls } from './components/ThemeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
-import { storageArtifactsInvalidReason, storageArtifactsValid } from './catalog/validation'
+import {
+  needsNoReplicationStorageClassConfirm,
+  storageArtifactsContinueInvalidReason,
+  storageArtifactsValidForContinue,
+  storageSystemsContinueInvalidReason,
+  storageSystemsValidForContinue,
+} from './catalog/validation'
 import { useWizard } from './state/WizardContext'
 import { buildNavEntries, footerStepLabel, type NavEntry } from './state/steps'
 import { PlatformStep } from './steps/PlatformStep'
@@ -152,6 +158,8 @@ export default function App() {
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
+  const [noReplicationScOpen, setNoReplicationScOpen] = useState(false)
+  const noReplicationScRef = useRef<HTMLDialogElement>(null)
 
   const navEntries = useMemo(
     () => buildNavEntries(visibleSteps, stepIndex),
@@ -159,8 +167,23 @@ export default function App() {
   )
   const footerLabel = footerStepLabel(navEntries, stepIndex)
   const storageContinueBlocked =
-    current?.id === 'storageclasses' && !storageArtifactsValid(state)
-  const storageContinueReason = storageContinueBlocked ? storageArtifactsInvalidReason(state) : null
+    (current?.id === 'storageclasses' && !storageArtifactsValidForContinue(state)) ||
+    (current?.id === 'storage' && !storageSystemsValidForContinue(state))
+  const storageContinueReason = storageContinueBlocked
+    ? current?.id === 'storage'
+      ? storageSystemsContinueInvalidReason(state)
+      : storageArtifactsContinueInvalidReason(state)
+    : null
+
+  useEffect(() => {
+    const el = noReplicationScRef.current
+    if (!el) return
+    if (noReplicationScOpen) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [noReplicationScOpen])
 
   useEffect(() => {
     const el = mainScrollRef.current
@@ -327,7 +350,16 @@ export default function App() {
             type="button"
             className="btn btn-primary"
             disabled={stepIndex >= visibleSteps.length - 1 || storageContinueBlocked}
-            onClick={() => setStepIndex(stepIndex + 1)}
+            onClick={() => {
+              if (
+                current?.id === 'storageclasses' &&
+                needsNoReplicationStorageClassConfirm(state)
+              ) {
+                setNoReplicationScOpen(true)
+                return
+              }
+              setStepIndex(stepIndex + 1)
+            }}
           >
             Continue
           </button>
@@ -335,6 +367,54 @@ export default function App() {
       </main>
 
       <WelcomeModal open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
+
+      <dialog
+        ref={noReplicationScRef}
+        className="welcome-dialog"
+        aria-labelledby="no-replication-sc-title"
+        onCancel={(e) => {
+          e.preventDefault()
+          setNoReplicationScOpen(false)
+        }}
+        onClick={(e) => {
+          if (e.target === noReplicationScRef.current) setNoReplicationScOpen(false)
+        }}
+        onClose={() => setNoReplicationScOpen(false)}
+      >
+        <div className="welcome-dialog-body">
+          <h2 id="no-replication-sc-title">No StorageClass marked for Replication</h2>
+          <p>
+            You enabled Replication, but no StorageClass has <strong>Use this StorageClass for
+            Replication</strong> checked.
+          </p>
+          <p>
+            The package will still install the Replication operator (and Disaster Recovery) on both
+            sites. Without a StorageClass used for Replication on both sites — same name and filesystem
+            type, each pointing at that site’s array — you cannot create replicated volumes from this
+            package. You can add matching StorageClasses later, or go back and check the box on a
+            standard StorageClass now.
+          </p>
+          <div className="welcome-actions" style={{ gap: '0.65rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setNoReplicationScOpen(false)}
+            >
+              Go back
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setNoReplicationScOpen(false)
+                setStepIndex(stepIndex + 1)
+              }}
+            >
+              Continue anyway
+            </button>
+          </div>
+        </div>
+      </dialog>
     </div>
   )
 }
