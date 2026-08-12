@@ -1,5 +1,5 @@
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, Field, Section } from '../components/ui'
+import { Callout, Field, Section } from '../components/ui'
 
 export function ConsolePluginStep() {
   const { state, setState } = useWizard()
@@ -68,13 +68,6 @@ export function ConsolePluginStep() {
             />
           </Field>
         </div>
-      </Section>
-
-      <Section title="Verify after install">
-        <CodeBlock>{`oc apply -f consoleplugin-ocp-ui.yaml
-oc get consoleplugin console-plugin-vsp360-dcm
-# Enable in Console → Administration → Cluster Settings → Configuration → Console
-# (or rely on the patcher Job in the manifest)`}</CodeBlock>
       </Section>
     </div>
   )
