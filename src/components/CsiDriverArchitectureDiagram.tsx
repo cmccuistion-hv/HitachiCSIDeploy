@@ -90,23 +90,23 @@ export function CsiDriverArchitectureDiagram({
       </g>
 
       {[
-        { x: 184, cx: 254 },
-        { x: 336, cx: 406 },
-        { x: 488, cx: 558 },
+        { x: 184, cx: 252, w: 136 },
+        { x: 332, cx: 400, w: 136 },
+        { x: 480, cx: 548, w: 136 },
       ].map((n) => (
         <g key={n.x} className="rp-diagram-worker">
-          <rect x={n.x} y="60" width="140" height="156" rx="10" />
+          <rect x={n.x} y="60" width={n.w} height="156" rx="10" />
           <text x={n.cx} y="78" textAnchor="middle" className="rp-diagram-card-title">
             Worker node
           </text>
           <g className="rp-diagram-pill">
-            <rect x={n.x + 10} y="86" width="120" height="18" rx="9" />
+            <rect x={n.x + 8} y="86" width="120" height="18" rx="9" />
             <text x={n.cx} y="99" textAnchor="middle" className="rp-diagram-link-label">
               DAEMONSET
             </text>
           </g>
           <g className="rp-diagram-chip-node">
-            <rect x={n.x + 10} y="112" width="120" height="44" rx="8" />
+            <rect x={n.x + 8} y="112" width="120" height="44" rx="8" />
             <text x={n.cx} y="130" textAnchor="middle" className="rp-diagram-chip-title">
               csi-node
             </text>
@@ -133,15 +133,15 @@ export function CsiDriverArchitectureDiagram({
         </text>
       </g>
 
-      <line x1="254" y1="216" x2="254" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
-      <line x1="406" y1="216" x2="406" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
-      <line x1="558" y1="216" x2="558" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
-      <circle cx="254" cy="216" r="3.2" className="rp-diagram-dot-data" />
-      <circle cx="406" cy="216" r="3.2" className="rp-diagram-dot-data" />
-      <circle cx="558" cy="216" r="3.2" className="rp-diagram-dot-data" />
+      <line x1="252" y1="216" x2="252" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
+      <line x1="400" y1="216" x2="400" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
+      <line x1="548" y1="216" x2="548" y2="268" className="rp-diagram-link-data" markerEnd="url(#csi-data-arr)" />
+      <circle cx="252" cy="216" r="3.2" className="rp-diagram-dot-data" />
+      <circle cx="400" cy="216" r="3.2" className="rp-diagram-dot-data" />
+      <circle cx="548" cy="216" r="3.2" className="rp-diagram-dot-data" />
       <g className="rp-diagram-pill">
-        <rect x="351" y="228" width="110" height="18" rx="9" />
-        <text x="406" y="241" textAnchor="middle" className="rp-diagram-link-label">
+        <rect x="345" y="228" width="110" height="18" rx="9" />
+        <text x="400" y="241" textAnchor="middle" className="rp-diagram-link-label">
           Data path
         </text>
       </g>

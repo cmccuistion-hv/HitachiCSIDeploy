@@ -1,46 +1,23 @@
 import { useEffect, useState } from 'react'
 import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
+import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { storageArtifactsInvalidReason, storageArtifactsValid } from '../catalog/validation'
 import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
+import { ReviewTopologyDiagram } from '../components/ReviewTopologyDiagram'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, DownloadButton, Section } from '../components/ui'
-
-const FILE_GROUPS: {
-  id: GeneratedFile['group']
-  title: string
-  folder: string
-}[] = [
-  { id: 'prereq', title: 'Prerequisites', folder: '00-prereq/' },
-  { id: 'storage', title: 'Storage', folder: '01-storage/' },
-  { id: 'driver', title: 'CSI Driver', folder: '02-driver/' },
-  { id: 'replication', title: 'Replication', folder: '03-replication/' },
-  { id: 'metrics', title: 'Performance Metrics', folder: '04-metrics/' },
-  { id: 'console', title: 'Console Plugin', folder: '05-console/' },
-  { id: 'quickstart', title: 'Test volume', folder: '06-quickstart/' },
-  { id: 'scripts', title: 'Install script', folder: './' },
-]
-
-function fileKind(path: string): string {
-  if (path.endsWith('.sh')) return 'sh'
-  if (path.endsWith('.md')) return 'md'
-  if (path.endsWith('.yaml') || path.endsWith('.yml')) return 'yaml'
-  if (path.endsWith('.conf')) return 'conf'
-  if (path.endsWith('.json')) return 'json'
-  const parts = path.split('.')
-  return parts.length > 1 ? parts[parts.length - 1] : 'file'
-}
+import { Callout, CodeBlock, Section } from '../components/ui'
 
 export function ExportStep() {
   const { state, exportConfig, importConfig, reset } = useWizard()
   const plat = PLATFORMS[state.platform]
   const [files, setFiles] = useState<GeneratedFile[]>([])
-  const [activePath, setActivePath] = useState<string>('')
   const [importText, setImportText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [topoOpen, setTopoOpen] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -58,24 +35,9 @@ export function ExportStep() {
     }
   }, [state])
 
-  useEffect(() => {
-    if (!files.length) {
-      setActivePath('')
-      return
-    }
-    if (!files.some((f) => f.path === activePath)) {
-      setActivePath(files[0].path)
-    }
-  }, [files, activePath])
-
   const storageExportBlocked = !storageArtifactsValid(state)
   const storageExportReason = storageExportBlocked ? storageArtifactsInvalidReason(state) : null
   const nextSteps = buildNextSteps(state)
-  const current = files.find((f) => f.path === activePath) || files[0]
-  const grouped = FILE_GROUPS.map((g) => ({
-    ...g,
-    files: files.filter((f) => f.group === g.id),
-  })).filter((g) => g.files.length > 0)
 
   const downloadZip = async () => {
     setDownloading(true)
@@ -164,6 +126,29 @@ export function ExportStep() {
         )}
       </Section>
 
+      <Section
+        title="Your deployment"
+        help={HELP.reviewTopology}
+        actions={
+          <button
+            type="button"
+            className="toggle-row-collapse"
+            onClick={() => setTopoOpen((v) => !v)}
+            aria-expanded={topoOpen}
+          >
+            {topoOpen ? 'Hide details' : 'Show details'}
+          </button>
+        }
+      >
+        {topoOpen ? (
+          <ReviewTopologyDiagram state={state} files={files} />
+        ) : (
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+            Show details to see the objects in this package and which files make each one.
+          </p>
+        )}
+      </Section>
+
       <Section title="Next steps">
         <ol style={{ margin: 0, paddingLeft: '1.5rem' }}>
           {nextSteps.map((step) => (
@@ -174,62 +159,6 @@ export function ExportStep() {
             </li>
           ))}
         </ol>
-      </Section>
-
-      <Section
-        title="Generated files"
-        actions={
-          current ? (
-            <DownloadButton
-              filename={current.path.split('/').pop() || 'file'}
-              content={current.content}
-              label="Download file"
-            />
-          ) : null
-        }
-      >
-        <div className="file-browser">
-          {grouped.map((group) => (
-            <div key={group.id} className="file-group">
-              <div className="file-group-header">
-                <h4 className="file-group-title">
-                  {group.title}{' '}
-                  <span className="file-group-path">{group.folder}</span>
-                </h4>
-                <span className="file-group-count">
-                  {group.files.length} file{group.files.length === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div className="file-group-files">
-                {group.files.map((f) => {
-                  const name = f.path.split('/').pop() || f.path
-                  const kind = fileKind(f.path)
-                  const selected = current?.path === f.path
-                  return (
-                    <button
-                      key={f.path}
-                      type="button"
-                      className={`file-chip${selected ? ' active' : ''}`}
-                      onClick={() => setActivePath(f.path)}
-                      title={`${f.path} — ${f.description}`}
-                    >
-                      <span className="file-chip-kind">{kind}</span>
-                      <span className="file-chip-name">{name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-        {current && (
-          <>
-            <p style={{ fontSize: '0.85rem', color: 'var(--hv-text-subtle)', marginTop: 0 }}>
-              <code>{current.path}</code> — {current.description}
-            </p>
-            <CodeBlock className="yaml-preview">{current.content}</CodeBlock>
-          </>
-        )}
       </Section>
 
       <Section title="Import saved config">
