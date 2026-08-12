@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
-import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { storageArtifactsInvalidReason, storageArtifactsValid } from '../catalog/validation'
 import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
@@ -117,8 +116,6 @@ export function ExportStep() {
         saved in this browser for resume. <strong>Download ZIP</strong> rebuilds from your current answers —
         re-download after edits; an already-unzipped folder is not updated.
       </p>
-
-      <Callout>{HELP.configuratorVsApply}</Callout>
 
       <Section
         title="Actions"
