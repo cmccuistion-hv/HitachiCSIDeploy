@@ -211,8 +211,10 @@ export function PrerequisitesMultipathStep() {
                 <Callout variant="ok">
                   <strong>Already applied:</strong> <code>install.sh</code> will skip applying the MachineConfig
                   (and will also skip if it detects the same name on the cluster). YAML stays in{' '}
-                  <code>00-prereq/</code> for reference. Confirm MCP pools are <code>UPDATED=True</code> before
-                  expecting volumes.
+                  <code>00-prereq/</code> for reference. <code>install.sh</code> waits on MachineConfigPool
+                  health with a live status block and continues automatically when pools are{' '}
+                  <code>UPDATED=True</code> / <code>UPDATING=False</code> (detail in{' '}
+                  <code>logs/install-*.log</code>).
                 </Callout>
               ) : (
                 <Callout variant="ok">
@@ -339,9 +341,11 @@ export function PrerequisitesMultipathStep() {
                 <Callout variant="warn">
                   {mp.alreadyApplied ? (
                     <>
-                      <strong>Pools may already be updating or updated.</strong> Wait until every targeted pool
-                      shows <code>UPDATED=True</code> / <code>UPDATING=False</code> before creating volumes.{' '}
-                      <code>install.sh</code> will skip apply and ask you to confirm MCP health.
+                      <strong>Pools may already be updating or updated.</strong>{' '}
+                      <code>install.sh</code> will skip apply and wait with a live MachineConfigPool status
+                      block, continuing automatically when every targeted pool shows{' '}
+                      <code>UPDATED=True</code> / <code>UPDATING=False</code>. Detail snapshots go to{' '}
+                      <code>logs/install-*.log</code>.
                     </>
                   ) : (
                     <>
@@ -374,7 +378,7 @@ export function PrerequisitesMultipathStep() {
                     {`# From a host with oc access (optional early apply):
 # Save the preview to a file, then:
 oc apply -f multipath-machineconfig.yaml
-oc get mcp -w
+# Nodes reboot rolling — install.sh polls MCP status and auto-continues when healthy
 # Proceed with the wizard while nodes reboot`}
                   </CodeBlock>
                 )}
@@ -637,10 +641,10 @@ function buildPrereqs(
           ? 'Multipath MachineConfig already applied'
           : 'Plan multipath MachineConfig (early apply or install.sh)',
         body: multipathAlreadyApplied
-          ? 'You marked the MachineConfig as already applied. Confirm MCP UPDATED=True before volumes; install.sh will skip apply (and auto-detect existing MCs).'
+          ? 'You marked the MachineConfig as already applied. install.sh will skip apply (and auto-detect existing MCs), wait with a live MCP status block, and continue automatically when pools are healthy. Check logs/install-*.log for detail.'
           : 'Optional: oc apply the preview on the Multipath substep so nodes reboot while you finish the wizard, then check “already applied.” Or leave it for install.sh after export.',
         snippet: multipathAlreadyApplied
-          ? `${cmd} get mcp\n# Expect UPDATED=True UPDATING=False for targeted pools`
+          ? `${cmd} get mcp\n# install.sh polls MCP status and auto-continues; see logs/install-*.log`
           : undefined,
       })
     } else {

@@ -328,11 +328,12 @@ function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): st
       lines.push(
         '- OpenShift MachineConfig(s) under `00-prereq/` embedding multipath.conf into `/etc/multipath.conf`',
         state.multipath.alreadyApplied
-          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the MC exists) and asks you to confirm MCP health.'
+          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the MC exists), waits with a live MCP status block, and continues automatically when pools are healthy.'
           : '- **Apply path:** optional early `oc apply` during Prerequisites, or let `install.sh` apply (auto-skips if MC already exists).',
         '',
-        '> **Reboots:** Applying MachineConfig **reboots nodes** in the pool (rolling). Wait until',
-        '> `UPDATED=True` / `UPDATING=False` before installing the CSI Driver.',
+        '> **Reboots:** Applying MachineConfig **reboots nodes** in the pool (rolling). `install.sh` polls',
+        '> MachineConfigPool status, shows a compact live block, writes detail to `logs/install-*.log`, and',
+        '> **continues automatically** when pools are `UPDATED=True` / `UPDATING=False`.',
         '',
       )
     } else if (plat.useOc && state.multipath.includeDaemonSet) {

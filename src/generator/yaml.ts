@@ -421,6 +421,13 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
     'cd "$SCRIPT_DIR"',
     '',
+    'mkdir -p "$SCRIPT_DIR/logs"',
+    'INSTALL_LOG="$SCRIPT_DIR/logs/install-$(date +%Y%m%d-%H%M%S).log"',
+    'echo "==> Logging this run to $INSTALL_LOG"',
+    '# Tee all subsequent stdout/stderr to the log and the console.',
+    'exec > >(tee -a "$INSTALL_LOG") 2>&1',
+    'trap \'echo "==> Full log: $INSTALL_LOG"\' EXIT',
+    '',
     'apply() {',
     '  local f="$1"',
     '  echo "==> Applying $f"',
@@ -479,10 +486,87 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       role: state.multipath.machineConfigRole,
     })
     const namesBash = mcNames.map((n) => JSON.stringify(n)).join(' ')
+    const mcpPools =
+      state.multipath.machineConfigRole === 'all'
+        ? ['worker', 'master']
+        : [state.multipath.machineConfigRole]
+    const mcpPoolsBash = mcpPools.map((p) => JSON.stringify(p)).join(' ')
     lines.push(
       `# Multipath: wizard alreadyApplied=${state.multipath.alreadyApplied ? '1' : '0'}`,
       `MULTIPATH_ALREADY_APPLIED=${state.multipath.alreadyApplied ? '1' : '0'}`,
       `MULTIPATH_MC_NAMES=(${namesBash})`,
+      `MCP_POOLS=(${mcpPoolsBash})`,
+      'MCP_WAIT_TIMEOUT_SEC="${MCP_WAIT_TIMEOUT_SEC:-3600}"',
+      'MCP_POLL_SEC="${MCP_POLL_SEC:-5}"',
+      '',
+      'wait_mcp_healthy() {',
+      '  local pools=("$@")',
+      '  local start=$SECONDS',
+      '  local last_sig="" last_change=$SECONDS',
+      '  echo "==> Waiting for MachineConfigPools to finish updating (auto-continues when healthy)"',
+      '  echo "    Pools: ${pools[*]}  timeout=${MCP_WAIT_TIMEOUT_SEC}s  (override MCP_WAIT_TIMEOUT_SEC)"',
+      '  echo "    Detail snapshots append to: $INSTALL_LOG"',
+      '  # Hide cursor while redrawing',
+      '  tput civis 2>/dev/null || true',
+      '  while true; do',
+      '    local elapsed=$((SECONDS - start))',
+      '    if (( elapsed >= MCP_WAIT_TIMEOUT_SEC )); then',
+      '      tput cnorm 2>/dev/null || true',
+      '      echo ""',
+      '      echo "ERROR: Timed out after ${MCP_WAIT_TIMEOUT_SEC}s waiting for MCP healthy." >&2',
+      '      "$CMD" get mcp || true',
+      '      "$CMD" get nodes -o wide || true',
+      '      echo "See log: $INSTALL_LOG" >&2',
+      '      return 1',
+      '    fi',
+      '    local all_ok=1 line sig="" block=""',
+      "    block+=$'MachineConfigPool status\\n'",
+      "    block+=$(printf '  elapsed %dm%02ds | heartbeat: waiting…\\n' $((elapsed/60)) $((elapsed%60)))",
+      '    local p updated updating mc ready updatedc',
+      '    for p in "${pools[@]}"; do',
+      '      if ! "$CMD" get mcp "$p" >/dev/null 2>&1; then',
+      "        block+=$(printf '  %-8s  (not found yet)\\n' \"$p\")",
+      '        all_ok=0',
+      '        sig+="${p}:missing;"',
+      '        continue',
+      '      fi',
+      '      updated="$("$CMD" get mcp "$p" -o jsonpath={.status.conditions[?(@.type=="Updated")].status} 2>/dev/null || true)"',
+      '      updating="$("$CMD" get mcp "$p" -o jsonpath={.status.conditions[?(@.type=="Updating")].status} 2>/dev/null || true)"',
+      '      mc="$("$CMD" get mcp "$p" -o jsonpath={.status.machineCount} 2>/dev/null || echo "?")"',
+      '      ready="$("$CMD" get mcp "$p" -o jsonpath={.status.readyMachineCount} 2>/dev/null || echo "?")"',
+      '      updatedc="$("$CMD" get mcp "$p" -o jsonpath={.status.updatedMachineCount} 2>/dev/null || echo "?")"',
+      "      block+=$(printf '  %-8s  UPDATED=%s UPDATING=%s  machines %s/%s ready, %s updated\\n' \\",
+      '        "$p" "${updated:-?}" "${updating:-?}" "${ready}" "${mc}" "${updatedc}")',
+      '      sig+="${p}:${updated}:${updating}:${mc}:${ready}:${updatedc};"',
+      '      if [[ "$updated" != "True" || "$updating" != "False" ]]; then',
+      '        all_ok=0',
+      '      fi',
+      '    done',
+      '    if [[ "$sig" != "$last_sig" ]]; then',
+      '      last_sig="$sig"',
+      '      last_change=$SECONDS',
+      '      {',
+      '        echo "---- MCP poll t=${elapsed}s ----"',
+      '        "$CMD" get mcp || true',
+      '      } >>"$INSTALL_LOG" 2>&1',
+      '    fi',
+      '    local since=$((SECONDS - last_change))',
+      '    block=$(printf %s "$block" | sed "s/heartbeat: waiting…/heartbeat: last change ${since}s ago/")',
+      '    # Redraw: move to block start using a marker line count',
+      '    if [[ -n "${MCP_UI_LINES:-}" ]]; then',
+      '      printf "\\033[%dA\\033[J" "$MCP_UI_LINES" 2>/dev/null || true',
+      '    fi',
+      '    printf "%s\\n" "$block"',
+      '    MCP_UI_LINES=$(printf "%s\\n" "$block" | wc -l | tr -d " ")',
+      '    if [[ "$all_ok" == "1" ]]; then',
+      '      tput cnorm 2>/dev/null || true',
+      '      echo ""',
+      '      echo "==> MachineConfigPools healthy (UPDATED=True, UPDATING=False) — continuing"',
+      '      return 0',
+      '    fi',
+      '    sleep "$MCP_POLL_SEC"',
+      '  done',
+      '}',
       '',
       'multipath_mcs_exist() {',
       '  local n',
@@ -506,10 +590,8 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       'if [[ "$SKIP_MULTIPATH_APPLY" == "1" ]]; then',
       '  echo "YAML remains under 00-prereq/ for reference."',
       '  echo "If you changed multipath.conf after applying, re-apply the YAML manually before continuing."',
-      '  echo "Confirm MachineConfigPools are healthy (UPDATED=True / UPDATING=False):"',
-      '  "$CMD" get mcp || true',
-      '  read -r -p "Press Enter once multipath is verified on nodes... "',
-      '  echo',
+      '  echo "Checking MachineConfigPool health (auto-continues when UPDATED=True / UPDATING=False)..."',
+      '  wait_mcp_healthy "${MCP_POOLS[@]}"',
       'else',
       '  echo "==> Applying multipath MachineConfig(s)"',
       '  echo "WARNING: MachineConfig updates reboot nodes in the targeted pool (rolling)."',
@@ -522,11 +604,8 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     }
     lines.push(
       '',
-      '  echo "Watch MachineConfigPools (Ctrl+C when UPDATED=True and UPDATING=False):"',
-      '  "$CMD" get mcp -w || true',
-      '',
-      '  read -r -p "Confirm all targeted nodes rebooted and multipath is verified, then press Enter... "',
-      '  echo',
+      '  echo "Nodes will reboot rolling as MachineConfigPools update."',
+      '  wait_mcp_healthy "${MCP_POOLS[@]}"',
       'fi',
       '',
     )
@@ -823,19 +902,20 @@ The Hitachi multipath sample is embedded in the MachineConfig as base64 Ignition
    \`oc apply\` it so nodes reboot while you finish the wizard. Check **I already applied this
    MachineConfig** so \`install.sh\` skips apply.
 2. **Via install.sh (default):** Leave that checkbox unchecked. \`install.sh\` applies the YAML,
-   then waits for MCP / reboots. It also skips apply if the MachineConfig already exists on the cluster.
+   polls MachineConfigPool status with a compact live status block, writes detail snapshots to
+   \`logs/install-*.log\`, and **continues automatically** when pools are healthy (UPDATED=True,
+   UPDATING=False). It also skips apply if the MachineConfig already exists on the cluster.
 
 \`\`\`bash
 # Early apply example:
 oc apply -f 00-prereq/
-oc get mcp -w
 
 # Or let install.sh handle apply + wait
 ./install.sh
 \`\`\`
 
-After apply (either path), wait until pools show UPDATED=True / UPDATING=False, then continue with
-CSI Driver install.
+After apply (either path), wait until pools are healthy before CSI Driver install. When using
+\`install.sh\`, the script waits and continues on its own; check \`logs/install-*.log\` for full detail.
 `,
         description: 'Multipath apply notes for OpenShift (includes reboot warning)',
         group: 'prereq',
