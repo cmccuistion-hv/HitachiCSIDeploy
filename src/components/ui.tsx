@@ -8,11 +8,13 @@ import {
 } from 'react'
 
 /** Click/focus-toggled help popover (hover enhances expand; touch-safe). */
-export function HelpTip({ text }: { text: string }) {
+export function HelpTip({ text, diagram }: { text: string; diagram?: ReactNode }) {
   const [open, setOpen] = useState(false)
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const popoverRef = useRef<HTMLSpanElement>(null)
   const tipId = useId()
+  const sticky = !!diagram
 
   useEffect(() => {
     if (!open) {
@@ -25,17 +27,25 @@ export function HelpTip({ text }: { text: string }) {
       if (!wrap) return
       const rect = wrap.getBoundingClientRect()
       const margin = 8
-      const width = Math.min(280, window.innerWidth * 0.7, window.innerWidth - margin * 2)
-      // Prefer aligning to the trigger's left; flip when that would overflow the viewport.
+      const width = sticky
+        ? Math.min(680, window.innerWidth - margin * 2)
+        : Math.min(280, window.innerWidth * 0.7, window.innerWidth - margin * 2)
       let left = rect.left
       if (left + width > window.innerWidth - margin) {
         left = rect.right - width
       }
       left = Math.max(margin, Math.min(left, window.innerWidth - margin - width))
-      setCoords({ top: rect.bottom + 6, left, width })
+      let top = rect.bottom + 6
+      const pop = popoverRef.current
+      const height = pop?.offsetHeight ?? (sticky ? width * 0.55 + 72 : 120)
+      if (top + height > window.innerHeight - margin) {
+        top = Math.max(margin, rect.top - height - 6)
+      }
+      setCoords({ top, left, width })
     }
 
     place()
+    const id = requestAnimationFrame(place)
 
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -50,19 +60,24 @@ export function HelpTip({ text }: { text: string }) {
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
     return () => {
+      cancelAnimationFrame(id)
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [open])
+  }, [open, sticky])
 
   return (
     <span
       className={`help-tip${open ? ' open' : ''}`}
       ref={wrapRef}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={() => {
+        if (!sticky) setOpen(true)
+      }}
+      onMouseLeave={() => {
+        if (!sticky) setOpen(false)
+      }}
     >
       <button
         type="button"
@@ -75,18 +90,31 @@ export function HelpTip({ text }: { text: string }) {
           e.stopPropagation()
           setOpen((v) => !v)
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (!sticky) setOpen(true)
+        }}
       >
         ?
       </button>
-      {open && coords && (
+      {open && (
         <span
-          className="help-tip-popover"
+          ref={popoverRef}
+          className={`help-tip-popover${sticky ? ' has-diagram' : ''}`}
           id={tipId}
           role="tooltip"
-          style={{ top: coords.top, left: coords.left, width: coords.width }}
+          style={
+            coords
+              ? { top: coords.top, left: coords.left, width: coords.width }
+              : { top: 0, left: 0, width: sticky ? 680 : 280, visibility: 'hidden' }
+          }
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
         >
           {text}
+          {diagram ? <div className="help-tip-diagram">{diagram}</div> : null}
         </span>
       )}
     </span>
@@ -97,6 +125,7 @@ export function Field({
   label,
   hint,
   help,
+  helpDiagram,
   error,
   children,
 }: {
@@ -104,6 +133,7 @@ export function Field({
   hint?: string
   /** Longer “what is this?” shown via HelpTip beside the label */
   help?: string
+  helpDiagram?: ReactNode
   error?: string
   children: ReactNode
 }) {
@@ -111,7 +141,7 @@ export function Field({
     <div className={`field${error ? ' error' : ''}`}>
       <label>
         {label}
-        {help ? <HelpTip text={help} /> : null}
+        {help ? <HelpTip text={help} diagram={helpDiagram} /> : null}
       </label>
       {children}
       {hint && !error && <span className="hint">{hint}</span>}
@@ -123,11 +153,13 @@ export function Field({
 export function Section({
   title,
   help,
+  helpDiagram,
   actions,
   children,
 }: {
   title: string
   help?: string
+  helpDiagram?: ReactNode
   actions?: ReactNode
   children: ReactNode
 }) {
@@ -136,7 +168,7 @@ export function Section({
       <div className="section-header">
         <h3>
           {title}
-          {help ? <HelpTip text={help} /> : null}
+          {help ? <HelpTip text={help} diagram={helpDiagram} /> : null}
         </h3>
         {actions}
       </div>
@@ -196,6 +228,9 @@ export function ToggleRow({
   acronym,
   disabled,
   help,
+  helpDiagram,
+  collapsible,
+  defaultExpanded = true,
   children,
 }: {
   checked: boolean
@@ -206,9 +241,16 @@ export function ToggleRow({
   acronym?: string
   disabled?: boolean
   help?: string
+  helpDiagram?: ReactNode
+  /** Collapse nested content; open by default */
+  collapsible?: boolean
+  defaultExpanded?: boolean
   /** Nested options under this row (not dimmed when parent is disabled) */
   children?: ReactNode
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+  const showBody = !!children && (!collapsible || expanded)
+
   const main = (
     <label
       style={{
@@ -229,7 +271,7 @@ export function ToggleRow({
         <strong>
           {title}
           {acronym && <span className="acronym">{acronym}</span>}
-          {help && <HelpTip text={help} />}
+          {help && <HelpTip text={help} diagram={helpDiagram} />}
         </strong>
         <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
           {description}
@@ -248,18 +290,21 @@ export function ToggleRow({
           : undefined),
       }}
     >
-      {main}
-      {children && (
-        <div
-          style={{
-            marginLeft: '1.75rem',
-            paddingTop: '0.65rem',
-            borderTop: '1px solid var(--hv-border)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.65rem',
-          }}
-        >
+      <div className="toggle-row-head">
+        {main}
+        {collapsible && children ? (
+          <button
+            type="button"
+            className="toggle-row-collapse"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+          >
+            {expanded ? 'Hide details' : 'Show details'}
+          </button>
+        ) : null}
+      </div>
+      {showBody && (
+        <div className="toggle-row-body">
           {children}
         </div>
       )}

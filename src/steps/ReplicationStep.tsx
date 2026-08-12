@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, DownloadButton, Field, Section } from '../components/ui'
+import { ResourcePartitioningDiagram } from '../components/ResourcePartitioningDiagram'
+import { Callout, CodeBlock, DownloadButton, Field, HelpTip, Section } from '../components/ui'
+import { STORAGE_SITE_FOCUS_KEY } from '../catalog/types'
 import { PLATFORMS } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../catalog/sites'
+import { hrpcPairResourceGroupIds, hrpcResourceGroupIdReason } from '../catalog/validation'
 import { useUiMode } from '../state/UiModeContext'
 import {
   generateRemoteKubeconfigSecret,
@@ -11,8 +14,37 @@ import {
   REMOTE_KUBECONFIG_SECRET_NAME,
 } from '../generator/remoteKubeconfig'
 
+const RESOURCE_PARTITIONING_ITEMS = [
+  {
+    id: 'journal-access',
+    title: 'Journal',
+    body: 'Create the journal from the resource group configured for CSI Driver, and confirm the Replication user can access it.',
+  },
+  {
+    id: 'both-sites',
+    title: 'Both sites configured',
+    body: 'Resource partitioning must be set on both the primary and secondary arrays — one-sided is not supported.',
+  },
+  {
+    id: 'host-group',
+    title: 'Host group',
+    body: (
+      <>
+        Allocate one undefined host group ID for each port in that resource group. A host group named{' '}
+        <code>spc-replication</code> is created when you create a Replication. If a host group with that name
+        already exists on the same port in a different resource group, delete it first.
+      </>
+    ),
+  },
+  {
+    id: 'csi-driver-user',
+    title: 'Same user as CSI Driver',
+    body: 'On each array, use the same storage system user that CSI Driver is configured with. Primary and secondary sites may use different users.',
+  },
+] as const
+
 export function ReplicationStep() {
-  const { state, setState } = useWizard()
+  const { state, setState, visibleSteps, setStepIndex } = useWizard()
   const { isAdvanced } = useUiMode()
   const [stepAdvanced, setStepAdvanced] = useState(false)
   const showFull = isAdvanced || stepAdvanced
@@ -64,6 +96,57 @@ export function ReplicationStep() {
         secretName,
       })
     : null
+
+  const rpAck = state.replication.resourcePartitioningAcknowledged ?? {}
+  const rgIds = hrpcPairResourceGroupIds(state)
+  const partitioningOn = !!(rgIds.primary || rgIds.secondary)
+  const rgReason = hrpcResourceGroupIdReason(state, { requireBoth: true })
+  const rgReady = !rgReason
+  const partitioningDiagram = (
+    <ResourcePartitioningDiagram
+      primary={{
+        serial: primaryPair?.serial,
+        resourceGroupID: primaryPair?.resourceGroupID,
+        journal:
+          secrets.find((s) => s.serial.trim() && s.serial.trim() === (primaryPair?.serial || '').trim())
+            ?.journal ?? secrets[0]?.journal,
+      }}
+      secondary={{
+        serial: secondaryPair?.serial,
+        resourceGroupID: secondaryPair?.resourceGroupID,
+        journal:
+          secrets.find((s) => s.serial.trim() && s.serial.trim() === (secondaryPair?.serial || '').trim())
+            ?.journal ?? secrets[1]?.journal,
+      }}
+    />
+  )
+  const goToStorage = () => {
+    const focus: 'primary' | 'secondary' = rgIds.primary ? 'secondary' : 'primary'
+    try {
+      sessionStorage.setItem(STORAGE_SITE_FOCUS_KEY, focus)
+    } catch {
+      /* private mode */
+    }
+    const idx = visibleSteps.findIndex((s) => s.id === 'storage')
+    if (idx >= 0) setStepIndex(idx)
+  }
+  const storageJump = (
+    <button type="button" className="btn btn-secondary" onClick={goToStorage}>
+      Go to Storage systems
+    </button>
+  )
+  const toggleRpItem = (id: string) => {
+    setState((s) => ({
+      ...s,
+      replication: {
+        ...s.replication,
+        resourcePartitioningAcknowledged: {
+          ...(s.replication.resourcePartitioningAcknowledged ?? {}),
+          [id]: !s.replication.resourcePartitioningAcknowledged?.[id],
+        },
+      },
+    }))
+  }
 
   const updateSecret = (idx: number, patch: Partial<(typeof secrets)[number]>) => {
     const next = [...secrets]
@@ -244,60 +327,60 @@ export function ReplicationStep() {
           : 'Provide the journal IDs for the primary and secondary sites. If you want the wizard to generate the remote-kubeconfig Secret YAML, paste the kubeconfigs below; otherwise leave them blank and supply the Secret later.'}
       </p>
 
-      <Callout variant="ok">
-        Version <strong>{state.versions.replication}</strong> — Replication operator and Disaster Recovery
-        operator are both included. Day-2 protection is managed through DR policies after install.
-      </Callout>
-
-      <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
-        <input
-          type="checkbox"
-          checked={!!state.replication.resourcePartitioningGuide}
-          onChange={(e) =>
-            setState((s) => ({
-              ...s,
-              replication: { ...s.replication, resourcePartitioningGuide: e.target.checked },
-            }))
-          }
-        />
-        <div>
-          <strong>Using resource partitioning for Replication?</strong>
-          <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-            Shows a short checklist for journal and access requirements on both sites.
-          </p>
-        </div>
-      </label>
-
-      {state.replication.resourcePartitioningGuide && (
+      {!partitioningOn ? (
         <Callout>
+          <strong>Resource partitioning is off.</strong>{' '}
+          <HelpTip text={HELP.replicationResourcePartitioningHint} diagram={partitioningDiagram} />
+          <p style={{ margin: '0.35rem 0 0' }}>
+            It stays unavailable until you set Resource group ID on both sites’ Replication arrays. That field
+            is on the Storage systems step, on the array marked for Replication (Primary and Secondary site
+            tabs).
+          </p>
+          <div style={{ marginTop: '0.65rem' }}>{storageJump}</div>
+        </Callout>
+      ) : (
+        <Section
+          title="Resource partitioning checklist"
+          help={HELP.replicationResourcePartitioningHint}
+          helpDiagram={partitioningDiagram}
+        >
           <ul className="checklist">
             <li>
-              <strong>Journal access</strong>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                The journal volume is in the Replication resource group and the Replication user can access it.
-              </p>
+              <input
+                type="checkbox"
+                checked={rgReady}
+                readOnly
+                disabled
+                style={{ width: 18, height: 18, accentColor: 'var(--hv-primary)', marginTop: 4 }}
+              />
+              <div>
+                <strong>Resource group IDs</strong>
+                <p style={{ margin: '0.25rem 0', fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
+                  {rgReady
+                    ? `Primary resource group ID ${rgIds.primary}; secondary resource group ID ${rgIds.secondary}. Each array has its own ID — they do not need to match.`
+                    : rgReason}
+                </p>
+                {!rgReady && <div style={{ marginTop: '0.65rem' }}>{storageJump}</div>}
+              </div>
             </li>
-            <li>
-              <strong>Both sites configured</strong>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                Resource partitioning settings are applied on both the primary and secondary arrays.
-              </p>
-            </li>
-            <li>
-              <strong>Host group</strong>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                The Replication host group (for example <code>spc-replication</code>) exists and is reachable by
-                the nodes.
-              </p>
-            </li>
-            <li>
-              <strong>Same user across sites</strong>
-              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                Use the same storage user name and password for Replication on both sites.
-              </p>
-            </li>
+            {RESOURCE_PARTITIONING_ITEMS.map((item) => (
+              <li key={item.id}>
+                <input
+                  type="checkbox"
+                  checked={!!rpAck[item.id]}
+                  onChange={() => toggleRpItem(item.id)}
+                  style={{ width: 18, height: 18, accentColor: 'var(--hv-primary)', marginTop: 4 }}
+                />
+                <div>
+                  <strong>{item.title}</strong>
+                  <p style={{ margin: '0.25rem 0', fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
+                    {item.body}
+                  </p>
+                </div>
+              </li>
+            ))}
           </ul>
-        </Callout>
+        </Section>
       )}
 
       {showFull ? (

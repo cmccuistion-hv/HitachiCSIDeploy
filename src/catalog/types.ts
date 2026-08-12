@@ -109,6 +109,8 @@ export interface ReplicationConfig {
    * (Does not change generated manifests; guidance only.)
    */
   resourcePartitioningGuide?: boolean
+  /** Acknowledged items on the resource partitioning checklist */
+  resourcePartitioningAcknowledged?: Record<string, boolean>
   storageSecrets: {
     serial: string
     url: string
@@ -234,6 +236,8 @@ export interface WizardState {
 
 export const WIZARD_STATE_VERSION = 1
 export const STORAGE_KEY = 'hitachi-csi-wizard-state'
+/** One-shot: Replication jump focuses this Storage site tab */
+export const STORAGE_SITE_FOCUS_KEY = 'hitachi-csi-wizard-storage-site'
 
 export function createDefaultState(): WizardState {
   return {
