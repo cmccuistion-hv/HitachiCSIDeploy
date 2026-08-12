@@ -120,7 +120,7 @@ export function ExportStep() {
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-success"
               disabled={storageExportBlocked || downloading || generating}
               onClick={() => void downloadZip()}
             >
@@ -142,7 +142,7 @@ export function ExportStep() {
             >
               Export config JSON
             </button>
-            <button type="button" className="btn btn-danger" onClick={reset}>
+            <button type="button" className="btn btn-primary" onClick={reset}>
               Reset wizard
             </button>
           </div>
