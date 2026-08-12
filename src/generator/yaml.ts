@@ -32,6 +32,8 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { effectiveSerialNumber } from '../catalog/validation'
+import { ensureSitesForReplication, getSiteStorage } from '../catalog/sites'
+import type { SiteId } from '../catalog/sites'
 
 export interface GeneratedFile {
   path: string
@@ -763,38 +765,49 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       '  chmod +x ./03-replication/create-remote-kubeconfig-secrets.sh',
       '  APPLY=1 ./03-replication/create-remote-kubeconfig-secrets.sh',
       'elif [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" || -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
-      '  # Wizard-packaged Secrets: apply the one for THIS cluster (default: primary).',
-      '  # On the secondary cluster: REPLICATION_SITE=secondary ./install.sh',
-      '  site="${REPLICATION_SITE:-primary}"',
-      '  case "$site" in',
-      '    primary|p)',
-      '      if [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" ]]; then',
-      '        echo "Applying wizard Secret YAML for PRIMARY site (current kubeconfig/context)."',
-      '        apply "03-replication/remote-kubeconfig-for-primary-site.yaml"',
-      '      else',
-      '        echo "ERROR: REPLICATION_SITE=primary but remote-kubeconfig-for-primary-site.yaml is missing." >&2',
+      '  # Wizard-packaged Secrets: if only one is present in this folder, apply it.',
+      '  # If both are present, fall back to REPLICATION_SITE (default: primary).',
+      '  pk_p=0 pk_s=0',
+      '  [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" ]] && pk_p=1',
+      '  [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]] && pk_s=1',
+      '  if [[ "$pk_p" == "1" && "$pk_s" == "0" ]]; then',
+      '    echo "Applying wizard Secret YAML for PRIMARY site (current kubeconfig/context)."',
+      '    apply "03-replication/remote-kubeconfig-for-primary-site.yaml"',
+      '  elif [[ "$pk_s" == "1" && "$pk_p" == "0" ]]; then',
+      '    echo "Applying wizard Secret YAML for SECONDARY site (current kubeconfig/context)."',
+      '    apply "03-replication/remote-kubeconfig-for-secondary-site.yaml"',
+      '  else',
+      '    site="${REPLICATION_SITE:-primary}"',
+      '    case "$site" in',
+      '      primary|p)',
+      '        if [[ -f "03-replication/remote-kubeconfig-for-primary-site.yaml" ]]; then',
+      '          echo "Applying wizard Secret YAML for PRIMARY site (current kubeconfig/context)."',
+      '          apply "03-replication/remote-kubeconfig-for-primary-site.yaml"',
+      '        else',
+      '          echo "ERROR: REPLICATION_SITE=primary but remote-kubeconfig-for-primary-site.yaml is missing." >&2',
+      '          exit 1',
+      '        fi',
+      '        if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
+      '          echo "Note: secondary-site Secret is in the package — apply on the other cluster with:"',
+      '          echo "  REPLICATION_SITE=secondary ./install.sh"',
+      '          echo "  # or: $CMD apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml"',
+      '        fi',
+      '        ;;',
+      '      secondary|s)',
+      '        if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
+      '          echo "Applying wizard Secret YAML for SECONDARY site (current kubeconfig/context)."',
+      '          apply "03-replication/remote-kubeconfig-for-secondary-site.yaml"',
+      '        else',
+      '          echo "ERROR: REPLICATION_SITE=secondary but remote-kubeconfig-for-secondary-site.yaml is missing." >&2',
+      '          exit 1',
+      '        fi',
+      '        ;;',
+      '      *)',
+      '        echo "ERROR: REPLICATION_SITE must be primary or secondary (got: $site)." >&2',
       '        exit 1',
-      '      fi',
-      '      if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
-      '        echo "Note: secondary-site Secret is in the package — apply on the other cluster with:"',
-      '        echo "  REPLICATION_SITE=secondary ./install.sh"',
-      '        echo "  # or: $CMD apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml"',
-      '      fi',
-      '      ;;',
-      '    secondary|s)',
-      '      if [[ -f "03-replication/remote-kubeconfig-for-secondary-site.yaml" ]]; then',
-      '        echo "Applying wizard Secret YAML for SECONDARY site (current kubeconfig/context)."',
-      '        apply "03-replication/remote-kubeconfig-for-secondary-site.yaml"',
-      '      else',
-      '        echo "ERROR: REPLICATION_SITE=secondary but remote-kubeconfig-for-secondary-site.yaml is missing." >&2',
-      '        exit 1',
-      '      fi',
-      '      ;;',
-      '    *)',
-      '      echo "ERROR: REPLICATION_SITE must be primary or secondary (got: $site)." >&2',
-      '      exit 1',
-      '      ;;',
-      '  esac',
+      '        ;;',
+      '    esac',
+      '  fi',
       'else',
       '  echo "No packaged remote-kubeconfig Secret YAML and KUBECONFIG_P/S not set."',
       '  echo "Either re-export after pasting both kubeconfigs in the wizard, or:"',
@@ -870,7 +883,68 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
   return lines.join('\n') + '\n'
 }
 
-export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
+function stateForSite(state: WizardState, site: SiteId): WizardState {
+  const s = getSiteStorage(state, site)
+  return {
+    ...state,
+    storageSystems: s.storageSystems,
+    storageClasses: s.storageClasses,
+  }
+}
+
+function prefixFiles(files: GeneratedFile[], prefix: string): GeneratedFile[] {
+  return files.map((f) => ({
+    ...f,
+    path: `${prefix}/${f.path}`,
+  }))
+}
+
+function primaryHrpcStorageClassName(state: WizardState): string | undefined {
+  if (!state.components.replication) return undefined
+  const ensured = ensureSitesForReplication(state)
+  const primary = getSiteStorage(ensured, 'primary')
+  return (
+    primary.storageClasses.find((sc) => !!sc.hrpcPairId)?.name?.trim() ||
+    primary.storageClasses[0]?.name?.trim() ||
+    undefined
+  )
+}
+
+function generateDualFolderReadme(state: WizardState): string {
+  const plat = PLATFORMS[state.platform]
+  const cmd = plat.useOc ? 'oc' : 'kubectl'
+  return `# Hitachi CSI Deployment (two-site package)
+
+This ZIP contains two install trees:
+
+- \`primary/\` — run on the **primary** cluster
+- \`secondary/\` — run on the **secondary** cluster
+
+## Install order
+
+1. Set your ${cmd} context to the **primary** cluster.
+2. Run the primary installer, then switch context and run the secondary installer:
+
+\`\`\`bash
+cd primary
+chmod +x install.sh
+./install.sh
+
+cd ../secondary
+chmod +x install.sh
+./install.sh
+\`\`\`
+
+Each folder contains its own \`03-replication/remote-kubeconfig-for-*-site.yaml\` (if you pasted kubeconfigs in the wizard) and its own \`install.sh\`. If only one remote-kubeconfig YAML exists in the folder, \`install.sh\` applies it automatically.
+
+If you did **not** paste kubeconfigs in the wizard, you can export \`KUBECONFIG_P\` and \`KUBECONFIG_S\` and \`install.sh\` will run the helper that creates both remote kubeconfig Secrets.
+`
+}
+
+async function generateAllSingleSite(
+  state: WizardState,
+  opts?: { remoteKubeconfigSite?: SiteId | 'both'; drScNameOverride?: string },
+): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = []
   const plat = PLATFORMS[state.platform]
 
@@ -1124,6 +1198,7 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
   if (state.components.replication) {
     const hrpcPaths = templatePaths('hrpc', state.versions.replication)
     const drScName =
+      opts?.drScNameOverride?.trim() ||
       (state.storageClassesEnabled && state.storageClasses[0]?.name?.trim()) ||
       state.quickstart.storageClassName?.trim() ||
       'hitachi-csi'
@@ -1150,6 +1225,14 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
       })
     }
 
+    const remoteSite = opts?.remoteKubeconfigSite ?? 'both'
+    const remoteKcInstallBlurb =
+      remoteSite === 'primary'
+        ? 'Applies the packaged `remote-kubeconfig-for-primary-site.yaml` in this folder (run from `primary/` on the primary cluster).'
+        : remoteSite === 'secondary'
+          ? 'Applies the packaged `remote-kubeconfig-for-secondary-site.yaml` in this folder (run from `secondary/` on the secondary cluster).'
+          : 'Applies packaged `remote-kubeconfig-for-*-site.yaml` (`REPLICATION_SITE=primary` default; use `secondary` on the other site when both files are present).'
+
     files.push({
       path: '03-replication/README.md',
       content: `# Replication + Disaster Recovery
@@ -1163,12 +1246,12 @@ Version: ${state.versions.replication}
 3. Applies cert-manager, **waits for the webhook**, then applies the Disaster Recovery operator
 4. DR operator PVC \`hspc-dr-operator-pvc\` uses StorageClass \`${drScName}\` (from this wizard — not the upstream \`<storage-class-name>\` placeholder)
 5. Remote kubeconfig Secrets — **either**:
-   - Applies packaged \`remote-kubeconfig-for-*-site.yaml\` (from wizard paste/upload) to the current cluster (\`REPLICATION_SITE=primary\` default; use \`secondary\` on the other site), **or**
-   - Runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
+   - ${remoteKcInstallBlurb}
+   - Or runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
 
 ## What you provide
 
-**Option A — wizard Secret YAML (already in this ZIP if you pasted kubeconfigs):** nothing else for this cluster; \`install.sh\` applies the primary-site Secret by default.
+**Option A — wizard Secret YAML (already in this ZIP if you pasted kubeconfigs):** nothing else for this cluster; \`install.sh\` applies the remote-kubeconfig Secret packaged for this folder.
 
 **Option B — helper script:** set paths to both cluster kubeconfigs before \`./install.sh\`:
 
@@ -1179,7 +1262,7 @@ export KUBECONFIG_S=/path/to/secondary-kubeconfig
 
 Details: \`remote-kubeconfig-notes.md\`.
 
-${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream HRPC/DR YAML; re-export when GitHub is reachable.\n'}
+${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream Replication/DR YAML; re-export when GitHub is reachable.\n'}
 `,
       description: 'Replication and DR Operator install notes',
       group: 'replication',
@@ -1192,6 +1275,17 @@ ${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream HRPC/DR YAML
         group: 'replication',
       })
     }
+    const remoteNotesApply =
+      remoteSite === 'primary'
+        ? `\`${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml\``
+        : remoteSite === 'secondary'
+          ? `\`${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml\``
+          : `\`\`\`bash
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml
+# on secondary:
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml
+\`\`\``
+
     files.push({
       path: '03-replication/remote-kubeconfig-notes.md',
       content: `# Remote kubeconfig Secrets
@@ -1202,18 +1296,11 @@ Namespace: \`${state.replication.namespace}\`
 
 ## Option A — wizard Secret YAML (in this ZIP when you pasted kubeconfigs)
 
-\`install.sh\` applies the Secret for the current site automatically:
-
-- Default: \`remote-kubeconfig-for-primary-site.yaml\` (this cluster is primary)
-- Other cluster: \`REPLICATION_SITE=secondary ./install.sh\`
+\`install.sh\` applies the Secret packaged for **this folder** automatically (dual-site ZIP: run \`./install.sh\` from \`primary/\` or \`secondary/\`). If both site YAML files are present in one folder, set \`REPLICATION_SITE=primary|secondary\`.
 
 Or apply by hand:
 
-\`\`\`bash
-${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml
-# on secondary:
-${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml
-\`\`\`
+${remoteNotesApply}
 
 ## Option B — helper script (KUBECONFIG_P / KUBECONFIG_S)
 
@@ -1244,7 +1331,7 @@ You do not create these Secrets by hand.
       description: 'Automates both remote-kubeconfig Secrets from KUBECONFIG_P / KUBECONFIG_S',
       group: 'replication',
     })
-    if (state.replication.secondaryKubeconfig?.trim()) {
+    if (remoteSite !== 'secondary' && state.replication.secondaryKubeconfig?.trim()) {
       files.push({
         path: '03-replication/remote-kubeconfig-for-primary-site.yaml',
         content: generateRemoteKubeconfigSecret({
@@ -1256,7 +1343,7 @@ You do not create these Secrets by hand.
         group: 'replication',
       })
     }
-    if (state.replication.primaryKubeconfig?.trim()) {
+    if (remoteSite !== 'primary' && state.replication.primaryKubeconfig?.trim()) {
       files.push({
         path: '03-replication/remote-kubeconfig-for-secondary-site.yaml',
         content: generateRemoteKubeconfigSecret({
@@ -1468,4 +1555,43 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
   void generateMetricsExporterPatch
 
   return files
+}
+
+export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
+  if (!state.components.replication) {
+    return await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
+  }
+
+  const ensured = ensureSitesForReplication(state)
+
+  const drScName =
+    primaryHrpcStorageClassName(ensured) ||
+    (ensured.storageClassesEnabled && ensured.storageClasses[0]?.name?.trim()) ||
+    ensured.quickstart.storageClassName?.trim() ||
+    'hitachi-csi'
+
+  const primaryState = stateForSite(ensured, 'primary')
+  const secondaryState = stateForSite(ensured, 'secondary')
+
+  const primaryFiles = await generateAllSingleSite(primaryState, {
+    remoteKubeconfigSite: 'primary',
+    drScNameOverride: drScName,
+  })
+  const secondaryFiles = await generateAllSingleSite(secondaryState, {
+    remoteKubeconfigSite: 'secondary',
+    drScNameOverride: drScName,
+  })
+
+  const out: GeneratedFile[] = [
+    {
+      path: 'README.md',
+      content: generateDualFolderReadme(ensured),
+      description: 'Two-site package overview and install order',
+      group: 'scripts',
+    },
+    ...prefixFiles(primaryFiles, 'primary'),
+    ...prefixFiles(secondaryFiles, 'secondary'),
+  ]
+
+  return out
 }

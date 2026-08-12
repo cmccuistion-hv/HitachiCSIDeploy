@@ -3,6 +3,7 @@ import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, DownloadButton, Field, Section } from '../components/ui'
 import { PLATFORMS } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
+import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../catalog/sites'
 import {
   generateRemoteKubeconfigSecret,
   generateRemoteKubeconfigScript,
@@ -16,15 +17,23 @@ export function ReplicationStep() {
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
 
-  const secrets = state.replication.storageSecrets.length
-    ? state.replication.storageSecrets
-    : state.storageSystems.slice(0, 2).map((sys, i) => ({
-        serial: sys.serial,
-        url: sys.url,
-        user: sys.user,
-        password: sys.password,
-        journal: String(i + 1),
-      }))
+  const ensured = ensureSitesForReplication(state)
+  const primarySite = getSiteStorage(ensured, 'primary')
+  const secondarySite = getSiteStorage(ensured, 'secondary')
+  const primaryPair = hrpcPairSystem(primarySite.storageSystems) ?? primarySite.storageSystems[0]
+  const secondaryPair = hrpcPairSystem(secondarySite.storageSystems) ?? secondarySite.storageSystems[0]
+
+  const seededSecrets = [primaryPair, secondaryPair]
+    .filter(Boolean)
+    .map((sys, i) => ({
+      serial: sys.serial,
+      url: sys.url,
+      user: sys.user,
+      password: sys.password,
+      journal: String(i + 1),
+    }))
+
+  const secrets = state.replication.storageSecrets.length ? state.replication.storageSecrets : seededSecrets
 
   const secretName =
     state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME
@@ -73,8 +82,9 @@ export function ReplicationStep() {
     <div className="step-panel">
       <h2>Replication</h2>
       <p className="lede">
-        Configure journals and remote access. Operator and Disaster Recovery install are packaged into the
-        export — you do not run those commands by hand on this step.
+        Configure journals and remote access for the primary and secondary sites. The export packages both
+        sites (including the Replication operator and the included DR Operator) — you do not run install
+        commands by hand on this step.
       </p>
 
       <Callout variant="ok">
@@ -99,9 +109,59 @@ export function ReplicationStep() {
         </Field>
       </Section>
 
+      <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
+        <input
+          type="checkbox"
+          checked={!!state.replication.resourcePartitioningGuide}
+          onChange={(e) =>
+            setState((s) => ({
+              ...s,
+              replication: { ...s.replication, resourcePartitioningGuide: e.target.checked },
+            }))
+          }
+        />
+        <div>
+          <strong>Using resource partitioning for Replication?</strong>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+            Shows a short checklist for journal and access requirements on both sites.
+          </p>
+        </div>
+      </label>
+
+      {state.replication.resourcePartitioningGuide && (
+        <Callout>
+          <ul className="checklist">
+            <li>
+              <strong>Journal access</strong>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                The journal volume is in the Replication resource group and the Replication user can access it.
+              </p>
+            </li>
+            <li>
+              <strong>Both sites configured</strong>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                Resource partitioning settings are applied on both the primary and secondary arrays.
+              </p>
+            </li>
+            <li>
+              <strong>Host group</strong>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                The Replication host group (for example <code>spc-replication</code>) exists and is reachable by the nodes.
+              </p>
+            </li>
+            <li>
+              <strong>Same user across sites</strong>
+              <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                Use the same storage user name and password for Replication on both sites.
+              </p>
+            </li>
+          </ul>
+        </Callout>
+      )}
+
       <Section title="Storage secrets (journals)" help={HELP.journalsVsRemote}>
         <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
-          Primary and secondary arrays with journal IDs used by the Replication operator. These become{' '}
+          Primary and secondary site arrays with journal IDs used by the Replication operator. These become{' '}
           <code>storage-secrets.yaml</code> in the export. Journals are the storage side; remote kubeconfig
           (below) is the cluster side.
         </p>
@@ -182,11 +242,11 @@ export function ReplicationStep() {
             onClick={() =>
               setState((s) => ({
                 ...s,
-                replication: { ...s.replication, storageSecrets: secrets },
+                replication: { ...s.replication, storageSecrets: seededSecrets },
               }))
             }
           >
-            Use storage systems as replication secrets
+            Use each site’s Replication array as secrets
           </button>
         )}
       </Section>

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CONNECTION_TYPES,
   coerceConnectionType,
@@ -6,8 +6,16 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
-import type { ConnectionType, NodeEnvironment, StorageClassConfig, StorageClassKind } from '../catalog/types'
-import { validateStorageClass } from '../catalog/validation'
+import type {
+  ConnectionType,
+  NodeEnvironment,
+  SiteStorageConfig,
+  StorageClassConfig,
+  StorageClassKind,
+} from '../catalog/types'
+import { nextUniqueName, validateStorageClass } from '../catalog/validation'
+import type { SiteId } from '../catalog/sites'
+import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
@@ -56,11 +64,18 @@ function defaultSc(
 
 export function StorageClassesStep() {
   const { state, setState } = useWizard()
-  const primary = state.storageSystems[0]
-  const previewSc = state.storageClasses[0]
+  const [site, setSite] = useState<SiteId>('primary')
+  const replicationOn = state.components.replication
+  const ensured = replicationOn ? ensureSitesForReplication(state) : state
+  const storage: SiteStorageConfig = replicationOn
+    ? getSiteStorage(ensured, site)
+    : { storageSystems: ensured.storageSystems, storageClasses: ensured.storageClasses }
+  const primary = replicationOn ? getSiteStorage(ensured, 'primary').storageSystems[0] : state.storageSystems[0]
+  const previewSc = storage.storageClasses[0]
   const canImmutableSnapshots = supportsImmutableSnapshots(primary)
 
   useEffect(() => {
+    if (state.components.replication) return
     if (!state.storageClassesEnabled) return
     const serial = primary?.serial?.trim()
     if (!serial) return
@@ -93,33 +108,252 @@ export function StorageClassesStep() {
     setState,
   ])
 
+  function systemsWithHrpcFirst(systems: SiteStorageConfig['storageSystems']) {
+    const pair = hrpcPairSystem(systems)
+    if (!pair) return systems
+    return [pair, ...systems.filter((s) => s !== pair)]
+  }
+
   const updateSc = (id: string, patch: Partial<StorageClassConfig>) => {
-    setState((s) => ({
-      ...s,
-      storageClasses: s.storageClasses.map((sc) => {
-        if (sc.id !== id) return sc
-        const next = { ...sc, ...patch }
-        if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
-          next.allowVolumeExpansion = false
+    setState((s) => {
+      if (!s.components.replication) {
+        return {
+          ...s,
+          storageClasses: s.storageClasses.map((sc) => {
+            if (sc.id !== id) return sc
+            const next = { ...sc, ...patch }
+            if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
+              next.allowVolumeExpansion = false
+            }
+            const allowed = connectionsForStorageClassKind(next.kind, s.nodeEnvironment)
+            next.connectionType = coerceConnectionType(next.connectionType, allowed)
+            return next
+          }),
+          quickstart: {
+            ...s.quickstart,
+            storageClassName:
+              s.storageClasses[0]?.id === id && patch.name ? patch.name : s.quickstart.storageClassName,
+          },
         }
-        const allowed = connectionsForStorageClassKind(next.kind, s.nodeEnvironment)
-        next.connectionType = coerceConnectionType(next.connectionType, allowed)
-        return next
-      }),
-      quickstart: {
-        ...s.quickstart,
-        storageClassName:
-          s.storageClasses[0]?.id === id && patch.name ? patch.name : s.quickstart.storageClassName,
-      },
-    }))
+      }
+
+      const ensured = ensureSitesForReplication(s)
+      const current = getSiteStorage(ensured, site)
+      const sc = current.storageClasses.find((x) => x.id === id)
+      if (!sc) return s
+
+      const pairId = (sc.hrpcPairId || '').trim()
+      const sharedPatch: Partial<StorageClassConfig> = {}
+      if (pairId) {
+        if (patch.name !== undefined) sharedPatch.name = patch.name
+        if (patch.fstype !== undefined) sharedPatch.fstype = patch.fstype
+      }
+
+      const siteOnlyPatch: Partial<StorageClassConfig> = { ...patch }
+      // Paired fields are always mirrored across sites for Replication SCs.
+      if (pairId) {
+        delete (siteOnlyPatch as Partial<StorageClassConfig>).name
+        delete (siteOnlyPatch as Partial<StorageClassConfig>).fstype
+      }
+
+      const patchOne = (storage: SiteStorageConfig): SiteStorageConfig => {
+        return {
+          ...storage,
+          storageClasses: storage.storageClasses.map((x) => {
+            const samePair = !!(pairId && (x.hrpcPairId || '').trim() === pairId)
+            const isTarget = x.id === id
+            if (!isTarget && !samePair) return x
+
+            let next = { ...x }
+            // Name/fstype stay in lockstep across sites for StorageClasses used for Replication.
+            if (samePair) next = { ...next, ...sharedPatch }
+            // Pool, ports, serial, secret, etc. stay local to the StorageClass being edited.
+            if (isTarget) {
+              next = { ...next, ...siteOnlyPatch }
+              if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
+                next.allowVolumeExpansion = false
+              }
+              const allowed = connectionsForStorageClassKind(next.kind, ensured.nodeEnvironment)
+              next.connectionType = coerceConnectionType(next.connectionType, allowed)
+            }
+            return next
+          }),
+        }
+      }
+
+      const primary = patchOne(getSiteStorage(ensured, 'primary'))
+      const secondary = patchOne(getSiteStorage(ensured, 'secondary'))
+      return {
+        ...ensured,
+        sites: { primary, secondary },
+      }
+    })
+  }
+
+  const removeSc = (id: string) => {
+    setState((s) => {
+      if (!s.components.replication) {
+        return {
+          ...s,
+          storageClasses: s.storageClasses.filter((x) => x.id !== id),
+        }
+      }
+      const ensured = ensureSitesForReplication(s)
+      const current = getSiteStorage(ensured, site)
+      const sc = current.storageClasses.find((x) => x.id === id)
+      const pairId = (sc?.hrpcPairId || '').trim()
+      const drop = (storage: SiteStorageConfig): SiteStorageConfig => ({
+        ...storage,
+        storageClasses: storage.storageClasses.filter((x) => {
+          if (x.id === id) return false
+          if (pairId && (x.hrpcPairId || '').trim() === pairId) return false
+          return true
+        }),
+      })
+      return {
+        ...ensured,
+        sites: {
+          primary: drop(getSiteStorage(ensured, 'primary')),
+          secondary: drop(getSiteStorage(ensured, 'secondary')),
+        },
+      }
+    })
+  }
+
+  const toggleUseForReplication = (id: string, on: boolean) => {
+    setState((s) => {
+      const ensured = ensureSitesForReplication(s)
+      const current = getSiteStorage(ensured, site)
+      const otherSite: SiteId = site === 'primary' ? 'secondary' : 'primary'
+      const other = getSiteStorage(ensured, otherSite)
+      const sc = current.storageClasses.find((x) => x.id === id)
+      if (!sc) return s
+
+      if (on) {
+        if (sc.kind !== 'standard') return s
+        const pairId = (sc.hrpcPairId || '').trim() || `hrpc-sc-${Date.now()}`
+        const nextCurrent: SiteStorageConfig = {
+          ...current,
+          storageClasses: current.storageClasses.map((x) =>
+            x.id === id ? { ...x, hrpcPairId: pairId } : x,
+          ),
+        }
+        const already = other.storageClasses.some((x) => (x.hrpcPairId || '').trim() === pairId)
+        const name = (sc.name || '').trim()
+        const sameName = other.storageClasses.find((x) => (x.name || '').trim() === name)
+        const reuse =
+          sameName && !(sameName.hrpcPairId || '').trim() ? sameName : undefined
+        const nextOther: SiteStorageConfig = already
+          ? other
+          : reuse
+            ? {
+                ...other,
+                storageClasses: other.storageClasses.map((x) =>
+                  x.id === reuse.id
+                    ? { ...x, hrpcPairId: pairId, fstype: sc.fstype || x.fstype }
+                    : x,
+                ),
+              }
+            : sameName
+              ? other
+              : {
+                  ...other,
+                  storageClasses: [
+                    ...other.storageClasses,
+                    {
+                      ...sc,
+                      id: `${sc.id}-${otherSite}`,
+                      hrpcPairId: pairId,
+                      serialNumber: '',
+                      poolID: '',
+                      portID: '',
+                      nvmSubsystemID: '',
+                      isDefault: false,
+                    },
+                  ],
+                }
+        return {
+          ...ensured,
+          sites:
+            site === 'primary'
+              ? { primary: nextCurrent, secondary: nextOther }
+              : { primary: nextOther, secondary: nextCurrent },
+        }
+      }
+
+      const pairId = (sc.hrpcPairId || '').trim()
+      const unpair = (storage: SiteStorageConfig): SiteStorageConfig => ({
+        ...storage,
+        storageClasses: storage.storageClasses.map((x) => {
+          if (!pairId || (x.hrpcPairId || '').trim() !== pairId) return x
+          const next = { ...x }
+          delete (next as Partial<StorageClassConfig>).hrpcPairId
+          return next
+        }),
+      })
+      return {
+        ...ensured,
+        sites: {
+          primary: unpair(getSiteStorage(ensured, 'primary')),
+          secondary: unpair(getSiteStorage(ensured, 'secondary')),
+        },
+      }
+    })
+  }
+
+  const addStorageClass = () => {
+    setState((s) => {
+      if (!s.components.replication) {
+        const nextSc = defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)
+        nextSc.name = nextUniqueName(
+          nextSc.name,
+          s.storageClasses.map((sc) => sc.name),
+        )
+        return { ...s, storageClasses: [...s.storageClasses, nextSc] }
+      }
+      const ensured = ensureSitesForReplication(s)
+      const current = getSiteStorage(ensured, site)
+      const nextSc = defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)
+      nextSc.name = nextUniqueName(
+        nextSc.name,
+        current.storageClasses.map((sc) => sc.name),
+      )
+      return withSiteStorage(ensured, site, {
+        ...current,
+        storageClasses: [...current.storageClasses, nextSc],
+      })
+    })
   }
 
   return (
     <div className="step-panel">
       <h2>StorageClasses & snapshots</h2>
-      <p className="lede">{HELP.secretVsStorageClass.storageClassLede}</p>
+      <p className="lede">
+        {replicationOn ? HELP.replicationSitesLede : HELP.secretVsStorageClass.storageClassLede}
+      </p>
 
       <Callout>{HELP.secretVsStorageClass.storageClassCallout}</Callout>
+
+      {replicationOn && (
+        <>
+          <div className="tabs" style={{ marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className={`tab${site === 'primary' ? ' active' : ''}`}
+              onClick={() => setSite('primary')}
+            >
+              Primary site
+            </button>
+            <button
+              type="button"
+              className={`tab${site === 'secondary' ? ' active' : ''}`}
+              onClick={() => setSite('secondary')}
+            >
+              Secondary site
+            </button>
+          </div>
+        </>
+      )}
 
       <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>
         <input
@@ -134,14 +368,20 @@ export function StorageClassesStep() {
                 snapshotClass: { ...s.snapshotClass, enabled: false },
               }))
             } else {
-              setState((s) => ({
-                ...s,
-                storageClassesEnabled: true,
-                storageClasses:
-                  s.storageClasses.length >= 1
-                    ? s.storageClasses
-                    : [defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)],
-              }))
+              setState((s) => {
+                if (s.components.replication) {
+                  const base = { ...s, storageClassesEnabled: true }
+                  return ensureSitesForReplication(base)
+                }
+                return {
+                  ...s,
+                  storageClassesEnabled: true,
+                  storageClasses:
+                    s.storageClasses.length >= 1
+                      ? s.storageClasses
+                      : [defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)],
+                }
+              })
             }
           }}
         />
@@ -160,413 +400,361 @@ export function StorageClassesStep() {
         </Callout>
       )}
 
+      {state.storageClassesEnabled && replicationOn && (
+        <Callout>{HELP.replicationPairedStorageClassesCallout}</Callout>
+      )}
+
       {state.storageClassesEnabled &&
-        state.storageClasses.map((sc) => {
-        const errors = validateStorageClass(sc, { storageSystems: state.storageSystems })
-        const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
-        const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
-        const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
-        const efficiencyBlocked =
-          primary?.isB20Series && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
-        const multipathOff = !state.multipath.enabled
-        const portIdHint = multipathOff
-          ? 'Prefer a single port when wizard multipath packaging is off (e.g. CL1-A).'
-          : 'Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe.'
-        const portIdPlaceholder = multipathOff ? 'CL1-A' : 'CL1-A,CL2-A'
+        storage.storageClasses.map((sc) => {
 
-        return (
-          <Section
-            key={sc.id}
-            title={`StorageClass: ${sc.name}`}
-            actions={
-              state.storageClasses.length > 1 ? (
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      storageClasses: s.storageClasses.filter((x) => x.id !== sc.id),
-                    }))
-                  }
-                >
-                  Remove
-                </button>
-              ) : null
-            }
-          >
-            <div className="field-grid">
-              <Field label="Type" help={HELP.gad.type}>
-                <select
-                  value={sc.kind}
-                  onChange={(e) => {
-                    const kind = e.target.value as StorageClassKind
-                    updateSc(sc.id, {
-                      ...defaultSc(kind, sc.connectionType, state.nodeEnvironment, state.driverNamespace),
-                      id: sc.id,
-                      secretName: sc.secretName,
-                      secretNamespace: sc.secretNamespace,
-                    })
-                  }}
-                >
-                  <option value="standard">Standard (VSP / VSP One Block)</option>
-                  <option value="stretched">Stretched / GAD</option>
-                  <option value="stretched-adr">Stretched + ADR</option>
-                  <option value="vsp-one-sds-block">VSP One SDS Block</option>
-                </select>
-              </Field>
-              <Field
-                label="Name"
-                hint="Kubernetes StorageClass metadata.name referenced by PVCs."
-                error={errors.name}
-              >
-                <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
-              </Field>
-              <Field label="Connection type" help={HELP.protocolMultipath}>
-                <select
-                  value={effectiveConn}
-                  onChange={(e) =>
-                    updateSc(sc.id, {
-                      connectionType: e.target.value as StorageClassConfig['connectionType'],
-                    })
-                  }
-                >
-                  {CONNECTION_TYPES.filter((c) => allowedConns.includes(c.id)).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Secret name" hint="Must match the Secret generated from the Storage systems step.">
-                <input
-                  value={sc.secretName}
-                  onChange={(e) => updateSc(sc.id, { secretName: e.target.value })}
-                />
-              </Field>
-              <Field
-                label="Secret namespace"
-                hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
-              >
-                <input
-                  value={sc.secretNamespace}
-                  onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
-                />
-              </Field>
-            </div>
+          const usedForReplication = !!(sc.hrpcPairId || '').trim()
+          const ctxSystems =
+            replicationOn && usedForReplication
+              ? systemsWithHrpcFirst(storage.storageSystems)
+              : storage.storageSystems
+          const errors = validateStorageClass(sc, {
+            storageSystems: ctxSystems,
+            siblings: storage.storageClasses,
+          })
+          const pairSys = hrpcPairSystem(storage.storageSystems)
+          const serialReadOnly =
+            sc.kind === 'standard' &&
+            (usedForReplication
+              ? !!pairSys
+              : storage.storageSystems.length === 1)
+          const serialDisplay = usedForReplication
+            ? pairSys?.serial || storage.storageSystems[0]?.serial || ''
+            : storage.storageSystems[0]?.serial || ''
+          const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
+          const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
+          const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
+          const efficiencyBlocked =
+            primary?.isB20Series && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
+          const multipathOff = !state.multipath.enabled
+          const portIdHint = multipathOff
+            ? 'Prefer a single port when wizard multipath packaging is off (e.g. CL1-A).'
+            : 'Comma-separated ports for multipath (e.g. CL1-A,CL2-A). Not used for NVMe.'
+          const portIdPlaceholder = multipathOff ? 'CL1-A' : 'CL1-A,CL2-A'
 
-            <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
-              <input
-                type="checkbox"
-                checked={!!sc.isDefault}
-                onChange={(e) => {
-                  const on = e.target.checked
-                  setState((s) => ({
-                    ...s,
-                    storageClasses: s.storageClasses.map((x) => ({
-                      ...x,
-                      isDefault: x.id === sc.id ? on : on ? false : x.isDefault,
-                    })),
-                  }))
-                }}
-              />
-              <div>
-                <strong>Default StorageClass</strong>
-                <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                  Sets <code>storageclass.kubernetes.io/is-default-class</code>. Only one StorageClass in
-                  this package can be the default.
-                </p>
-              </div>
-            </label>
-
-            {sc.kind === 'vsp-one-sds-block' && (
-              <Callout>
-                VSP One SDS Block supports FC, iSCSI, and NVMe/TCP only (not NVMe over FC).
-              </Callout>
-            )}
-
-            {sc.kind === 'standard' && (
-              <div className="field-grid" style={{ marginTop: '1rem' }}>
-                {state.storageSystems.length === 1 ? (
-                  <Field
-                    label="Serial number"
-                    hint="Taken from the Storage systems step (single array). Shown on the StorageClass when you add another array or need a different serial per class."
-                  >
-                    <input value={primary?.serial || ''} disabled readOnly />
-                  </Field>
-                ) : (
-                  <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
-                    <input
-                      value={sc.serialNumber || ''}
-                      onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
-                      placeholder={primary?.serial || '54321'}
-                    />
-                  </Field>
-                )}
-                <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning." error={errors.poolID}>
-                  <input
-                    value={sc.poolID || ''}
-                    onChange={(e) => updateSc(sc.id, { poolID: e.target.value })}
-                    placeholder="1"
-                  />
-                </Field>
-                {conn.needsPortId && (
-                  <>
-                    {multipathOff && (
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <Callout variant="warn">
-                          {portIdCount(sc.portID) > 1
-                            ? HELP.portIdMultipleWithoutMultipath
-                            : HELP.portIdWithoutMultipath}
-                        </Callout>
-                      </div>
-                    )}
-                    <Field label="Port ID(s)" hint={portIdHint} error={errors.portID}>
-                      <input
-                        value={sc.portID || ''}
-                        onChange={(e) => updateSc(sc.id, { portID: e.target.value })}
-                        placeholder={portIdPlaceholder}
-                      />
-                    </Field>
-                  </>
-                )}
-                {conn.needsNvmSubsystem && (
-                  <Field
-                    label="NVMe subsystem ID"
-                    hint="Required for NVMe-FC and NVMe/TCP — Port ID is not used."
-                    error={errors.nvmSubsystemID}
-                  >
-                    <input
-                      value={sc.nvmSubsystemID || ''}
-                      onChange={(e) => updateSc(sc.id, { nvmSubsystemID: e.target.value })}
-                    />
-                  </Field>
-                )}
+          return (
+            <Section
+              key={sc.id}
+              title={`StorageClass: ${sc.name}`}
+              actions={
+                storage.storageClasses.length > 1 ? (
+                  <button type="button" className="btn btn-danger" onClick={() => removeSc(sc.id)}>
+                    Remove
+                  </button>
+                ) : null
+              }
+            >
+              <div className="field-grid">
                 <Field
-                  label="Storage efficiency"
-                  hint="Adaptive data reduction. VSP One B20 does not support Disabled."
-                  error={
-                    efficiencyBlocked
-                      ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
-                      : undefined
+                  label="Type"
+                  help={
+                    usedForReplication
+                      ? 'Replication uses a standard StorageClass on each site (one array per site). Stretched / GAD is a different, single-cluster pattern. VSP One SDS Block is not used with Replication.'
+                      : HELP.gad.type
                   }
                 >
                   <select
-                    value={sc.storageEfficiency || 'Disabled'}
+                    value={sc.kind}
+                    onChange={(e) => {
+                      const kind = e.target.value as StorageClassKind
+                      if (usedForReplication && kind !== 'standard') {
+                        toggleUseForReplication(sc.id, false)
+                      }
+                      const next = defaultSc(kind, sc.connectionType, state.nodeEnvironment, state.driverNamespace)
+                      next.id = sc.id
+                      next.secretName = sc.secretName
+                      next.secretNamespace = sc.secretNamespace
+                      next.name = nextUniqueName(
+                        next.name,
+                        storage.storageClasses.filter((x) => x.id !== sc.id).map((x) => x.name),
+                      )
+                      if (next.stretchedSecretName) {
+                        next.stretchedSecretName = nextUniqueName(
+                          next.stretchedSecretName,
+                          storage.storageClasses
+                            .filter((x) => x.id !== sc.id && x.kind !== 'stretched' && x.kind !== 'stretched-adr')
+                            .map((x) => x.secretName),
+                        )
+                      }
+                      updateSc(sc.id, next)
+                    }}
+                  >
+                    <option value="standard">Standard (VSP / VSP One Block)</option>
+                    {!usedForReplication && (
+                      <>
+                        <option value="stretched">Stretched / GAD</option>
+                        <option value="stretched-adr">Stretched + ADR</option>
+                        <option value="vsp-one-sds-block">VSP One SDS Block</option>
+                      </>
+                    )}
+                  </select>
+                </Field>
+                <Field
+                  label="Name"
+                  hint={
+                    usedForReplication
+                      ? 'Must be the same on both sites. Changing it here updates the other site too.'
+                      : 'Kubernetes StorageClass metadata.name referenced by PVCs.'
+                  }
+                  error={errors.name}
+                >
+                  <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
+                </Field>
+                <Field label="Connection type" help={HELP.protocolMultipath}>
+                  <select
+                    value={effectiveConn}
                     onChange={(e) =>
                       updateSc(sc.id, {
-                        storageEfficiency: e.target.value as StorageClassConfig['storageEfficiency'],
+                        connectionType: e.target.value as StorageClassConfig['connectionType'],
                       })
                     }
                   >
-                    <option value="Disabled" disabled={!!primary?.isB20Series}>
-                      Disabled
-                    </option>
-                    <option value="Compression">Compression</option>
-                    <option value="CompressionDeduplication">Compression + Deduplication</option>
+                    {CONNECTION_TYPES.filter((c) => allowedConns.includes(c.id)).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
                   </select>
                 </Field>
-                {sc.storageEfficiency && sc.storageEfficiency !== 'Disabled' && (
+                <Field
+                  label="Secret name"
+                  hint="Must match the Secret generated from the Storage systems step. Multiple StorageClasses may share one Secret when they use the same array."
+                  error={errors.secretName}
+                >
+                  <input value={sc.secretName} onChange={(e) => updateSc(sc.id, { secretName: e.target.value })} />
+                </Field>
+                <Field label="Secret namespace" hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere.">
+                  <input value={sc.secretNamespace} onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })} />
+                </Field>
+              </div>
+
+              {replicationOn && sc.kind === 'standard' && (
+                <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={usedForReplication}
+                    onChange={(e) => toggleUseForReplication(sc.id, e.target.checked)}
+                  />
+                  <div>
+                    <strong>Use this StorageClass for Replication</strong>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                      Creates a matching StorageClass on the other site with the same name and filesystem
+                      type. Fill pool, ports, and other fields on both the Primary and Secondary site tabs.
+                    </p>
+                  </div>
+                </label>
+              )}
+
+              <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={!!sc.isDefault}
+                  onChange={(e) => {
+                    const on = e.target.checked
+                    setState((s) => {
+                      if (!s.components.replication) {
+                        return {
+                          ...s,
+                          storageClasses: s.storageClasses.map((x) => ({
+                            ...x,
+                            isDefault: x.id === sc.id ? on : on ? false : x.isDefault,
+                          })),
+                        }
+                      }
+                      const ensured = ensureSitesForReplication(s)
+                      const current = getSiteStorage(ensured, site)
+                      return withSiteStorage(ensured, site, {
+                        ...current,
+                        storageClasses: current.storageClasses.map((x) => ({
+                          ...x,
+                          isDefault: x.id === sc.id ? on : on ? false : x.isDefault,
+                        })),
+                      })
+                    })
+                  }}
+                />
+                <div>
+                  <strong>Default StorageClass</strong>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                    Sets <code>storageclass.kubernetes.io/is-default-class</code>. Only one StorageClass in
+                    this package can be the default.
+                  </p>
+                </div>
+              </label>
+
+              {sc.kind === 'vsp-one-sds-block' && (
+                <Callout>
+                  VSP One SDS Block supports FC, iSCSI, and NVMe/TCP only (not NVMe over FC).
+                </Callout>
+              )}
+
+              {sc.kind === 'standard' && (
+                <div className="field-grid" style={{ marginTop: '1rem' }}>
+                  {serialReadOnly ? (
+                    <Field
+                      label="Serial number"
+                      hint="Taken from the Storage systems step for this site (or the array used for Replication)."
+                    >
+                      <input value={serialDisplay} disabled readOnly />
+                    </Field>
+                  ) : (
+                    <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
+                      <input
+                        value={sc.serialNumber || ''}
+                        onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
+                        placeholder={storage.storageSystems[0]?.serial || '54321'}
+                      />
+                    </Field>
+                  )}
+                  <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning." error={errors.poolID}>
+                    <input value={sc.poolID || ''} onChange={(e) => updateSc(sc.id, { poolID: e.target.value })} placeholder="1" />
+                  </Field>
+                  {conn.needsPortId && (
+                    <>
+                      {multipathOff && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <Callout variant="warn">
+                            {portIdCount(sc.portID) > 1 ? HELP.portIdMultipleWithoutMultipath : HELP.portIdWithoutMultipath}
+                          </Callout>
+                        </div>
+                      )}
+                      <Field label="Port ID(s)" hint={portIdHint} error={errors.portID}>
+                        <input value={sc.portID || ''} onChange={(e) => updateSc(sc.id, { portID: e.target.value })} placeholder={portIdPlaceholder} />
+                      </Field>
+                    </>
+                  )}
+                  {conn.needsNvmSubsystem && (
+                    <Field label="NVMe subsystem ID" hint="Required for NVMe-FC and NVMe/TCP — Port ID is not used." error={errors.nvmSubsystemID}>
+                      <input value={sc.nvmSubsystemID || ''} onChange={(e) => updateSc(sc.id, { nvmSubsystemID: e.target.value })} />
+                    </Field>
+                  )}
                   <Field
-                    label="Efficiency mode"
-                    hint="Inline compresses on write; PostProcess reduces data after write."
+                    label="Storage efficiency"
+                    hint="Adaptive data reduction. VSP One B20 does not support Disabled."
+                    error={
+                      efficiencyBlocked
+                        ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
+                        : undefined
+                    }
                   >
                     <select
-                      value={sc.storageEfficiencyMode || 'PostProcess'}
+                      value={sc.storageEfficiency || 'Disabled'}
                       onChange={(e) =>
                         updateSc(sc.id, {
-                          storageEfficiencyMode: e.target
-                            .value as StorageClassConfig['storageEfficiencyMode'],
+                          storageEfficiency: e.target.value as StorageClassConfig['storageEfficiency'],
                         })
                       }
                     >
-                      <option value="Inline">Inline</option>
-                      <option value="PostProcess">PostProcess</option>
+                      <option value="Disabled" disabled={!!primary?.isB20Series}>
+                        Disabled
+                      </option>
+                      <option value="Compression">Compression</option>
+                      <option value="CompressionDeduplication">Compression + Deduplication</option>
                     </select>
                   </Field>
-                )}
-                <Field label="Filesystem" hint="ext4 (default) or xfs. Ignored for raw Block volumeMode.">
-                  <select
-                    value={sc.fstype || 'ext4'}
-                    onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}
-                  >
-                    <option value="ext4">ext4</option>
-                    <option value="xfs">xfs</option>
-                  </select>
-                </Field>
-                <Field
-                  label="Allow volume expansion"
-                  hint="Must be false for stretched StorageClasses."
-                >
-                  <select
-                    value={String(sc.allowVolumeExpansion)}
-                    onChange={(e) =>
-                      updateSc(sc.id, { allowVolumeExpansion: e.target.value === 'true' })
-                    }
-                  >
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                </Field>
-              </div>
-            )}
-
-            {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
-              <>
-                <Callout>
-                  Stretched StorageClasses require a dual-array Secret, support Fibre Channel and iSCSI only
-                  (not NVMe), and set <code>allowVolumeExpansion: false</code>.
-                </Callout>
-                {multipathOff && (
-                  <Callout variant="warn">
-                    {portIdCount(sc.primaryPortID) > 1 || portIdCount(sc.secondaryPortID) > 1
-                      ? HELP.portIdMultipleWithoutMultipath
-                      : HELP.portIdWithoutMultipath}
-                  </Callout>
-                )}
-                <div className="field-grid" style={{ marginTop: '1rem' }}>
+                  {sc.storageEfficiency && sc.storageEfficiency !== 'Disabled' && (
+                    <Field label="Efficiency mode" hint="Inline compresses on write; PostProcess reduces data after write.">
+                      <select
+                        value={sc.storageEfficiencyMode || 'PostProcess'}
+                        onChange={(e) =>
+                          updateSc(sc.id, {
+                            storageEfficiencyMode: e.target.value as StorageClassConfig['storageEfficiencyMode'],
+                          })
+                        }
+                      >
+                        <option value="Inline">Inline</option>
+                        <option value="PostProcess">PostProcess</option>
+                      </select>
+                    </Field>
+                  )}
                   <Field
-                    label="Stretched secret name"
-                    hint="Secret that holds primary and secondary array credentials."
-                    error={errors.stretchedSecretName}
-                  >
-                    <input
-                      value={sc.stretchedSecretName || ''}
-                      onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
-                    <input
-                      value={sc.quorumID || ''}
-                      onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Copy group name"
-                    hint="GAD copy group name on the arrays."
-                    error={errors.copyGroupName}
-                  >
-                    <input
-                      value={sc.copyGroupName || ''}
-                      onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Consistency group ID"
-                    hint="Consistency group identifier for coordinated pairs."
-                    error={errors.consistencyGroupId}
-                  >
-                    <input
-                      value={sc.consistencyGroupId || ''}
-                      onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Primary pool ID"
-                    hint="HDP pool on the primary array."
-                    error={errors.primaryPoolID}
-                  >
-                    <input
-                      value={sc.primaryPoolID || ''}
-                      onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Primary port ID(s)"
+                    label="Filesystem"
                     hint={
-                      multipathOff
-                        ? 'Prefer a single primary port when wizard multipath packaging is off (e.g. CL1-A).'
-                        : 'Comma-separated primary ports (e.g. CL1-A,CL2-A).'
+                      usedForReplication
+                        ? 'Must be the same on both sites. Changing it here updates the other site too.'
+                        : 'ext4 (default) or xfs. Ignored for raw Block volumeMode.'
                     }
-                    error={errors.primaryPortID}
                   >
-                    <input
-                      value={sc.primaryPortID || ''}
-                      onChange={(e) => updateSc(sc.id, { primaryPortID: e.target.value })}
-                      placeholder={portIdPlaceholder}
-                    />
+                    <select value={sc.fstype || 'ext4'} onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}>
+                      <option value="ext4">ext4</option>
+                      <option value="xfs">xfs</option>
+                    </select>
                   </Field>
-                  <Field
-                    label="Secondary pool ID"
-                    hint="HDP pool on the secondary array."
-                    error={errors.secondaryPoolID}
-                  >
-                    <input
-                      value={sc.secondaryPoolID || ''}
-                      onChange={(e) => updateSc(sc.id, { secondaryPoolID: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Secondary port ID(s)"
-                    hint={
-                      multipathOff
-                        ? 'Prefer a single secondary port when wizard multipath packaging is off (e.g. CL1-F).'
-                        : 'Comma-separated secondary ports.'
-                    }
-                    error={errors.secondaryPortID}
-                  >
-                    <input
-                      value={sc.secondaryPortID || ''}
-                      onChange={(e) => updateSc(sc.id, { secondaryPortID: e.target.value })}
-                      placeholder={multipathOff ? 'CL1-F' : 'CL1-F,CL2-F'}
-                    />
+                  <Field label="Allow volume expansion" hint="Must be false for stretched StorageClasses.">
+                    <select
+                      value={String(sc.allowVolumeExpansion)}
+                      onChange={(e) => updateSc(sc.id, { allowVolumeExpansion: e.target.value === 'true' })}
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
                   </Field>
                 </div>
-              </>
-            )}
+              )}
 
-            {sc.kind === 'vsp-one-sds-block' && (
-              <div className="field-grid" style={{ marginTop: '1rem' }}>
-                <Field
-                  label="Storage efficiency"
-                  hint={
-                    primary?.multitenancy
-                      ? 'Cannot set when multitenancy is enabled — follows VPS.'
-                      : 'Compression or Disabled. SDS Block does not use CompressionDeduplication here.'
-                  }
-                >
-                  <select
-                    value={sc.storageEfficiency || 'Disabled'}
-                    disabled={!!primary?.multitenancy}
-                    onChange={(e) =>
-                      updateSc(sc.id, {
-                        storageEfficiency: e.target.value as StorageClassConfig['storageEfficiency'],
-                      })
-                    }
-                  >
-                    <option value="Disabled">Disabled</option>
-                    <option value="Compression">Compression</option>
-                  </select>
-                </Field>
-                <Field label="Filesystem" hint="ext4 (default) or xfs.">
-                  <select
-                    value={sc.fstype || 'ext4'}
-                    onChange={(e) => updateSc(sc.id, { fstype: e.target.value })}
-                  >
-                    <option value="ext4">ext4</option>
-                    <option value="xfs">xfs</option>
-                  </select>
-                </Field>
-              </div>
-            )}
-          </Section>
-        )
-      })}
+              {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
+                <>
+                  <Callout>
+                    Stretched StorageClasses require a dual-array Secret, support Fibre Channel and iSCSI only
+                    (not NVMe), and set <code>allowVolumeExpansion: false</code>.
+                  </Callout>
+                  {multipathOff && (
+                    <Callout variant="warn">
+                      {portIdCount(sc.primaryPortID) > 1 || portIdCount(sc.secondaryPortID) > 1
+                        ? HELP.portIdMultipleWithoutMultipath
+                        : HELP.portIdWithoutMultipath}
+                    </Callout>
+                  )}
+                  <div className="field-grid" style={{ marginTop: '1rem' }}>
+                    <Field label="Stretched secret name" hint="Secret that holds primary and secondary array credentials." error={errors.stretchedSecretName}>
+                      <input value={sc.stretchedSecretName || ''} onChange={(e) => updateSc(sc.id, { stretchedSecretName: e.target.value })} />
+                    </Field>
+                    <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
+                      <input value={sc.quorumID || ''} onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })} />
+                    </Field>
+                    <Field label="Copy group name" hint="GAD copy group name on the arrays." error={errors.copyGroupName}>
+                      <input value={sc.copyGroupName || ''} onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })} />
+                    </Field>
+                    <Field label="Consistency group ID" hint="Consistency group identifier for coordinated pairs." error={errors.consistencyGroupId}>
+                      <input value={sc.consistencyGroupId || ''} onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })} />
+                    </Field>
+                    <Field label="Primary pool ID" hint="HDP pool on the primary array." error={errors.primaryPoolID}>
+                      <input value={sc.primaryPoolID || ''} onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })} />
+                    </Field>
+                    <Field
+                      label="Primary port ID(s)"
+                      hint={multipathOff ? 'Prefer a single primary port when wizard multipath packaging is off (e.g. CL1-A).' : 'Comma-separated primary ports (e.g. CL1-A,CL2-A).'}
+                      error={errors.primaryPortID}
+                    >
+                      <input value={sc.primaryPortID || ''} onChange={(e) => updateSc(sc.id, { primaryPortID: e.target.value })} placeholder={portIdPlaceholder} />
+                    </Field>
+                    <Field label="Secondary pool ID" hint="HDP pool on the secondary array." error={errors.secondaryPoolID}>
+                      <input value={sc.secondaryPoolID || ''} onChange={(e) => updateSc(sc.id, { secondaryPoolID: e.target.value })} />
+                    </Field>
+                    <Field
+                      label="Secondary port ID(s)"
+                      hint={multipathOff ? 'Prefer a single secondary port when wizard multipath packaging is off (e.g. CL1-F).' : 'Comma-separated secondary ports.'}
+                      error={errors.secondaryPortID}
+                    >
+                      <input value={sc.secondaryPortID || ''} onChange={(e) => updateSc(sc.id, { secondaryPortID: e.target.value })} placeholder={multipathOff ? 'CL1-F' : 'CL1-F,CL2-F'} />
+                    </Field>
+                  </div>
+                </>
+              )}
+            </Section>
+          )
+        })}
 
       {state.storageClassesEnabled && (
         <button
           type="button"
           className="btn btn-secondary"
           style={{ marginBottom: '1.25rem' }}
-          onClick={() =>
-            setState((s) => ({
-              ...s,
-              storageClasses: [
-                ...s.storageClasses,
-                defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace),
-              ],
-            }))
-          }
+          onClick={addStorageClass}
         >
           Add StorageClass
         </button>

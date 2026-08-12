@@ -15,6 +15,18 @@ export const HELP = {
       'A StorageClass is a reusable profile apps use when requesting a PVC. Fields and restrictions change with type, protocol, and array family.',
   },
 
+  replicationSitesLede:
+    'Replication uses two clusters: a primary site and a secondary site. Use the site switcher to enter the storage systems and StorageClasses for each site — the wizard packages both into one download.',
+
+  replicationPairArrayCallout:
+    'Each site chooses exactly one array for Replication. Fill serial, REST URL, username, and password on both the Primary and Secondary site tabs before continuing.',
+
+  replicationPairedStorageClassesCallout:
+    'On a standard StorageClass, check “Use this StorageClass for Replication.” Name and filesystem type must match on both sites. Fill this site’s pool, ports, and other fields, then open the Secondary site tab and fill that site’s fields before continuing.',
+
+  replicationResourcePartitioningHint:
+    'If you are using resource partitioning for Replication, review the checklist on the Replication step to confirm journal and access requirements for both sites.',
+
   protocolMultipath:
     'How worker nodes reach the array. FC and iSCSI use Device Mapper Multipath and Port IDs; NVMe uses Native NVMe Multipath and an NVMe subsystem ID (no Port ID). Bare metal supports all protocols; virtual machines support iSCSI and NVMe/TCP only. Stretched PVCs support FC and iSCSI only.',
 
