@@ -56,9 +56,6 @@ export const HELP = {
   remoteKubeconfig:
     'Each site gets a Secret with the other site’s kubeconfig. Build it with install.sh (KUBECONFIG_P / KUBECONFIG_S) on the install host, or generate the Secret YAML here from uploaded kubeconfigs. Do not invent Secret names or keys.',
 
-  configuratorVsApply:
-    'This page only builds files. Download the ZIP and run install.sh from a machine that can reach the cluster — the wizard does not apply anything from the browser.',
-
   storageClassesEnabled:
     'When off, the package skips StorageClass, VolumeSnapshotClass, and test PVC/Pod. Turn on to generate provisioning profiles.',
 

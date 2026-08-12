@@ -71,8 +71,6 @@ export function PrerequisitesMultipathStep() {
           : 'This page does not talk to the cluster — install.sh will apply the packaged multipath payload after export (unless you mark it as already applied).'}
       </p>
 
-      <Callout variant="ok">{HELP.configuratorVsApply}</Callout>
-
       {plat.useOc && (
         <Section title="How to deliver multipath" help={HELP.openshiftTopology}>
           <div className="card-grid">
@@ -341,14 +339,13 @@ export function PrerequisitesMultipathStep() {
                 >
                   Reset to sample
                 </button>
+                {showMachineConfig && (
+                  <CopyButton text={mcPreview} label="Copy MachineConfig" />
+                )}
+                {showDaemonSet && <CopyButton text={dsPreview} label="Copy DaemonSet" />}
+                {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
               </div>
             </AdvancedSection>
-
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-              {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
-              {isAdvanced && showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig preview" />}
-              {isAdvanced && showDaemonSet && <CopyButton text={dsPreview} label="Copy DaemonSet preview" />}
-            </div>
 
             {showMachineConfig && (
               <>
@@ -526,8 +523,6 @@ export function PrerequisitesChecklistStep() {
         Confirm what you should check before install—cluster access, array setup, and network reachability.
         Multipath packaging is on the Multipath substep when that option is enabled.
       </p>
-
-      {!showMultipathSibling && <Callout variant="ok">{HELP.configuratorVsApply}</Callout>}
 
       {!mp.enabled && needsDm && (
         <Callout variant="ok">
