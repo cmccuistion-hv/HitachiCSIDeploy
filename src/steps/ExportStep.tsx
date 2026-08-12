@@ -4,10 +4,10 @@ import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { storageArtifactsInvalidReason, storageArtifactsValid } from '../catalog/validation'
-import type { WizardState } from '../catalog/types'
+import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, CopyButton, DownloadButton, Section } from '../components/ui'
+import { Callout, CodeBlock, DownloadButton, Section } from '../components/ui'
 
 const FILE_GROUPS: {
   id: GeneratedFile['group']
@@ -37,7 +37,6 @@ function fileKind(path: string): string {
 export function ExportStep() {
   const { state, exportConfig, importConfig, reset } = useWizard()
   const plat = PLATFORMS[state.platform]
-  const cmd = plat.useOc ? 'oc' : 'kubectl'
   const [files, setFiles] = useState<GeneratedFile[]>([])
   const [activePath, setActivePath] = useState<string>('')
   const [importText, setImportText] = useState('')
@@ -72,7 +71,7 @@ export function ExportStep() {
 
   const storageExportBlocked = !storageArtifactsValid(state)
   const storageExportReason = storageExportBlocked ? storageArtifactsInvalidReason(state) : null
-  const guide = buildGuide(state, files, cmd)
+  const nextSteps = buildNextSteps(state)
   const current = files.find((f) => f.path === activePath) || files[0]
   const grouped = FILE_GROUPS.map((g) => ({
     ...g,
@@ -86,7 +85,14 @@ export function ExportStep() {
       const latest = await generateAll(state)
       setFiles(latest)
       const zip = new JSZip()
-      zip.file('INSTALL.md', buildGuide(state, latest, cmd))
+      zip.file(
+        'INSTALL.md',
+        nextStepsToMarkdown(buildNextSteps(state), {
+          platformDisplayName: plat.displayName,
+          platformVersion: state.platformVersion,
+          driverVersion: state.versions.driver,
+        }),
+      )
       zip.file('wizard-config.json', exportConfig())
       for (const f of latest) {
         zip.file(f.path, f.content)
@@ -107,9 +113,9 @@ export function ExportStep() {
     <div className="step-panel">
       <h2>Review &amp; export</h2>
       <p className="lede">
-        Download a complete package: ordered install guide, manifests, and <code>install.sh</code>. Answers
-        are saved in this browser for resume. <strong>Download ZIP</strong> rebuilds from your current
-        answers — re-download after edits; an already-unzipped folder is not updated.
+        Download a complete ZIP package with next steps, manifests, and <code>install.sh</code>. Answers are
+        saved in this browser for resume. <strong>Download ZIP</strong> rebuilds from your current answers —
+        re-download after edits; an already-unzipped folder is not updated.
       </p>
 
       <Callout>{HELP.configuratorVsApply}</Callout>
@@ -126,7 +132,6 @@ export function ExportStep() {
             >
               {downloading ? 'Building ZIP…' : 'Download ZIP'}
             </button>
-            <CopyButton text={guide} label="Copy install guide" />
             <button
               type="button"
               className="btn btn-secondary"
@@ -162,10 +167,16 @@ export function ExportStep() {
         )}
       </Section>
 
-      <Section title="Install guide">
-        <CodeBlock className="yaml-preview" style={{ maxHeight: 360 }}>
-          {guide}
-        </CodeBlock>
+      <Section title="Next steps">
+        <ol style={{ margin: 0, paddingLeft: '1.5rem' }}>
+          {nextSteps.map((step) => (
+            <li key={step.id} style={{ marginBottom: '1rem', paddingLeft: '0.25rem' }}>
+              <strong>{step.title}</strong>
+              <p style={{ margin: '0.35rem 0' }}>{step.body}</p>
+              {step.command ? <CodeBlock text={step.command} style={{ marginTop: '0.5rem' }} /> : null}
+            </li>
+          ))}
+        </ol>
       </Section>
 
       <Section
@@ -270,191 +281,4 @@ export function ExportStep() {
       </Section>
     </div>
   )
-}
-
-function buildGuide(state: WizardState, files: GeneratedFile[], cmd: string): string {
-  const plat = PLATFORMS[state.platform]
-  const hasQuickstart =
-    state.storageClassesEnabled || files.some((f) => f.group === 'quickstart')
-  const storageFiles = files.filter((f) => f.group === 'storage')
-
-  const installShTail = hasQuickstart
-    ? 'then storage Secrets / StorageClass / test PVC.'
-    : 'then storage Secrets (if generated). StorageClass and test PVC are not included — add your own after the driver is READY.'
-
-  const lines: string[] = [
-    '# Hitachi CSI Deployment Guide',
-    '',
-    `Platform: ${plat.displayName} ${state.platformVersion}`,
-    `Worker nodes: ${state.nodeEnvironment === 'virtual-machine' ? 'Virtual machine' : 'Bare metal'}`,
-    plat.useOc
-      ? `Control plane: ${
-          state.openshiftTopology === 'hosted'
-            ? 'Hosted or HCP (DaemonSet)'
-            : 'Self-managed (MachineConfig)'
-        }`
-      : '',
-    `Connection: ${state.connectionType}`,
-    `CSI Driver: ${state.versions.driver}`,
-    state.components.replication ? `Replication: ${state.versions.replication}` : '',
-    state.components.metrics ? `Performance Metrics: ${state.versions.metrics}` : '',
-    '',
-    '## After install',
-    '',
-    plat.useOc
-      ? state.multipath.includeDaemonSet
-        ? '1. Prerequisites: finish this wizard and download the ZIP. On hosted/HCP OpenShift you may apply the multipath DaemonSet early or let install.sh apply it.'
-        : '1. Prerequisites: finish this wizard and download the ZIP. On OpenShift you may apply the multipath MachineConfig early (while finishing the wizard) or let install.sh apply it.'
-      : '1. Prerequisites: finish this wizard and download the ZIP. Install multipath on workers if required, then run install.sh.',
-    plat.operatorHub
-      ? state.multipath.includeDaemonSet
-        ? `2. Run \`./install.sh\` — multipath DaemonSet (if enabled), then OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
-        : state.multipath.includeMachineConfig
-          ? `2. Run \`./install.sh\` — multipath MachineConfig (if enabled), then OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
-          : `2. Run \`./install.sh\` — OLM operator install (approve day-0 InstallPlan), HSPC CR + READY wait, ${installShTail}`
-      : hasQuickstart
-        ? '2. Run `./install.sh` — applies operator YAML / driver CR, storage Secrets, StorageClass, and test PVC.'
-        : '2. Run `./install.sh` — applies operator YAML / driver CR, and storage Secrets (if generated). Add StorageClass and test workloads separately.',
-    state.telemetryEnabled
-      ? ''
-      : '- Hitachi Telemetry is disabled in this package. `install.sh` applies `hspc-csi-telemetry-config` (awsEnabled=false) after HSPC is READY.',
-    hasQuickstart ? '3. Confirm PVC Bound and test Pod Running.' : '',
-    '',
-  ]
-
-  if (state.multipath.enabled) {
-    lines.push('## Multipath', '')
-    if (plat.useOc && state.multipath.includeMachineConfig) {
-      lines.push(
-        '- OpenShift MachineConfig(s) under `00-prereq/` embedding multipath.conf into `/etc/multipath.conf`',
-        state.multipath.alreadyApplied
-          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the MC exists), waits with a live MCP status block, and continues automatically when pools are healthy.'
-          : '- **Apply path:** optional early `oc apply` during Prerequisites, or let `install.sh` apply (auto-skips if MC already exists).',
-        '',
-        '> **Reboots:** Applying MachineConfig **reboots nodes** in the pool (rolling). `install.sh` polls',
-        '> MachineConfigPool status, shows a compact live block, writes detail to `logs/install-*.log`, and',
-        '> **continues automatically** when pools are `UPDATED=True` / `UPDATING=False`.',
-        '',
-      )
-    } else if (plat.useOc && state.multipath.includeDaemonSet) {
-      lines.push(
-        '- Hosted/HCP DaemonSet under `00-prereq/` writing multipath.conf and enabling multipathd',
-        state.multipath.alreadyApplied
-          ? '- **Already applied:** `install.sh` skips apply (also auto-skips if the DaemonSet exists).'
-          : '- **Apply path:** optional early `oc apply` during Prerequisites, or let `install.sh` apply (auto-skips if DaemonSet exists).',
-        '',
-        '> No MachineConfigPool reboot cycle. Confirm multipathd on workers before CSI Driver install.',
-        '',
-      )
-    } else if (!plat.useOc && state.multipath.includeConf) {
-      lines.push(
-        '- `00-prereq/multipath.conf` — Hitachi CSI Device Mapper Multipath sample',
-        '- **You** install this on workers (`install.sh` does not push it to nodes):',
-        '',
-        '```bash',
-        'sudo cp 00-prereq/multipath.conf /etc/multipath.conf',
-        'sudo systemctl enable --now multipathd',
-        '```',
-        '',
-      )
-    }
-  }
-
-  if (plat.operatorHub) {
-    lines.push(
-      '## Install CSI Driver (OpenShift OperatorHub)',
-      '',
-      '`install.sh` applies OLM Namespace / OperatorGroup / Subscription (`hspc-operator` from',
-      '`certified-operators`, channel `stable`, **Manual** update approval), approves the day-0',
-      'InstallPlan, waits for CSV Succeeded, applies `02-driver/hspc-cr.yaml`, and waits until READY.',
-      '',
-      '```bash',
-      `${cmd} get csv -n ${state.operatorNamespace}`,
-      `${cmd} get hspc -n ${state.driverNamespace}`,
-      '```',
-      '',
-    )
-  } else {
-    lines.push(
-      '## Install CSI Driver (Kubernetes)',
-      '',
-      '```bash',
-      `${cmd} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspc/${state.versions.driver}/operator/hspc-operator-namespace.yaml`,
-      `${cmd} apply -f https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hspc/${state.versions.driver}/operator/hspc-operator.yaml`,
-      `${cmd} apply -f 02-driver/hspc-cr.yaml`,
-      `${cmd} get hspc -n ${state.driverNamespace}`,
-      '```',
-      '',
-    )
-  }
-
-  if (storageFiles.length) {
-    lines.push(
-      '## Apply storage configuration',
-      '',
-      hasQuickstart
-        ? ''
-        : 'StorageClass generation is off in this export — apply Secrets only, then create StorageClasses separately.',
-      '```bash',
-      ...storageFiles.map((f) => `${cmd} apply -f ${f.path}`),
-      '```',
-      '',
-    )
-  }
-
-  if (state.components.replication) {
-    lines.push(
-      '## Replication + Disaster Recovery',
-      '',
-      '`install.sh` applies the Replication operator, storage secrets, cert-manager (waits for webhook), then the DR operator with your StorageClass on the DR PVC.',
-      '',
-      '**Remote kubeconfig Secrets** — either path works:',
-      '',
-      '- Packaged `03-replication/remote-kubeconfig-for-*-site.yaml` (if you pasted kubeconfigs in the wizard): `install.sh` applies the primary-site Secret on this cluster by default. On the other cluster: `REPLICATION_SITE=secondary ./install.sh`.',
-      '- Or set both paths so the helper builds and applies Secrets on each site:',
-      '',
-      '```bash',
-      'export KUBECONFIG_P=/path/to/primary-kubeconfig',
-      'export KUBECONFIG_S=/path/to/secondary-kubeconfig',
-      './install.sh',
-      '```',
-      '',
-      'See `03-replication/README.md` and `03-replication/remote-kubeconfig-notes.md`.',
-      '',
-    )
-  }
-  if (state.components.metrics) {
-    lines.push('## Performance Metrics', '', 'See `04-metrics/README.md`.', '')
-  }
-  if (state.components.consolePlugin) {
-    lines.push('## OpenShift Console Plugin', '', 'See `05-console/README.md`.', '')
-  }
-
-  if (hasQuickstart) {
-    lines.push(
-      '## Test volume (smoke check)',
-      '',
-      '`install.sh` applies these automatically. To re-apply or verify by hand:',
-      '',
-      '```bash',
-      `${cmd} apply -f 06-quickstart/pvc.yaml`,
-      `${cmd} wait --for=jsonpath='{.status.phase}'=Bound pvc/${state.quickstart.pvcName} --timeout=180s`,
-      `${cmd} apply -f 06-quickstart/pod.yaml`,
-      `${cmd} get pvc ${state.quickstart.pvcName}`,
-      `${cmd} get pod ${state.quickstart.podName}`,
-      '```',
-      '',
-    )
-  }
-
-  if (state.airGapped) {
-    lines.push(
-      '## Air-gapped notes',
-      '',
-      'Use `hvcsi-offline-bundle.sh` from the operator repository and rewrite image references to your private registry.',
-      '',
-    )
-  }
-
-  return lines.filter((l) => l !== undefined).join('\n')
 }

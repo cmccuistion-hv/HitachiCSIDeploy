@@ -1,12 +1,10 @@
 import { PLATFORMS } from '../catalog/platforms'
-import { generatePvc, generateTestPod } from '../generator/yaml'
 import { useWizard } from '../state/WizardContext'
-import { Callout, CodeBlock, Field, Section } from '../components/ui'
+import { Callout, Field, Section } from '../components/ui'
 
 export function QuickstartStep() {
   const { state, setState } = useWizard()
   const plat = PLATFORMS[state.platform]
-  const cmd = plat.useOc ? 'oc' : 'kubectl'
   const qs = state.quickstart
 
   return (
@@ -26,7 +24,7 @@ export function QuickstartStep() {
 
       <Callout>
         <code>install.sh</code> applies <code>06-quickstart/</code> automatically and waits for the PVC to
-        Bound. Use the verification commands below if you apply the YAML yourself or want to double-check.
+        become Bound and the Pod to become Running.
       </Callout>
 
       <Section title="Test workload">
@@ -115,36 +113,6 @@ export function QuickstartStep() {
           </Field>
         </div>
       </Section>
-
-      <Section title="Verification commands">
-        <CodeBlock>{`# After install.sh (or after applying Secret, StorageClass, PVC, Pod):
-${cmd} get hspc -n ${state.driverNamespace}
-${cmd} get pvc ${qs.pvcName}
-# Expect: STATUS Bound
-${cmd} get pod ${qs.podName}
-# Expect: Running
-${cmd} get pv
-# Expect: a PV provisioned by hspc.csi.hitachi.com`}</CodeBlock>
-      </Section>
-
-      <div className="split-layout">
-        <Section title="PVC YAML">
-          <CodeBlock className="yaml-preview">
-            {generatePvc({
-              ...qs,
-              storageClassName: qs.storageClassName || state.storageClasses[0]?.name || 'hitachi-csi',
-            })}
-          </CodeBlock>
-        </Section>
-        <Section title="Pod YAML">
-          <CodeBlock className="yaml-preview">{generateTestPod(qs)}</CodeBlock>
-        </Section>
-      </div>
-
-      <Callout variant="ok">
-        Tip: fill storage credentials and StorageClass fields before export so <code>install.sh</code> can
-        apply a complete path without edits.
-      </Callout>
     </div>
   )
 }
