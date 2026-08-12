@@ -5,6 +5,7 @@ import { HELP } from '../catalog/help'
 import type { SiteId } from '../catalog/sites'
 import { getSiteStorage, hrpcPairSystem, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
 
@@ -78,7 +79,9 @@ export function StorageStep() {
       <h2>Storage systems</h2>
       <p className="lede">{replicationOn ? HELP.replicationSitesLede : HELP.secretVsStorageClass.storageLede}</p>
 
-      <Callout>{HELP.secretVsStorageClass.storageCallout}</Callout>
+      <Callout>
+        {HELP.secretVsStorageClass.storageCallout}
+      </Callout>
 
       {replicationOn && (
         <>
@@ -196,25 +199,6 @@ export function StorageStep() {
                 onChange={(e) => updateSys(sys.id, { password: e.target.value })}
               />
             </Field>
-            <Field
-              label="Host mode options (optional)"
-              hint="Comma-separated. Driver defaults include 2,22,25,68,91 — specify only additional options."
-            >
-              <input
-                value={sys.hostModeOptions || ''}
-                onChange={(e) => updateSys(sys.id, { hostModeOptions: e.target.value })}
-                placeholder="88,81"
-              />
-            </Field>
-            <Field
-              label="Resource group ID (optional)"
-              hint="Required only if the user can access multiple resource groups."
-            >
-              <input
-                value={sys.resourceGroupID || ''}
-                onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
-              />
-            </Field>
             {!(replicationOn && sys.hrpcPair) && (
               <Field label="Stretched / GAD role" help={HELP.gad.role}>
                 <select
@@ -262,20 +246,6 @@ export function StorageStep() {
                   </p>
                 </div>
               </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={!!sys.alternativeCloneMode}
-                  onChange={(e) => updateSys(sys.id, { alternativeCloneMode: e.target.checked })}
-                />
-                <div>
-                  <strong>Alternative clone mode</strong>
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                    VSP One Block High End / 20 series only. Enables expandable clones from a retained base
-                    volume.
-                  </p>
-                </div>
-              </label>
             </div>
           )}
 
@@ -285,7 +255,55 @@ export function StorageStep() {
                 SDS Block StorageClasses use <code>storageType: vsp-one-sds-block</code> and do not set
                 serial/pool/port on the SC. Connections: FC, iSCSI, NVMe/TCP.
               </Callout>
-              <label className="toggle-row" style={{ marginTop: '0.75rem' }}>
+            </>
+          )}
+
+          <AdvancedSection
+            title="Advanced array options"
+          >
+            <div className="field-grid">
+              <Field
+                label="Host mode options (optional)"
+                hint="Comma-separated. Driver defaults include 2,22,25,68,91 — specify only additional options."
+              >
+                <input
+                  value={sys.hostModeOptions || ''}
+                  onChange={(e) => updateSys(sys.id, { hostModeOptions: e.target.value })}
+                  placeholder="88,81"
+                />
+              </Field>
+              <Field
+                label="Resource group ID (optional)"
+                hint="Required only if the user can access multiple resource groups."
+              >
+                <input
+                  value={sys.resourceGroupID || ''}
+                  onChange={(e) => updateSys(sys.id, { resourceGroupID: e.target.value })}
+                />
+              </Field>
+            </div>
+
+            {sys.family === 'vsp' && (
+              <div style={{ marginTop: '0.85rem' }}>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={!!sys.alternativeCloneMode}
+                    onChange={(e) => updateSys(sys.id, { alternativeCloneMode: e.target.checked })}
+                  />
+                  <div>
+                    <strong>Alternative clone mode</strong>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+                      VSP One Block High End / 20 series only. Enables expandable clones from a retained base
+                      volume.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {sys.family === 'vsp-one-sds-block' && (
+              <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
                 <input
                   type="checkbox"
                   checked={!!sys.multitenancy}
@@ -299,8 +317,8 @@ export function StorageStep() {
                   </p>
                 </div>
               </label>
-            </>
-          )}
+            )}
+          </AdvancedSection>
 
           {idx === 0 && !sys.url && (
             <Callout variant="warn">Enter at least URL, user, and password to generate a usable Secret.</Callout>

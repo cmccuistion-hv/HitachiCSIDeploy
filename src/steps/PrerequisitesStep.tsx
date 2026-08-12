@@ -9,19 +9,22 @@ import {
 } from '../catalog/platforms'
 import { CONNECTION_TYPES } from '../catalog/platforms'
 import { DOCS } from '../catalog/components'
-import { HELP } from '../catalog/help'
+import { HELP, RECAP } from '../catalog/help'
 import {
   generateMultipathMachineConfig,
   generateMultipathMachineConfigs,
   getMultipathConf,
 } from '../generator/multipath'
 import { generateMultipathDaemonSetYaml } from '../generator/multipathDaemonSet'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
+import { useUiMode } from '../state/UiModeContext'
 import { Callout, ChoiceCard, CodeBlock, CopyButton, Field, Section } from '../components/ui'
 
 /** Prerequisites 3.1 — multipath packaging / optional early apply */
 export function PrerequisitesMultipathStep() {
   const { state, setState } = useWizard()
+  const { isAdvanced } = useUiMode()
   const plat = PLATFORMS[state.platform]
   const conn = CONNECTION_TYPES.find((c) => c.id === state.connectionType)!
   const needsDm = conn.multipath === 'dm-multipath'
@@ -62,8 +65,10 @@ export function PrerequisitesMultipathStep() {
     <div className="step-panel">
       <h2>Multipath</h2>
       <p className="lede">
-        Choose how multipath reaches the nodes, then shape the export package. This page does not talk to the
-        cluster — you can optionally apply the preview from a terminal while you finish the wizard.
+        {RECAP.multipathLede}{' '}
+        {isAdvanced
+          ? 'This page does not talk to the cluster — you can optionally apply the preview from a terminal while you finish the wizard.'
+          : 'This page does not talk to the cluster — install.sh will apply the packaged multipath payload after export (unless you mark it as already applied).'}
       </p>
 
       <Callout variant="ok">{HELP.configuratorVsApply}</Callout>
@@ -200,10 +205,21 @@ export function PrerequisitesMultipathStep() {
                 </Callout>
               ) : (
                 <Callout variant="ok">
-                  <strong>Optional early apply:</strong> copy the DaemonSet preview below and{' '}
-                  <code>oc apply -f …</code> from a machine with cluster access now. Check the box when done so{' '}
-                  <code>install.sh</code> skips re-apply. Or leave it unchecked and let <code>install.sh</code>{' '}
-                  apply after export. Use this path for HyperShift / HCP guests without MachineConfig.
+                  {isAdvanced ? (
+                    <>
+                      <strong>Optional early apply:</strong> copy the DaemonSet preview below and{' '}
+                      <code>oc apply -f …</code> from a machine with cluster access now. Check the box when done
+                      so <code>install.sh</code> skips re-apply. Or leave it unchecked and let{' '}
+                      <code>install.sh</code> apply after export. Use this path for HyperShift / HCP guests
+                      without MachineConfig.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Packaged for export:</strong> <code>install.sh</code> will apply the DaemonSet
+                      after export. If you apply it yourself outside this wizard, check the box below so{' '}
+                      <code>install.sh</code> skips re-apply.
+                    </>
+                  )}
                 </Callout>
               )
             ) : plat.useOc ? (
@@ -218,10 +234,20 @@ export function PrerequisitesMultipathStep() {
                 </Callout>
               ) : (
                 <Callout variant="ok">
-                  <strong>Optional early apply:</strong> copy the MachineConfig preview below and{' '}
-                  <code>oc apply -f …</code> from a machine with cluster access now — nodes can reboot while you
-                  finish the wizard. Check the box when done so <code>install.sh</code> skips re-apply. Or leave
-                  it unchecked and let <code>install.sh</code> apply after export.
+                  {isAdvanced ? (
+                    <>
+                      <strong>Optional early apply:</strong> copy the MachineConfig preview below and{' '}
+                      <code>oc apply -f …</code> from a machine with cluster access now — nodes can reboot while
+                      you finish the wizard. Check the box when done so <code>install.sh</code> skips re-apply.
+                      Or leave it unchecked and let <code>install.sh</code> apply after export.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Packaged for export:</strong> <code>install.sh</code> will apply the
+                      MachineConfig after export. If you apply it yourself outside this wizard, check the box
+                      below so <code>install.sh</code> skips re-apply.
+                    </>
+                  )}
                 </Callout>
               )
             ) : (
@@ -232,88 +258,96 @@ export function PrerequisitesMultipathStep() {
               </Callout>
             )}
 
-            {showMachineConfig && (
-              <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
-                <Field
-                  label="MachineConfig name"
-                  hint="OpenShift MachineConfig metadata.name written into the export package."
-                >
-                  <input
-                    value={mp.machineConfigName}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        multipath: { ...s.multipath, machineConfigName: e.target.value },
-                      }))
-                    }
-                  />
-                </Field>
-                <Field
-                  label="MachineConfig role"
-                  hint="Worker is recommended. Master/all will reboot control-plane nodes."
-                >
-                  <select
-                    value={mp.machineConfigRole}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        multipath: {
-                          ...s.multipath,
-                          machineConfigRole: e.target.value as typeof mp.machineConfigRole,
-                        },
-                      }))
-                    }
-                  >
-                    <option value="worker">worker</option>
-                    <option value="master">master</option>
-                    <option value="all">worker + master</option>
-                  </select>
-                </Field>
-              </div>
-            )}
-
-            <Field
-              label={
-                showDaemonSet
-                  ? 'multipath.conf (embedded in DaemonSet)'
-                  : plat.useOc
-                    ? 'multipath.conf (embedded in MachineConfig)'
-                    : 'multipath.conf contents'
-              }
-              hint={
-                plat.useOc
-                  ? 'Hitachi CSI sample defaults. Edits update the export payload (keep user_friendly_names yes). If you already applied, re-apply after editing or install.sh will skip.'
-                  : 'Hitachi CSI sample defaults. Edit if needed; install on workers after you download the ZIP (keep user_friendly_names yes).'
-              }
+            <AdvancedSection
+              title="Edit multipath payload"
             >
-              <textarea
-                rows={16}
-                style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.78rem', width: '100%' }}
-                value={mp.customConf || MULTIPATH_CONF}
-                onChange={(e) =>
-                  setState((s) => ({
-                    ...s,
-                    multipath: { ...s.multipath, customConf: e.target.value },
-                  }))
+              {showMachineConfig && (
+                <div className="field-grid" style={{ marginBottom: '0.85rem' }}>
+                  <Field
+                    label="MachineConfig name"
+                    hint="OpenShift MachineConfig metadata.name written into the export package."
+                  >
+                    <input
+                      value={mp.machineConfigName}
+                      onChange={(e) =>
+                        setState((s) => ({
+                          ...s,
+                          multipath: { ...s.multipath, machineConfigName: e.target.value },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="MachineConfig role"
+                    hint="Worker is recommended. Master/all will reboot control-plane nodes."
+                  >
+                    <select
+                      value={mp.machineConfigRole}
+                      onChange={(e) =>
+                        setState((s) => ({
+                          ...s,
+                          multipath: {
+                            ...s.multipath,
+                            machineConfigRole: e.target.value as typeof mp.machineConfigRole,
+                          },
+                        }))
+                      }
+                    >
+                      <option value="worker">worker</option>
+                      <option value="master">master</option>
+                      <option value="all">worker + master</option>
+                    </select>
+                  </Field>
+                </div>
+              )}
+
+              <Field
+                label={
+                  showDaemonSet
+                    ? 'multipath.conf (embedded in DaemonSet)'
+                    : plat.useOc
+                      ? 'multipath.conf (embedded in MachineConfig)'
+                      : 'multipath.conf contents'
                 }
-              />
-            </Field>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-              {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
-              {showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig preview" />}
-              {showDaemonSet && <CopyButton text={dsPreview} label="Copy DaemonSet preview" />}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() =>
-                  setState((s) => ({
-                    ...s,
-                    multipath: { ...s.multipath, customConf: '' },
-                  }))
+                hint={
+                  plat.useOc
+                    ? 'Hitachi CSI sample defaults. Edits update the export payload (keep user_friendly_names yes). If you already applied, re-apply after editing or install.sh will skip.'
+                    : 'Hitachi CSI sample defaults. Edit if needed; install on workers after you download the ZIP (keep user_friendly_names yes).'
                 }
               >
-                Reset to sample
-              </button>
+                <textarea
+                  rows={16}
+                  style={{ fontFamily: 'var(--hv-mono)', fontSize: '0.78rem', width: '100%' }}
+                  value={mp.customConf || MULTIPATH_CONF}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      multipath: { ...s.multipath, customConf: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      multipath: { ...s.multipath, customConf: '' },
+                    }))
+                  }
+                >
+                  Reset to sample
+                </button>
+              </div>
+            </AdvancedSection>
+
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              {!plat.useOc && <CopyButton text={confText} label="Copy multipath.conf" />}
+              {isAdvanced && showMachineConfig && <CopyButton text={mcPreview} label="Copy MachineConfig preview" />}
+              {isAdvanced && showDaemonSet && <CopyButton text={dsPreview} label="Copy DaemonSet preview" />}
             </div>
 
             {showMachineConfig && (
@@ -371,9 +405,11 @@ export function PrerequisitesMultipathStep() {
                 >
                   {mp.alreadyApplied
                     ? 'MachineConfig YAML kept in 00-prereq/ for reference:'
-                    : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                    : isAdvanced
+                      ? 'Preview — copy and oc apply now, or leave for install.sh after export:'
+                      : 'MachineConfig YAML is packaged into 00-prereq/ and applied by install.sh after export:'}
                 </p>
-                {mp.alreadyApplied ? null : (
+                {!isAdvanced || mp.alreadyApplied ? null : (
                   <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
                     {`# From a host with oc access (optional early apply):
 # Save the preview to a file, then:
@@ -382,9 +418,11 @@ oc apply -f multipath-machineconfig.yaml
 # Proceed with the wizard while nodes reboot`}
                   </CodeBlock>
                 )}
-                <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
-                  {mcPreview}
-                </CodeBlock>
+                {isAdvanced && (
+                  <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
+                    {mcPreview}
+                  </CodeBlock>
+                )}
               </>
             )}
 
@@ -425,18 +463,22 @@ oc apply -f multipath-machineconfig.yaml
                 >
                   {mp.alreadyApplied
                     ? 'DaemonSet YAML kept in 00-prereq/ for reference:'
-                    : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                    : isAdvanced
+                      ? 'Preview — copy and oc apply now, or leave for install.sh after export:'
+                      : 'DaemonSet YAML is packaged into 00-prereq/ and applied by install.sh after export:'}
                 </p>
-                {mp.alreadyApplied ? null : (
+                {!isAdvanced || mp.alreadyApplied ? null : (
                   <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
                     {`# From a host with oc access (optional early apply):
 oc apply -f multipath-daemonset.yaml
 oc rollout status ds/hitachi-csi-multipath -n kube-system`}
                   </CodeBlock>
                 )}
-                <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
-                  {dsPreview}
-                </CodeBlock>
+                {isAdvanced && (
+                  <CodeBlock className="yaml-preview" style={{ maxHeight: 280 }}>
+                    {dsPreview}
+                  </CodeBlock>
+                )}
               </>
             )}
           </>
@@ -481,8 +523,8 @@ export function PrerequisitesChecklistStep() {
     <div className="step-panel">
       <h2>{showMultipathSibling ? 'Checklist' : 'Prerequisites'}</h2>
       <p className="lede">
-        Verify cluster, array, and network items you can check <strong>now</strong>. Multipath packaging lives
-        on the Multipath substep when enabled.
+        Confirm what you should check before install—cluster access, array setup, and network reachability.
+        Multipath packaging is on the Multipath substep when that option is enabled.
       </p>
 
       {!showMultipathSibling && <Callout variant="ok">{HELP.configuratorVsApply}</Callout>}
@@ -605,18 +647,18 @@ function buildPrereqs(
     {
       id: 'cluster-access',
       title: 'Cluster admin access',
-      body: 'Verify you can talk to the API server as a cluster-admin.',
+      body: 'Confirm you can sign in to the cluster with administrator permissions. You need this level of access to install operators and change cluster-wide settings.',
       snippet: `${cmd} get nodes`,
     },
     {
       id: 'licenses',
-      title: 'Storage licenses enabled',
-      body: 'Dynamic Provisioning, Thin Image (and HTIA for VSP One Block) must be enabled on the array.',
+      title: 'Array licenses for dynamic volumes',
+      body: 'Your storage array must have the licenses needed for Kubernetes provisioning enabled: Dynamic Provisioning and Thin Image. On VSP One Block, HTIA is also required.',
     },
     {
       id: 'user-role',
-      title: 'Storage user role',
-      body: 'Use Storage Administrator (View & Modify) or equivalent. SDS Block multitenancy needs VpsStorage.',
+      title: 'Storage user permissions',
+      body: 'The storage user you will put in the Secret needs rights to create and manage volumes—typically Storage Administrator (View & Modify). SDS Block multitenancy also requires VpsStorage.',
     },
   ]
 
@@ -626,10 +668,10 @@ function buildPrereqs(
         id: 'multipath',
         title: multipathAlreadyApplied
           ? 'Multipath DaemonSet already applied'
-          : 'Plan multipath DaemonSet (early apply or install.sh)',
+          : 'Plan multipath DaemonSet setup',
         body: multipathAlreadyApplied
-          ? 'You marked the DaemonSet as already applied. install.sh will skip apply (and auto-detect an existing DaemonSet). Confirm multipathd on workers before volumes.'
-          : 'Hosted/HCP path: oc apply the DaemonSet preview on the Multipath substep, or leave it for install.sh after export. No MachineConfigPool reboot cycle.',
+          ? 'You marked the multipath DaemonSet as already in place. install.sh will skip applying it (or detect an existing one). Before you test volumes, confirm multipathd is running on worker nodes.'
+          : 'On hosted/HCP OpenShift, multipath runs as a DaemonSet (a pod on each node). Apply the preview from the Multipath substep now, or let install.sh apply it after export. Unlike MachineConfig, this path does not trigger a full node reboot cycle.',
         snippet: multipathAlreadyApplied
           ? `${cmd} get ds hitachi-csi-multipath -n kube-system`
           : undefined,
@@ -639,10 +681,10 @@ function buildPrereqs(
         id: 'multipath',
         title: multipathAlreadyApplied
           ? 'Multipath MachineConfig already applied'
-          : 'Plan multipath MachineConfig (early apply or install.sh)',
+          : 'Plan multipath MachineConfig setup',
         body: multipathAlreadyApplied
-          ? 'You marked the MachineConfig as already applied. install.sh will skip apply (and auto-detect existing MCs), wait with a live MCP status block, and continue automatically when pools are healthy. Check logs/install-*.log for detail.'
-          : 'Optional: oc apply the preview on the Multipath substep so nodes reboot while you finish the wizard, then check “already applied.” Or leave it for install.sh after export.',
+          ? 'You marked the multipath MachineConfig as already in place. install.sh will skip applying it, wait for MachineConfigPools to finish updating, then continue automatically. Check logs/install-*.log for details.'
+          : 'On classic OpenShift, multipath is applied via a MachineConfig (cluster-wide node configuration). You can apply the preview on the Multipath substep early—nodes will reboot while you finish the wizard—or leave it for install.sh after export.',
         snippet: multipathAlreadyApplied
           ? `${cmd} get mcp\n# install.sh polls MCP status and auto-continues; see logs/install-*.log`
           : undefined,
@@ -650,8 +692,8 @@ function buildPrereqs(
     } else {
       items.push({
         id: 'multipath',
-        title: 'Plan to install multipath.conf on workers (after export)',
-        body: 'After you download the ZIP, copy multipath.conf to each worker and enable multipathd. install.sh does not push the conf to nodes.',
+        title: 'Plan worker multipath.conf setup',
+        body: 'After you download the export ZIP, copy multipath.conf to each worker node and start multipathd. install.sh does not push this file to nodes for you.',
       })
     }
   }
@@ -659,8 +701,8 @@ function buildPrereqs(
   if (connection === 'iscsi') {
     items.push({
       id: 'iscsi',
-      title: 'iSCSI initiator installed',
-      body: 'Initiator software present on nodes; IQNs must be lowercase only.',
+      title: 'iSCSI software on nodes',
+      body: 'Each node needs an iSCSI initiator installed. The initiator IQN in /etc/iscsi/initiatorname.iscsi must use lowercase letters only.',
       snippet: 'cat /etc/iscsi/initiatorname.iscsi',
     })
   }
@@ -668,8 +710,8 @@ function buildPrereqs(
   if (connection === 'nvme-fc' || connection === 'nvme-tcp') {
     items.push({
       id: 'nvme',
-      title: 'NVMe multipath / nvme-cli',
-      body: 'Native NVMe Multipath enabled. On RHEL install nvme-cli; RHCOS usually includes it. Do not duplicate host NQNs.',
+      title: 'NVMe tools and multipath',
+      body: 'Nodes should have NVMe multipath enabled and nvme-cli available (install nvme-cli on RHEL; RHCOS usually includes it). Use unique host NQNs—do not duplicate them across nodes.',
       snippet: 'nvme list && cat /sys/module/nvme_core/parameters/multipath',
     })
   }
@@ -677,30 +719,30 @@ function buildPrereqs(
   if (airGapped) {
     items.push({
       id: 'offline',
-      title: 'Offline images mirrored',
-      body: 'Run hvcsi-offline-bundle.sh and load images into your private registry. Mirror OperatorHub catalogs on OpenShift.',
+      title: 'Container images are mirrored locally',
+      body: 'Run hvcsi-offline-bundle.sh and load the images into your private registry. On OpenShift, mirror the OperatorHub catalogs (including certified-operators) before install.',
     })
   } else {
     items.push({
       id: 'firewall',
-      title: 'Firewall / proxy allowlist',
-      body: 'Allow GitHub, registry.hitachivantara.com, and registry.k8s.io (and redirects).',
+      title: 'Outbound network access for images',
+      body: 'Workers and the install host need HTTPS access to pull images and manifests—from GitHub, registry.hitachivantara.com, and registry.k8s.io (including redirects).',
     })
   }
 
   if (plat.operatorHub) {
     items.push({
       id: 'operatorhub',
-      title: 'OperatorHub / certified-operators catalog reachable',
-      body: 'install.sh installs the CSI Driver via OLM (Subscription with Manual update approval). On air-gapped clusters, mirror certified-operators first.',
+      title: 'OperatorHub catalog is reachable',
+      body: 'On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub—the catalog of certified operators. The Subscription uses Manual update approval. In air-gapped environments, mirror certified-operators first.',
     })
   }
 
   if (telemetryEnabled) {
     items.push({
       id: 'telemetry-egress',
-      title: 'Telemetry AWS egress allowed',
-      body: 'Outbound HTTPS port 443 to Amazon Web Services for Hitachi Telemetry (proxy CONNECT if applicable; trusted CAs; TLS 1.2+; DNS resolution).',
+      title: 'AWS network access for telemetry',
+      body: 'If Hitachi Telemetry is enabled, nodes need outbound HTTPS (port 443) to Amazon Web Services. Corporate proxies must allow CONNECT; use trusted CAs, TLS 1.2+, and working DNS.',
     })
   }
 
