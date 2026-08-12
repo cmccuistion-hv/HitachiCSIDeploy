@@ -122,14 +122,6 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     })
   }
 
-  if (!state.telemetryEnabled) {
-    steps.push({
-      id: 'telemetry',
-      title: 'Telemetry opt-out',
-      body: 'After the CSI Driver is READY, install.sh disables Hitachi Telemetry automatically; no manual scaling or manifest apply is required.',
-    })
-  }
-
   if (state.storageClassesEnabled) {
     steps.push({
       id: 'verify-test-volume',

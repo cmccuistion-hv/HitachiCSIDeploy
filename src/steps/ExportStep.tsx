@@ -3,7 +3,7 @@ import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
-import { storageArtifactsInvalidReason, storageArtifactsValid } from '../catalog/validation'
+import { storageArtifactsInvalidFix, storageArtifactsValid, wizardFixCta } from '../catalog/validation'
 import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
 import { ReviewTopologyDiagram } from '../components/ReviewTopologyDiagram'
@@ -11,7 +11,7 @@ import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Section } from '../components/ui'
 
 export function ExportStep() {
-  const { state, exportConfig, importConfig, reset } = useWizard()
+  const { state, exportConfig, importConfig, reset, goToFix } = useWizard()
   const plat = PLATFORMS[state.platform]
   const [files, setFiles] = useState<GeneratedFile[]>([])
   const [importText, setImportText] = useState('')
@@ -36,7 +36,7 @@ export function ExportStep() {
   }, [state])
 
   const storageExportBlocked = !storageArtifactsValid(state)
-  const storageExportReason = storageExportBlocked ? storageArtifactsInvalidReason(state) : null
+  const storageExportFix = storageExportBlocked ? storageArtifactsInvalidFix(state) : null
   const nextSteps = buildNextSteps(state)
 
   const downloadZip = async () => {
@@ -112,8 +112,17 @@ export function ExportStep() {
           </div>
         }
       >
-        {storageExportReason ? (
-          <Callout variant="warn">{storageExportReason}</Callout>
+        {storageExportFix ? (
+          <Callout variant="warn">
+            <button
+              type="button"
+              className="callout-go"
+              onClick={() => goToFix(storageExportFix)}
+            >
+              <span>{storageExportFix.message}</span>
+              <span className="callout-go-cta">{wizardFixCta(storageExportFix)}</span>
+            </button>
+          </Callout>
         ) : (
           <Callout variant="ok">
             Generated {files.length} files for <strong>{plat.displayName}</strong> / CSI Driver{' '}

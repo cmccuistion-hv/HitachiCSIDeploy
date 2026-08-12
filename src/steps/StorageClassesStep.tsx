@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   CONNECTION_TYPES,
   coerceConnectionType,
@@ -20,6 +20,7 @@ import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
+import { useSiteTab } from '../state/useSiteTab'
 import { Callout, CodeBlock, Field, Section } from '../components/ui'
 
 /** Count comma-separated Port ID values (empty segments ignored). */
@@ -67,8 +68,8 @@ function defaultSc(
 export function StorageClassesStep() {
   const { state, setState } = useWizard()
   const { isAdvanced } = useUiMode()
-  const [site, setSite] = useState<SiteId>('primary')
   const replicationOn = state.components.replication
+  const [site, setSite] = useSiteTab(replicationOn)
   const ensured = replicationOn ? ensureSitesForReplication(state) : state
   const storage: SiteStorageConfig = replicationOn
     ? getSiteStorage(ensured, site)

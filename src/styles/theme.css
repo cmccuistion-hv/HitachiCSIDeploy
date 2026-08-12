@@ -702,6 +702,62 @@ textarea {
   background: var(--hv-callout-warn-bg);
 }
 
+.callout-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.85rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.callout-go:hover .callout-go-cta,
+.callout-go:focus-visible .callout-go-cta {
+  text-decoration: underline;
+}
+
+.callout-go-cta {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--hv-primary);
+}
+
+.footer-fix {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25rem 0.65rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  color: var(--hv-warn-fg, var(--hv-text-subtle));
+  text-align: center;
+  cursor: pointer;
+}
+
+.footer-fix:hover .footer-fix-cta,
+.footer-fix:focus-visible .footer-fix-cta {
+  text-decoration: underline;
+}
+
+.footer-fix-cta {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--hv-primary);
+}
+
 .callout.ok {
   border-left-color: var(--hv-positive);
   background: var(--hv-callout-ok-bg);

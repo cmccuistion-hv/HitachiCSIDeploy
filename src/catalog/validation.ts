@@ -1,6 +1,21 @@
 import { CONNECTION_TYPES } from './platforms'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
-import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from './sites'
+import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
+
+/** Blocking issue plus where the wizard should take the user to fix it. */
+export type WizardFix = {
+  message: string
+  stepId: 'storage' | 'storageclasses' | 'replication'
+  site?: SiteId
+}
+
+function wizardFix(
+  message: string,
+  stepId: WizardFix['stepId'],
+  site?: SiteId,
+): WizardFix {
+  return { message, stepId, site }
+}
 
 function t(v: string | undefined | null): string {
   return (v || '').trim()
@@ -229,11 +244,15 @@ function siteHasDuplicateNames(systems: StorageSystemConfig[], classes: StorageC
 
 function replicationArrayMissingFields(
   sys: StorageSystemConfig | undefined,
-  site: 'primary' | 'secondary',
-): string | null {
+  site: SiteId,
+): WizardFix | null {
   const label = siteLabel(site)
   if (!sys) {
-    return `${label} must have exactly one storage system marked for Replication.`
+    return wizardFix(
+      `${label} must have exactly one storage system marked for Replication.`,
+      'storage',
+      site,
+    )
   }
   const missing: string[] = []
   if (!t(sys.serial)) missing.push('serial number')
@@ -243,13 +262,20 @@ function replicationArrayMissingFields(
   if (!missing.length) return null
   const fields = missing.join(', ')
   if (site === 'secondary') {
-    return `Open the Secondary site tab and enter ${fields} for the array used for Replication.`
+    return wizardFix(
+      `Open the Secondary site tab and enter ${fields} for the array used for Replication.`,
+      'storage',
+      'secondary',
+    )
   }
-  return `Enter ${fields} for the primary site's array used for Replication.`
+  return wizardFix(
+    `Enter ${fields} for the primary site's array used for Replication.`,
+    'storage',
+    'primary',
+  )
 }
 
-/** Arrays marked for Replication must be complete on both sites (Continue on Storage systems). */
-export function validateHrpcReplicationArrays(state: WizardState): string | null {
+function validateHrpcReplicationArraysFix(state: WizardState): WizardFix | null {
   if (!state.components.replication) return null
 
   const ensured = ensureSitesForReplication(state)
@@ -260,39 +286,64 @@ export function validateHrpcReplicationArrays(state: WizardState): string | null
     const storage = site === 'primary' ? primary : secondary
     if (storage.storageSystems.length < 1) {
       return site === 'secondary'
-        ? 'Open the Secondary site tab and add the storage system used for Replication.'
-        : `${siteLabel(site)} must have at least one storage system.`
+        ? wizardFix(
+            'Open the Secondary site tab and add the storage system used for Replication.',
+            'storage',
+            'secondary',
+          )
+        : wizardFix(`${siteLabel(site)} must have at least one storage system.`, 'storage', site)
     }
     if (hrpcPairCount(storage.storageSystems) !== 1) {
       return site === 'secondary'
-        ? 'Open the Secondary site tab and mark exactly one array for Replication.'
-        : `${siteLabel(site)} must have exactly one storage system marked for Replication.`
+        ? wizardFix(
+            'Open the Secondary site tab and mark exactly one array for Replication.',
+            'storage',
+            'secondary',
+          )
+        : wizardFix(
+            `${siteLabel(site)} must have exactly one storage system marked for Replication.`,
+            'storage',
+            site,
+          )
     }
   }
 
+  const dupPrimary = siteHasDuplicateNames(primary.storageSystems, primary.storageClasses)
+  if (dupPrimary) return wizardFix(dupPrimary, 'storage', 'primary')
+  const dupSecondary = siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses)
+  if (dupSecondary) return wizardFix(dupSecondary, 'storage', 'secondary')
+
   return (
-    siteHasDuplicateNames(primary.storageSystems, primary.storageClasses) ||
-    siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses) ||
     replicationArrayMissingFields(hrpcPairSystem(primary.storageSystems), 'primary') ||
     replicationArrayMissingFields(hrpcPairSystem(secondary.storageSystems), 'secondary')
   )
 }
 
+/** Arrays marked for Replication must be complete on both sites (Continue on Storage systems). */
+export function validateHrpcReplicationArrays(state: WizardState): string | null {
+  return validateHrpcReplicationArraysFix(state)?.message ?? null
+}
+
 export function storageSystemsValidForContinue(state: WizardState): boolean {
-  return storageSystemsContinueInvalidReason(state) === null
+  return storageSystemsContinueInvalidFix(state) === null
+}
+
+export function storageSystemsContinueInvalidFix(state: WizardState): WizardFix | null {
+  if (state.components.replication) {
+    return validateHrpcReplicationArraysFix(state)
+  }
+  const dup = siteHasDuplicateNames(state.storageSystems || [], state.storageClasses || [])
+  return dup ? wizardFix(dup, 'storage') : null
 }
 
 export function storageSystemsContinueInvalidReason(state: WizardState): string | null {
-  if (state.components.replication) {
-    return validateHrpcReplicationArrays(state)
-  }
-  return siteHasDuplicateNames(state.storageSystems || [], state.storageClasses || [])
+  return storageSystemsContinueInvalidFix(state)?.message ?? null
 }
 
-function validateHrpcStorageClasses(state: WizardState): string | null {
+function validateHrpcStorageClassesFix(state: WizardState): WizardFix | null {
   if (!state.components.replication) return null
 
-  const arrayReason = validateHrpcReplicationArrays(state)
+  const arrayReason = validateHrpcReplicationArraysFix(state)
   if (arrayReason) return arrayReason
 
   const ensured = ensureSitesForReplication(state)
@@ -316,11 +367,19 @@ function validateHrpcStorageClasses(state: WizardState): string | null {
     const pairId = t(primarySc.hrpcPairId)
     const secondarySc = secondary.storageClasses.find((sc) => t(sc.hrpcPairId) === pairId)
     if (!secondarySc) {
-      return `Secondary site is missing the matching StorageClass for Replication "${primarySc.name}".`
+      return wizardFix(
+        `Secondary site is missing the matching StorageClass for Replication "${primarySc.name}".`,
+        'storageclasses',
+        'secondary',
+      )
     }
 
     if (t(primarySc.name) !== t(secondarySc.name) || t(primarySc.fstype) !== t(secondarySc.fstype)) {
-      return `StorageClass "${primarySc.name}" used for Replication must have the same name and filesystem type on both sites.`
+      return wizardFix(
+        `StorageClass "${primarySc.name}" used for Replication must have the same name and filesystem type on both sites.`,
+        'storageclasses',
+        'secondary',
+      )
     }
 
     const primaryErrors = validateStorageClass(primarySc, {
@@ -328,7 +387,11 @@ function validateHrpcStorageClasses(state: WizardState): string | null {
       siblings: primary.storageClasses,
     })
     if (Object.keys(primaryErrors).length) {
-      return `Fill required fields for StorageClass "${primarySc.name}" (used for Replication) on the primary site.`
+      return wizardFix(
+        `Fill required fields for StorageClass "${primarySc.name}" (used for Replication) on the primary site.`,
+        'storageclasses',
+        'primary',
+      )
     }
 
     const secondaryErrors = validateStorageClass(secondarySc, {
@@ -336,24 +399,40 @@ function validateHrpcStorageClasses(state: WizardState): string | null {
       siblings: secondary.storageClasses,
     })
     if (Object.keys(secondaryErrors).length) {
-      return `Open the Secondary site tab and fill required fields for StorageClass "${primarySc.name}" (used for Replication).`
+      return wizardFix(
+        `Open the Secondary site tab and fill required fields for StorageClass "${primarySc.name}" (used for Replication).`,
+        'storageclasses',
+        'secondary',
+      )
     }
 
     if (primaryPairSerial) {
       const eff = t(effectiveSerialNumber(primarySc, systemsWithHrpcFirst(primary.storageSystems)))
       if (eff && eff !== primaryPairSerial) {
-        return `StorageClass "${primarySc.name}" used for Replication must reference the primary site's Replication array serial (${primaryPairSerial}).`
+        return wizardFix(
+          `StorageClass "${primarySc.name}" used for Replication must reference the primary site's Replication array serial (${primaryPairSerial}).`,
+          'storageclasses',
+          'primary',
+        )
       }
     }
     if (secondaryPairSerial) {
       const eff = t(effectiveSerialNumber(secondarySc, systemsWithHrpcFirst(secondary.storageSystems)))
       if (eff && eff !== secondaryPairSerial) {
-        return `StorageClass "${primarySc.name}" used for Replication must reference the secondary site's Replication array serial (${secondaryPairSerial}).`
+        return wizardFix(
+          `StorageClass "${primarySc.name}" used for Replication must reference the secondary site's Replication array serial (${secondaryPairSerial}).`,
+          'storageclasses',
+          'secondary',
+        )
       }
     }
   }
 
   return null
+}
+
+function validateHrpcStorageClasses(state: WizardState): string | null {
+  return validateHrpcStorageClassesFix(state)?.message ?? null
 }
 
 /** True when at least one StorageClass is marked for Replication on either site. */
@@ -377,14 +456,14 @@ export function needsNoReplicationStorageClassConfirm(state: WizardState): boole
   )
 }
 
-export function validateHrpc(state: WizardState): string | null {
+function validateHrpcFix(state: WizardState): WizardFix | null {
   if (!state.components.replication) return null
 
   const ensured = ensureSitesForReplication(state)
   const primary = getSiteStorage(ensured, 'primary')
   const secondary = getSiteStorage(ensured, 'secondary')
 
-  const scReason = validateHrpcStorageClasses(ensured)
+  const scReason = validateHrpcStorageClassesFix(ensured)
   if (scReason) return scReason
 
   const primaryPairSys = hrpcPairSystem(primary.storageSystems)
@@ -393,24 +472,38 @@ export function validateHrpc(state: WizardState): string | null {
   const secondaryPairSerial = t(secondaryPairSys?.serial)
 
   const rgReason = hrpcResourceGroupIdReason(ensured)
-  if (rgReason) return rgReason
+  if (rgReason) {
+    const ids = hrpcPairResourceGroupIds(ensured)
+    const site: SiteId = !ids.primary ? 'primary' : 'secondary'
+    return wizardFix(rgReason, 'storage', site)
+  }
 
   const secrets = ensured.replication.storageSecrets || []
   if (secrets.length < 1) {
-    return 'Set journals on the Replication step (storage secrets).'
+    return wizardFix('Set journals on the Replication step (storage secrets).', 'replication')
   }
 
   for (const serial of [primaryPairSerial, secondaryPairSerial]) {
     const match = secrets.find((s) => t(s.serial) === serial)
     if (!match) {
-      return `Add a Replication storage secret entry for array serial ${serial} (on the Replication step).`
+      return wizardFix(
+        `Add a Replication storage secret entry for array serial ${serial} (on the Replication step).`,
+        'replication',
+      )
     }
     if (!t(match.journal)) {
-      return `Set a Journal ID for array serial ${serial} (on the Replication step).`
+      return wizardFix(
+        `Set a Journal ID for array serial ${serial} (on the Replication step).`,
+        'replication',
+      )
     }
   }
 
   return null
+}
+
+export function validateHrpc(state: WizardState): string | null {
+  return validateHrpcFix(state)?.message ?? null
 }
 
 export function storageArtifactsValidForContinue(state: WizardState): boolean {
@@ -488,24 +581,53 @@ export function storageArtifactsValid(state: WizardState): boolean {
   )
 }
 
-export function storageArtifactsInvalidReason(state: WizardState): string | null {
+export function storageArtifactsInvalidFix(state: WizardState): WizardFix | null {
   if (storageArtifactsValid(state)) return null
   if (state.components.replication) {
     return (
-      validateHrpc(state) ||
-      'Fill required StorageClass fields for both sites (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).'
+      validateHrpcFix(state) ||
+      wizardFix(
+        'Fill required StorageClass fields for both sites (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).',
+        'storageclasses',
+      )
     )
   }
-  return 'Fill required StorageClass fields (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).'
+  return wizardFix(
+    'Fill required StorageClass fields (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).',
+    'storageclasses',
+  )
 }
 
-export function storageArtifactsContinueInvalidReason(state: WizardState): string | null {
+export function storageArtifactsInvalidReason(state: WizardState): string | null {
+  return storageArtifactsInvalidFix(state)?.message ?? null
+}
+
+export function storageArtifactsContinueInvalidFix(state: WizardState): WizardFix | null {
   if (storageArtifactsValidForContinue(state)) return null
   if (state.components.replication) {
     return (
-      validateHrpcStorageClasses(state) ||
-      'Fill required StorageClass fields for both sites (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).'
+      validateHrpcStorageClassesFix(state) ||
+      wizardFix(
+        'Fill required StorageClass fields for both sites (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).',
+        'storageclasses',
+      )
     )
   }
-  return 'Fill required StorageClass fields (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).'
+  return wizardFix(
+    'Fill required StorageClass fields (serial, pool, ports/NVMe as applicable) or turn off Generate StorageClass(es).',
+    'storageclasses',
+  )
+}
+
+export function storageArtifactsContinueInvalidReason(state: WizardState): string | null {
+  return storageArtifactsContinueInvalidFix(state)?.message ?? null
+}
+
+export function wizardFixCta(fix: WizardFix): string {
+  if (fix.site === 'secondary') return 'Open Secondary site'
+  if (fix.site === 'primary') return 'Open Primary site'
+  if (fix.stepId === 'replication') return 'Open Replication'
+  if (fix.stepId === 'storageclasses') return 'Open StorageClasses'
+  if (fix.stepId === 'storage') return 'Open Storage systems'
+  return 'Go there'
 }

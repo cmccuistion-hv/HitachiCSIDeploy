@@ -14,7 +14,8 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
-import { ensureSitesForReplication } from '../catalog/sites'
+import { ensureSitesForReplication, type SiteId } from '../catalog/sites'
+import type { WizardFix } from '../catalog/validation'
 import {
   PLATFORMS,
   coerceConnectionType,
@@ -26,7 +27,7 @@ import {
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { STEPS_BASE, type VisibleStep } from './steps'
-import { migrateMetricsConfig } from './migrateMetrics'
+import { persistSiteTabFocus } from './siteTabFocus'
 
 interface WizardContextValue {
   state: WizardState
@@ -41,6 +42,10 @@ interface WizardContextValue {
   stepIndex: number
   setStepIndex: (i: number) => void
   visibleSteps: VisibleStep[]
+  /** One-shot: open this site tab on Storage systems / StorageClasses */
+  siteTabFocus: SiteId | null
+  clearSiteTabFocus: () => void
+  goToFix: (fix: WizardFix) => void
 }
 
 const WizardContext = createContext<WizardContextValue | null>(null)
@@ -148,6 +153,7 @@ function loadState(): WizardState {
 export function WizardProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WizardState>(loadState)
   const [stepIndex, setStepIndex] = useState(0)
+  const [siteTabFocus, setSiteTabFocus] = useState<SiteId | null>(null)
   const [versions, setVersions] = useState<VersionInfo | null>(null)
   const [versionsLoading, setVersionsLoading] = useState(true)
 
@@ -305,6 +311,20 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setState(next)
   }, [])
 
+  const clearSiteTabFocus = useCallback(() => setSiteTabFocus(null), [])
+
+  const goToFix = useCallback(
+    (fix: WizardFix) => {
+      if (fix.site) {
+        setSiteTabFocus(fix.site)
+        persistSiteTabFocus(fix.site)
+      }
+      const idx = visibleSteps.findIndex((s) => s.id === fix.stepId)
+      if (idx >= 0) setStepIndex(idx)
+    },
+    [visibleSteps],
+  )
+
   const value: WizardContextValue = {
     state,
     setState,
@@ -318,6 +338,9 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     stepIndex,
     setStepIndex,
     visibleSteps,
+    siteTabFocus,
+    clearSiteTabFocus,
+    goToFix,
   }
 
   return <WizardContext.Provider value={value}>{children}</WizardContext.Provider>
