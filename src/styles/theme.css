@@ -626,6 +626,15 @@ textarea {
   background: var(--hv-primary-strong);
 }
 
+.btn-success {
+  background: var(--hv-positive);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
 .btn-secondary {
   background: var(--hv-bg-elevated);
   border-color: var(--hv-border);
