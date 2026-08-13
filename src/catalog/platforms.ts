@@ -34,15 +34,38 @@ export function isStretchedKind(kind: StorageClassKind): boolean {
   return kind === 'stretched' || kind === 'stretched-adr'
 }
 
+type GadRoleSystem = {
+  family: StorageFamily
+  stretchedRole?: 'primary' | 'secondary' | 'none'
+}
+
+/** True when this site has exactly one GAD primary and one GAD secondary VSP array. */
+export function hasGadPair(systems: GadRoleSystem[]): boolean {
+  const gad = systems.filter((s) => supportsStretchedGad(s.family))
+  const primaries = gad.filter((s) => s.stretchedRole === 'primary')
+  const secondaries = gad.filter((s) => s.stretchedRole === 'secondary')
+  return primaries.length === 1 && secondaries.length === 1
+}
+
+/** Primary and secondary VSP arrays for a GAD pair, or null if hasGadPair is false. */
+export function gadPairSystems<T extends GadRoleSystem>(
+  systems: T[],
+): { primary: T; secondary: T } | null {
+  if (!hasGadPair(systems)) return null
+  const gad = systems.filter((s) => supportsStretchedGad(s.family))
+  return {
+    primary: gad.find((s) => s.stretchedRole === 'primary')!,
+    secondary: gad.find((s) => s.stretchedRole === 'secondary')!,
+  }
+}
+
 /** StorageClass types valid for the arrays on this site. */
-export function storageClassKindsForSystems(
-  systems: { family: StorageFamily }[],
-): StorageClassKind[] {
+export function storageClassKindsForSystems(systems: GadRoleSystem[]): StorageClassKind[] {
   const vspCount = systems.filter((s) => supportsStretchedGad(s.family)).length
   const hasSds = systems.some((s) => isSdsBlockFamily(s.family))
   const kinds: StorageClassKind[] = []
   if (vspCount > 0) kinds.push('standard')
-  if (vspCount >= 2) {
+  if (hasGadPair(systems)) {
     kinds.push('stretched', 'stretched-adr')
   }
   if (hasSds) kinds.push('vsp-one-sds-block')
