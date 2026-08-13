@@ -3,6 +3,7 @@ import {
   CONNECTION_TYPES,
   coerceConnectionType,
   connectionsForStorageClassKind,
+  isVspOneBlock20,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
@@ -433,7 +434,7 @@ export function StorageClassesStep() {
           const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
           const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
           const efficiencyBlocked =
-            primary?.isB20Series && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
+            isVspOneBlock20(primary?.family) && sc.storageEfficiency === 'Disabled' && sc.kind === 'standard'
           const multipathOff = !state.multipath.enabled
           const portIdHint = multipathOff
             ? 'Prefer a single port when wizard multipath packaging is off (e.g. CL1-A).'
@@ -445,7 +446,7 @@ export function StorageClassesStep() {
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.stretchedSecretName : undefined) ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyGroupName : undefined) ||
             (efficiencyBlocked
-              ? 'VSP One B20 does not support Disabled storage efficiency. Use Compression or Compression + Deduplication.'
+              ? 'VSP One Block 20 Series does not support Disabled storage efficiency. Use Compression or Compression + Deduplication.'
               : undefined)
 
           return (
@@ -590,10 +591,10 @@ export function StorageClassesStep() {
                       </Field>
                       <Field
                         label="Storage efficiency"
-                        hint="Adaptive data reduction. VSP One B20 does not support Disabled."
+                        hint="Adaptive data reduction. VSP One Block 20 Series does not support Disabled."
                         error={
                           efficiencyBlocked
-                            ? 'VSP One B20 does not support Disabled — use Compression or CompressionDeduplication.'
+                            ? 'VSP One Block 20 Series does not support Disabled — use Compression or CompressionDeduplication.'
                             : undefined
                         }
                       >
@@ -605,7 +606,7 @@ export function StorageClassesStep() {
                             })
                           }
                         >
-                          <option value="Disabled" disabled={!!primary?.isB20Series}>
+                          <option value="Disabled" disabled={isVspOneBlock20(primary?.family)}>
                             Disabled
                           </option>
                           <option value="Compression">Compression</option>
@@ -920,7 +921,7 @@ export function StorageClassesStep() {
                 <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
                   {canImmutableSnapshots
                     ? 'Adds retentionPeriod so snapshot data cannot be deleted or cloned until the period expires (1–12288 hours).'
-                    : 'Requires primary array marked as VSP One Block 20 series or High End on Storage systems.'}
+                    : 'Requires primary array marked as VSP One Block 20 Series or High End (B85) on Storage systems.'}
                 </p>
               </div>
             </label>

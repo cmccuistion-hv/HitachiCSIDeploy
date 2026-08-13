@@ -23,6 +23,7 @@ import {
   defaultOpenShiftTopology,
   effectiveMultipathDelivery,
   multipathFlagsForDelivery,
+  migrateStorageSystemFamily,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
@@ -132,6 +133,25 @@ function loadState(): WizardState {
       sawDefaultSc = true
       return sc
     })
+    merged.storageSystems = (merged.storageSystems || []).map((sys) =>
+      migrateStorageSystemFamily(sys),
+    )
+    if (merged.sites) {
+      merged.sites = {
+        primary: {
+          ...merged.sites.primary,
+          storageSystems: (merged.sites.primary.storageSystems || []).map((sys) =>
+            migrateStorageSystemFamily(sys),
+          ),
+        },
+        secondary: {
+          ...merged.sites.secondary,
+          storageSystems: (merged.sites.secondary.storageSystems || []).map((sys) =>
+            migrateStorageSystemFamily(sys),
+          ),
+        },
+      }
+    }
     // Immutable snapshots: B20 / High End only; drop stale flag on unsupported arrays
     const primary = merged.storageSystems?.[0]
     if (merged.snapshotClass.immutable && !supportsImmutableSnapshots(primary)) {
@@ -308,6 +328,23 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     const base = createDefaultState()
     const next = { ...base, ...parsed, version: WIZARD_STATE_VERSION }
     next.metrics = migrateMetricsConfig(parsed.metrics, base.metrics)
+    next.storageSystems = (next.storageSystems || []).map((sys) => migrateStorageSystemFamily(sys))
+    if (next.sites) {
+      next.sites = {
+        primary: {
+          ...next.sites.primary,
+          storageSystems: (next.sites.primary.storageSystems || []).map((sys) =>
+            migrateStorageSystemFamily(sys),
+          ),
+        },
+        secondary: {
+          ...next.sites.secondary,
+          storageSystems: (next.sites.secondary.storageSystems || []).map((sys) =>
+            migrateStorageSystemFamily(sys),
+          ),
+        },
+      }
+    }
     setState(next)
   }, [])
 

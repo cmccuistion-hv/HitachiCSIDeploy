@@ -10,7 +10,7 @@ export const HELP = {
     storageClassCallout:
       'A StorageClass is a reusable profile apps use when requesting a PVC. It references the storage Secret for credentials and adds pool, port, and efficiency settings.',
     storageLede:
-      'Enter array connection details used to authenticate the CSI Driver to storage. Secrets are generated with base64-encoded credentials. Add a second array for stretched (GAD) StorageClasses.',
+      'Enter one or more array connection details used to authenticate the CSI software to storage(s). Secrets are generated with base64-encoded credentials. Add a second array for stretched (GAD) StorageClasses and/or add additional primary storage systems arrays.',
     storageClassLede:
       'A StorageClass is a reusable profile apps use when requesting a PVC. Fields and restrictions change with type, protocol, and array family.',
   },

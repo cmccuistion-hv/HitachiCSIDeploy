@@ -51,7 +51,8 @@ export function PlatformStep() {
       <h2>Platform & connectivity</h2>
       <p className="lede">
         Choose your orchestrator and how worker nodes reach the storage array. This drives install steps,
-        multipath guidance, and which Hitachi CSI components are available.
+        multipath guidance, and which Hitachi Vantara CSI software package components are available.
+        (herein called Hitachi CSI)
       </p>
 
       <Section title="Container platform">
@@ -222,7 +223,7 @@ export function PlatformStep() {
         )}
         {state.connectionType === 'nvme-tcp' && (
           <Callout variant="warn">
-            NVMe/TCP is supported on VSP One Block High End and VSP One Block 20 series (and on VSP One SDS
+            NVMe/TCP is supported on VSP One Block High End (B85) and VSP One Block 20 Series (and on VSP One SDS
             Block when that StorageClass type is used).
           </Callout>
         )}

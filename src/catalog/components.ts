@@ -29,7 +29,7 @@ export const COMPONENTS: Record<ComponentId, ComponentDef> = {
   },
   replication: {
     id: 'replication',
-    displayName: 'Replication',
+    displayName: 'Replication + DR Operator',
     description:
       'Cross-cluster volume replication with the Disaster Recovery operator for policy-based failover and failback.',
     acronym: 'HRPC',
