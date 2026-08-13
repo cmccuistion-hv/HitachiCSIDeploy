@@ -27,6 +27,7 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
+import { exportConfigJson } from './exportConfig'
 import { migrateMetricsConfig } from './migrateMetrics'
 import { STEPS_BASE, type VisibleStep } from './steps'
 import { persistSiteTabFocus } from './siteTabFocus'
@@ -330,17 +331,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setStepIndex(0)
   }, [versions])
 
-  const exportConfig = useCallback(() => {
-    const safe = {
-      ...state,
-      replication: {
-        ...state.replication,
-        primaryKubeconfig: undefined,
-        secondaryKubeconfig: undefined,
-      },
-    }
-    return JSON.stringify(safe, null, 2)
-  }, [state])
+  const exportConfig = useCallback(() => exportConfigJson(state), [state])
 
   const importConfig = useCallback((json: string) => {
     const parsed = JSON.parse(json) as WizardState
