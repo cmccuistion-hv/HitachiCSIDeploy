@@ -26,10 +26,6 @@ export interface StorageSystemConfig {
   id: string
   name: string
   family: StorageFamily
-  /** VSP One Block 20 series — Disabled efficiency not allowed */
-  isB20Series?: boolean
-  /** VSP One Block High End — immutable snapshots + expandable clones family */
-  isHighEnd?: boolean
   serial: string
   url: string
   user: string
@@ -92,7 +88,7 @@ export interface SnapshotClassConfig {
   /** Cluster default VolumeSnapshotClass */
   isDefault?: boolean
   /**
-   * Immutable snapshots via retentionPeriod (VSP One B20 / Block High End only).
+   * Immutable snapshots via retentionPeriod (VSP One Block 20 Series / High End B85 only).
    */
   immutable: boolean
   /** Hours 1–12288 when immutable; emitted as parameters.retentionPeriod */
@@ -278,7 +274,7 @@ export function createDefaultState(): WizardState {
       {
         id: 'storage-1',
         name: 'primary',
-        family: 'vsp',
+        family: 'vsp-5000-g-e-f',
         serial: '',
         url: '',
         user: '',

@@ -78,7 +78,7 @@ export function seedSecondaryFromPrimary(
     : {
         id: 'storage-1-secondary',
         name: 'secondary',
-        family: 'vsp',
+        family: 'vsp-5000-g-e-f',
         serial: '',
         url: '',
         user: '',

@@ -16,7 +16,7 @@ export function ComponentsStep() {
     <div className="step-panel">
       <h2>Hitachi CSI components</h2>
       <p className="lede">
-        Select what to deploy under the Hitachi CSI umbrella. The CSI Driver is always included.{' '}
+        Select what to deploy under the Hitachi CSI software package. The CSI Driver is always included.{' '}
         {RECAP.componentsLede}
       </p>
 

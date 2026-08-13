@@ -1,5 +1,12 @@
 import { type StorageFamily, type StorageSystemConfig } from '../catalog/types'
-import { supportsImmutableSnapshots } from '../catalog/platforms'
+import {
+  STORAGE_FAMILIES,
+  isSdsBlockFamily,
+  storageFamilyHint,
+  storageRestUrlHint,
+  supportsAlternativeCloneMode,
+  supportsImmutableSnapshots,
+} from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
@@ -13,7 +20,7 @@ function newSystem(n: number): StorageSystemConfig {
   return {
     id: `storage-${n}`,
     name: n === 1 ? 'primary' : `array-${n}`,
-    family: 'vsp',
+    family: 'vsp-5000-g-e-f',
     serial: '',
     url: '',
     user: '',
@@ -45,8 +52,8 @@ export function StorageStep() {
       const nextSystems = current.storageSystems.map((sys) => (sys.id === id ? { ...sys, ...patch } : sys))
 
       // Snapshot class is packaged per site; keep guardrails stable by keying off the primary site.
-      const primarySite = getSiteStorage(s, 'primary')
-      const primaryArray = primarySite.storageSystems[0]
+      const primaryArray =
+        site === 'primary' ? nextSystems[0] : getSiteStorage(s, 'primary').storageSystems[0]
       const snapshotClass =
         s.snapshotClass.immutable && !supportsImmutableSnapshots(primaryArray)
           ? { ...s.snapshotClass, immutable: false }
@@ -152,16 +159,24 @@ export function StorageStep() {
             >
               <input value={sys.name} onChange={(e) => updateSys(sys.id, { name: e.target.value })} />
             </Field>
-            <Field
-              label="Storage family"
-              hint="VSP / VSP One Block vs VSP One SDS Block — changes StorageClass shape later."
-            >
+            <Field label="Storage family" hint={storageFamilyHint(sys.family)}>
               <select
                 value={sys.family}
-                onChange={(e) => updateSys(sys.id, { family: e.target.value as StorageFamily })}
+                onChange={(e) => {
+                  const family = e.target.value as StorageFamily
+                  updateSys(sys.id, {
+                    family,
+                    alternativeCloneMode: supportsAlternativeCloneMode(family)
+                      ? sys.alternativeCloneMode
+                      : false,
+                  })
+                }}
               >
-                <option value="vsp">VSP family / VSP One Block</option>
-                <option value="vsp-one-sds-block">VSP One SDS Block</option>
+                {STORAGE_FAMILIES.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Serial number" hint="Required for standard StorageClasses." error={sysErrors.serial}>
@@ -173,7 +188,7 @@ export function StorageStep() {
             </Field>
             <Field
               label="REST URL"
-              hint="Controller / SVP URL. Use service IP for VSP One B20 / Block High End. IPv4 only (80/443)."
+              hint={storageRestUrlHint(sys.family)}
             >
               <input
                 value={sys.url}
@@ -194,7 +209,7 @@ export function StorageStep() {
                 onChange={(e) => updateSys(sys.id, { password: e.target.value })}
               />
             </Field>
-            {replicationOn && sys.hrpcPair && sys.family !== 'vsp-one-sds-block' && (
+            {replicationOn && sys.hrpcPair && !isSdsBlockFamily(sys.family) && (
               <Field
                 label="Resource group ID (optional)"
                 hint="If you use resource partitioning, set this on both sites’ Replication arrays. IDs are per array and do not need to match. CSI Driver and Replication use the same ID on this array."
@@ -225,39 +240,7 @@ export function StorageStep() {
             )}
           </div>
 
-          {sys.family === 'vsp' && (
-            <div style={{ marginTop: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={!!sys.isB20Series}
-                  onChange={(e) => updateSys(sys.id, { isB20Series: e.target.checked })}
-                />
-                <div>
-                  <strong>VSP One Block 20 series</strong>
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                    Disables &quot;Disabled&quot; storage efficiency (defaults to CompressionDeduplication).
-                    Enables immutable snapshots.
-                  </p>
-                </div>
-              </label>
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={!!sys.isHighEnd}
-                  onChange={(e) => updateSys(sys.id, { isHighEnd: e.target.checked })}
-                />
-                <div>
-                  <strong>VSP One Block High End</strong>
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                    Enables immutable snapshots (and other High End capabilities such as expandable clones).
-                  </p>
-                </div>
-              </label>
-            </div>
-          )}
-
-          {sys.family === 'vsp-one-sds-block' && (
+          {isSdsBlockFamily(sys.family) && (
             <>
               <Callout>
                 SDS Block StorageClasses use <code>storageType: vsp-one-sds-block</code> and do not set
@@ -280,7 +263,7 @@ export function StorageStep() {
                   placeholder="88,81"
                 />
               </Field>
-              {!(replicationOn && sys.hrpcPair && sys.family !== 'vsp-one-sds-block') && (
+              {!(replicationOn && sys.hrpcPair && !isSdsBlockFamily(sys.family)) && (
                 <Field
                   label="Resource group ID (optional)"
                   hint="Required only if the user can access multiple resource groups."
@@ -295,7 +278,7 @@ export function StorageStep() {
               )}
             </div>
 
-            {sys.family === 'vsp' && (
+            {supportsAlternativeCloneMode(sys.family) && (
               <div style={{ marginTop: '0.85rem' }}>
                 <label className="toggle-row">
                   <input
@@ -306,15 +289,15 @@ export function StorageStep() {
                   <div>
                     <strong>Alternative clone mode</strong>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                      VSP One Block High End / 20 series only. Enables expandable clones from a retained base
-                      volume.
+                      VSP One Block High End (B85) / 20 Series only. Enables expandable clones from a retained
+                      base volume.
                     </p>
                   </div>
                 </label>
               </div>
             )}
 
-            {sys.family === 'vsp-one-sds-block' && (
+            {isSdsBlockFamily(sys.family) && (
               <label className="toggle-row" style={{ marginTop: '0.85rem' }}>
                 <input
                   type="checkbox"

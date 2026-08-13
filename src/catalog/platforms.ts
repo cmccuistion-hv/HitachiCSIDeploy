@@ -7,7 +7,85 @@ export type NodeEnvironment = 'bare-metal' | 'virtual-machine'
 /** OpenShift/ROSA control plane — drives multipath delivery (MachineConfig vs DaemonSet) */
 export type OpenShiftTopology = 'classic' | 'hosted'
 export type MultipathDelivery = 'machineconfig' | 'daemonset' | 'conf' | 'none'
-export type StorageFamily = 'vsp' | 'vsp-one-sds-block'
+/** CSI-relevant model family. VSP / VSP One Block share one StorageClass shape; SDS Block is the other. */
+export type StorageFamily =
+  | 'vsp-5000-g-e-f'
+  | 'vsp-one-block-20'
+  | 'vsp-one-block-high-end'
+  | 'vsp-one-sds-block'
+
+export const STORAGE_FAMILIES: { id: StorageFamily; label: string }[] = [
+  { id: 'vsp-5000-g-e-f', label: 'VSP 5000 / G / E / F' },
+  { id: 'vsp-one-block-20', label: 'VSP One Block 20 Series' },
+  { id: 'vsp-one-block-high-end', label: 'VSP One Block High End (B85)' },
+  { id: 'vsp-one-sds-block', label: 'VSP One SDS Block' },
+]
+
+export function isSdsBlockFamily(family: StorageFamily): boolean {
+  return family === 'vsp-one-sds-block'
+}
+
+export function isVspOneBlock20(family?: StorageFamily): boolean {
+  return family === 'vsp-one-block-20'
+}
+
+export function supportsAlternativeCloneMode(family: StorageFamily): boolean {
+  return family === 'vsp-one-block-20' || family === 'vsp-one-block-high-end'
+}
+
+export function storageFamilyHint(family: StorageFamily): string {
+  switch (family) {
+    case 'vsp-5000-g-e-f':
+      return 'VSP 5000 series, E series, and G/F 350–900. Same StorageClass shape as VSP One Block. Pool, ports, and type are set on the StorageClasses step.'
+    case 'vsp-one-block-20':
+      return 'Cannot use Disabled storage efficiency (defaults to CompressionDeduplication). Enables immutable snapshots. Use the service IP for REST.'
+    case 'vsp-one-block-high-end':
+      return 'Enables immutable snapshots and expandable clones. Use the service IP for REST. Pool, ports, and type are set on the StorageClasses step.'
+    case 'vsp-one-sds-block':
+      return 'Different StorageClass shape (storageType: vsp-one-sds-block) — no serial/pool/port on the SC.'
+  }
+}
+
+export function storageRestUrlHint(family: StorageFamily): string {
+  switch (family) {
+    case 'vsp-5000-g-e-f':
+      return 'SVP IP for VSP 5000 series; controller IP for G/E/F. IPv4 only (80/443).'
+    case 'vsp-one-block-20':
+    case 'vsp-one-block-high-end':
+      return 'Use the service IP. IPv4 only (80/443).'
+    case 'vsp-one-sds-block':
+      return 'SDS Block REST URL. IPv4 only (80/443).'
+  }
+}
+
+/** Map saved configs that used family `vsp` plus B20 / High End checkboxes. */
+export function migrateStorageFamily(
+  family: string | undefined,
+  flags?: { isB20Series?: boolean; isHighEnd?: boolean },
+): StorageFamily {
+  if (
+    family === 'vsp-5000-g-e-f' ||
+    family === 'vsp-one-block-20' ||
+    family === 'vsp-one-block-high-end' ||
+    family === 'vsp-one-sds-block'
+  ) {
+    return family
+  }
+  if (flags?.isB20Series) return 'vsp-one-block-20'
+  if (flags?.isHighEnd) return 'vsp-one-block-high-end'
+  return 'vsp-5000-g-e-f'
+}
+
+export function migrateStorageSystemFamily<
+  T extends { family?: string; isB20Series?: boolean; isHighEnd?: boolean },
+>(sys: T): Omit<T, 'isB20Series' | 'isHighEnd'> & { family: StorageFamily } {
+  const { isB20Series, isHighEnd, ...rest } = sys
+  return {
+    ...rest,
+    family: migrateStorageFamily(sys.family, { isB20Series, isHighEnd }),
+  }
+}
+
 export type StorageClassKind = 'standard' | 'stretched' | 'stretched-adr' | 'vsp-one-sds-block'
 export type StorageEfficiency = 'Disabled' | 'Compression' | 'CompressionDeduplication'
 export type StorageEfficiencyMode = 'Inline' | 'PostProcess'
@@ -245,12 +323,8 @@ devices {
 }
 `
 
-/** Immutable snapshots (retentionPeriod): VSP One B20 series and VSP One Block High End only. */
-export function supportsImmutableSnapshots(sys?: {
-  family: StorageFamily
-  isB20Series?: boolean
-  isHighEnd?: boolean
-}): boolean {
-  if (!sys || sys.family !== 'vsp') return false
-  return !!(sys.isB20Series || sys.isHighEnd)
+/** Immutable snapshots (retentionPeriod): VSP One Block 20 Series and High End (B85) only. */
+export function supportsImmutableSnapshots(sys?: { family: StorageFamily }): boolean {
+  if (!sys) return false
+  return sys.family === 'vsp-one-block-20' || sys.family === 'vsp-one-block-high-end'
 }

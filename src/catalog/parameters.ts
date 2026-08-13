@@ -28,7 +28,7 @@ export const SECRET_FIELDS_STANDARD: FieldDef[] = [
     key: 'url',
     label: 'Storage REST URL',
     description:
-      'Controller / SVP URL. Use service IP for VSP One B20 and VSP One Block High End. Port 80 or 443. IPv4 only.',
+      'Controller / SVP URL. Use service IP for VSP One Block 20 Series and High End (B85). Port 80 or 443. IPv4 only.',
     required: true,
     type: 'string',
     placeholder: 'https://172.16.1.1',
@@ -69,7 +69,7 @@ export const SECRET_FIELDS_STANDARD: FieldDef[] = [
     key: 'alternativeCloneMode',
     label: 'Alternative clone mode',
     description:
-      'Creates a base volume plus a clone presented to the workload. Enables clone expansion and recreate-from-base. VSP One Block High End and VSP One Block 20 series only.',
+      'Creates a base volume plus a clone presented to the workload. Enables clone expansion and recreate-from-base. VSP One Block High End (B85) and VSP One Block 20 Series only.',
     optional: true,
     type: 'boolean',
     defaultValue: false,
@@ -118,7 +118,7 @@ export const SC_FIELDS_STANDARD: FieldDef[] = [
   {
     key: 'storageEfficiency',
     label: 'Storage efficiency',
-    description: 'Adaptive data reduction. VSP One B20 does not support Disabled (default CompressionDeduplication).',
+    description: 'Adaptive data reduction. VSP One Block 20 Series does not support Disabled (default CompressionDeduplication).',
     optional: true,
     type: 'select',
     options: [
