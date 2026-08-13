@@ -112,13 +112,6 @@ export function PlatformStep() {
             </select>
           </Field>
         </div>
-        {plat.operatorHub && (
-          <Callout>
-            On OpenShift, the <strong>CSI Driver</strong> installs via OperatorHub catalogs (OLM). The export
-            includes Subscription manifests; <code>install.sh</code> applies them and approves the day-0
-            InstallPlan (update approval stays Manual).
-          </Callout>
-        )}
       </Section>
 
       <Section title="Worker node environment">

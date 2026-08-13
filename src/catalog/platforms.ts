@@ -25,6 +25,30 @@ export function isSdsBlockFamily(family: StorageFamily): boolean {
   return family === 'vsp-one-sds-block'
 }
 
+/** GAD / Stretched PVC is VSP and VSP One Block only (MK-92ADPTR142). */
+export function supportsStretchedGad(family: StorageFamily): boolean {
+  return !isSdsBlockFamily(family)
+}
+
+export function isStretchedKind(kind: StorageClassKind): boolean {
+  return kind === 'stretched' || kind === 'stretched-adr'
+}
+
+/** StorageClass types valid for the arrays on this site. */
+export function storageClassKindsForSystems(
+  systems: { family: StorageFamily }[],
+): StorageClassKind[] {
+  const vspCount = systems.filter((s) => supportsStretchedGad(s.family)).length
+  const hasSds = systems.some((s) => isSdsBlockFamily(s.family))
+  const kinds: StorageClassKind[] = []
+  if (vspCount > 0) kinds.push('standard')
+  if (vspCount >= 2) {
+    kinds.push('stretched', 'stretched-adr')
+  }
+  if (hasSds) kinds.push('vsp-one-sds-block')
+  return kinds.length ? kinds : ['standard']
+}
+
 export function isVspOneBlock20(family?: StorageFamily): boolean {
   return family === 'vsp-one-block-20'
 }
@@ -42,7 +66,7 @@ export function storageFamilyHint(family: StorageFamily): string {
     case 'vsp-one-block-high-end':
       return 'Enables immutable snapshots and expandable clones. Use the service IP for REST. Pool, ports, and type are set on the StorageClasses step.'
     case 'vsp-one-sds-block':
-      return 'Different StorageClass shape (storageType: vsp-one-sds-block) — no serial/pool/port on the SC.'
+      return 'FC, iSCSI, and NVMe/TCP. REST is IPv4 only (80/443).'
   }
 }
 

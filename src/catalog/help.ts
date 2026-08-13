@@ -30,6 +30,9 @@ export const HELP = {
   resourceGroupId:
     'This Secret’s Resource group ID selects which group on the array CSI Driver provisions into (LDEV IDs, host groups, pool). Required if the storage user can access more than one group. Multiple clusters can share one array by using different IDs.',
 
+  alternativeCloneMode:
+    'This is for creating VMs from a template, or cloning a volume. Those are fast copies on the array — not a full rewrite of the disk. On 20 Series and B85 a fast copy stays tied to the original: it cannot grow larger than the original, and you cannot delete the original while copies exist. This setting makes CSI keep a hidden original for every new volume from this Secret so those copies can grow and be replaced. Cost: about twice the pool space per volume, even if you never copy. Leave it off unless you clone volumes or create VMs from templates.',
+
   csiDriver:
     'The CSI Driver always deploys a controller (provisioning over the array REST API) and a node plugin on each worker (attach). Pods then use the data path — FC, iSCSI, or NVMe — to the volume.',
 

@@ -69,7 +69,7 @@ export const SECRET_FIELDS_STANDARD: FieldDef[] = [
     key: 'alternativeCloneMode',
     label: 'Alternative clone mode',
     description:
-      'Creates a base volume plus a clone presented to the workload. Enables clone expansion and recreate-from-base. VSP One Block High End (B85) and VSP One Block 20 Series only.',
+      'Keeps a hidden original for every new volume so VMs from templates and cloned volumes can grow, and CSI deletes the parent — you do not have to delete clones first. About twice the pool space. VSP One Block High End (B85) and 20 Series only.',
     optional: true,
     type: 'boolean',
     defaultValue: false,

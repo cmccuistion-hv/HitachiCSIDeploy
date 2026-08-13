@@ -979,6 +979,12 @@ textarea {
   background: var(--hv-bg-elevated);
 }
 
+.toggle-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .toggle-row-head {
   display: flex;
   align-items: flex-start;
@@ -1478,7 +1484,7 @@ textarea {
 
 .help-tip-popover.has-diagram {
   pointer-events: auto;
-  max-height: min(90vh, 560px);
+  max-height: min(90vh, 720px);
   overflow: auto;
 }
 
@@ -1656,6 +1662,117 @@ textarea {
   fill: color-mix(in srgb, var(--hv-info) 12%, var(--hv-bg-elevated));
   stroke: color-mix(in srgb, var(--hv-info) 50%, var(--hv-border));
   stroke-width: 1.15;
+}
+
+.acm-without > rect {
+  fill: color-mix(in srgb, var(--hv-warning) 12%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-warning) 42%, var(--hv-border));
+}
+
+.acm-with > rect {
+  fill: color-mix(in srgb, var(--hv-positive) 12%, var(--hv-bg-elevated));
+  stroke: color-mix(in srgb, var(--hv-positive) 42%, var(--hv-border));
+}
+
+.acm-packet {
+  fill: color-mix(in srgb, var(--hv-primary) 70%, var(--hv-info));
+}
+
+.acm-grow {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: acm-grow 10s ease-in-out infinite;
+}
+
+.acm-delete-clone {
+  animation: acm-delete-clone 10s ease-in-out infinite;
+}
+
+.acm-delete-parent {
+  animation: acm-delete-parent 10s ease-in-out infinite;
+}
+
+.acm-later-expand,
+.acm-later-recreate {
+  animation: acm-panel-focus 10s ease-in-out infinite;
+}
+
+.acm-later-recreate {
+  animation-delay: 5s;
+}
+
+.acm-packet-expand {
+  animation: acm-packet-phase 10s ease-in-out infinite;
+}
+
+@keyframes acm-grow {
+  0%,
+  8% {
+    transform: scaleY(1);
+  }
+  22%,
+  38% {
+    transform: scaleY(1.28);
+  }
+  48%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes acm-delete-clone {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  58%,
+  82% {
+    opacity: 0.18;
+  }
+  92%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes acm-delete-parent {
+  0%,
+  58% {
+    opacity: 1;
+  }
+  66%,
+  82% {
+    opacity: 0.18;
+  }
+  92%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes acm-panel-focus {
+  0%,
+  42% {
+    opacity: 1;
+  }
+  50%,
+  92% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes acm-packet-phase {
+  0%,
+  42% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .welcome-dialog {
@@ -2000,6 +2117,21 @@ textarea {
 
   .topo-packets {
     display: none;
+  }
+
+  .acm-packet {
+    display: none;
+  }
+
+  .acm-grow,
+  .acm-delete-clone,
+  .acm-delete-parent,
+  .acm-later-expand,
+  .acm-later-recreate,
+  .acm-packet-expand {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }
 
