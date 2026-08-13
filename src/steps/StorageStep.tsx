@@ -23,7 +23,6 @@ function newSystem(n: number): StorageSystemConfig {
   return {
     id: `storage-${n}`,
     name: n === 1 ? 'primary' : `array-${n}`,
-    family: 'vsp-5000-g-e-f',
     serial: '',
     url: '',
     user: '',
@@ -163,9 +162,13 @@ export function StorageStep() {
             >
               <input value={sys.name} onChange={(e) => updateSys(sys.id, { name: e.target.value })} />
             </Field>
-            <Field label="Storage family" hint={storageFamilyHint(sys.family)}>
+            <Field
+              label="Storage family"
+              hint={storageFamilyHint(sys.family)}
+              error={sysErrors.family}
+            >
               <select
-                value={sys.family}
+                value={sys.family || ''}
                 onChange={(e) => {
                   const family = e.target.value as StorageFamily
                   updateSys(sys.id, {
@@ -179,6 +182,9 @@ export function StorageStep() {
                   })
                 }}
               >
+                <option value="" disabled hidden>
+                  Select your storage family…
+                </option>
                 {STORAGE_FAMILIES.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.label}
@@ -186,7 +192,7 @@ export function StorageStep() {
                 ))}
               </select>
             </Field>
-            {!isSdsBlockFamily(sys.family) && (
+            {!!sys.family && !isSdsBlockFamily(sys.family) && (
             <Field label="Serial number" hint="From the VSP storage system." error={sysErrors.serial}>
               <input
                 value={sys.serial}
@@ -218,7 +224,7 @@ export function StorageStep() {
                 onChange={(e) => updateSys(sys.id, { password: e.target.value })}
               />
             </Field>
-            {replicationOn && sys.hrpcPair && !isSdsBlockFamily(sys.family) && (
+            {replicationOn && sys.hrpcPair && !!sys.family && !isSdsBlockFamily(sys.family) && (
               <Field
                 label="Resource group ID (optional)"
                 hint="If you use resource partitioning, set this on both sites’ Replication arrays. IDs are per array and do not need to match. CSI Driver and Replication use the same ID on this array."
@@ -231,7 +237,7 @@ export function StorageStep() {
                 />
               </Field>
             )}
-            {!(replicationOn && sys.hrpcPair) && !isSdsBlockFamily(sys.family) && (
+            {!(replicationOn && sys.hrpcPair) && !!sys.family && !isSdsBlockFamily(sys.family) && (
               <Field
                 label="Stretched / GAD role"
                 help={HELP.gad.role}
@@ -267,7 +273,7 @@ export function StorageStep() {
                   placeholder="88,81"
                 />
               </Field>
-              {!isSdsBlockFamily(sys.family) && !(replicationOn && sys.hrpcPair) && (
+              {!!sys.family && !isSdsBlockFamily(sys.family) && !(replicationOn && sys.hrpcPair) && (
                 <Field
                   label="Resource group ID (optional)"
                   hint="Required only if the user can access multiple resource groups."

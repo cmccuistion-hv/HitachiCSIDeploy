@@ -6,12 +6,13 @@
 import { STORAGE_FAMILIES, type StorageFamily } from '../catalog/platforms'
 
 export type GadArrayInfo = {
-  family: StorageFamily
+  family?: StorageFamily
   serial: string
   url: string
 }
 
-function familyLabel(family: StorageFamily): string {
+function familyLabel(family?: StorageFamily): string {
+  if (!family) return 'Family —'
   return STORAGE_FAMILIES.find((f) => f.id === family)?.label ?? family
 }
 

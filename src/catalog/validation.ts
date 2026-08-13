@@ -226,10 +226,26 @@ export function validateStorageSystem(
   else if (siblings.some((o) => o.id !== sys.id && t(o.name) === t(sys.name))) {
     errors.name = 'This array name is already used on this site.'
   }
+  if (!sys.family) errors.family = 'Select a storage family.'
   if (t(sys.serial) && siblings.some((o) => o.id !== sys.id && t(o.serial) === t(sys.serial))) {
     errors.serial = 'This serial number is already used on this site.'
   }
   return errors
+}
+
+function siteMissingFamily(
+  systems: StorageSystemConfig[],
+  site?: SiteId,
+): WizardFix | null {
+  if (!systems.some((s) => !s.family)) return null
+  if (site === 'secondary') {
+    return wizardFix(
+      'Open the Secondary site tab and select a storage family for each array.',
+      'storage',
+      'secondary',
+    )
+  }
+  return wizardFix('Select a storage family for each array.', 'storage', site)
 }
 
 function siteHasDuplicateNames(systems: StorageSystemConfig[], classes: StorageClassConfig[]): string | null {
@@ -303,6 +319,7 @@ function replicationArrayMissingFields(
     )
   }
   const missing: string[] = []
+  if (!sys.family) missing.push('storage family')
   if (!t(sys.serial)) missing.push('serial number')
   if (!t(sys.url)) missing.push('REST URL')
   if (!t(sys.user)) missing.push('username')
@@ -356,6 +373,11 @@ function validateHrpcReplicationArraysFix(state: WizardState): WizardFix | null 
     }
   }
 
+  const missPrimary = siteMissingFamily(primary.storageSystems, 'primary')
+  if (missPrimary) return missPrimary
+  const missSecondary = siteMissingFamily(secondary.storageSystems, 'secondary')
+  if (missSecondary) return missSecondary
+
   const dupPrimary = siteHasDuplicateNames(primary.storageSystems, primary.storageClasses)
   if (dupPrimary) return wizardFix(dupPrimary, 'storage', 'primary')
   const dupSecondary = siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses)
@@ -380,6 +402,8 @@ export function storageSystemsContinueInvalidFix(state: WizardState): WizardFix 
   if (state.components.replication) {
     return validateHrpcReplicationArraysFix(state)
   }
+  const missingFamily = siteMissingFamily(state.storageSystems || [])
+  if (missingFamily) return missingFamily
   const dup = siteHasDuplicateNames(state.storageSystems || [], state.storageClasses || [])
   return dup ? wizardFix(dup, 'storage') : null
 }

@@ -21,13 +21,13 @@ export const STORAGE_FAMILIES: { id: StorageFamily; label: string }[] = [
   { id: 'vsp-5000-g-e-f', label: 'VSP 5000 / G / E / F' },
 ]
 
-export function isSdsBlockFamily(family: StorageFamily): boolean {
+export function isSdsBlockFamily(family?: StorageFamily): boolean {
   return family === 'vsp-one-sds-block'
 }
 
 /** GAD / Stretched PVC is VSP and VSP One Block only (MK-92ADPTR142). */
-export function supportsStretchedGad(family: StorageFamily): boolean {
-  return !isSdsBlockFamily(family)
+export function supportsStretchedGad(family?: StorageFamily): boolean {
+  return !!family && !isSdsBlockFamily(family)
 }
 
 export function isStretchedKind(kind: StorageClassKind): boolean {
@@ -43,7 +43,7 @@ export function stretchedSecretPackagePath(secretName: string): string {
 }
 
 type GadRoleSystem = {
-  family: StorageFamily
+  family?: StorageFamily
   stretchedRole?: 'primary' | 'secondary' | 'none'
 }
 
@@ -84,11 +84,11 @@ export function isVspOneBlock20(family?: StorageFamily): boolean {
   return family === 'vsp-one-block-20'
 }
 
-export function supportsAlternativeCloneMode(family: StorageFamily): boolean {
+export function supportsAlternativeCloneMode(family?: StorageFamily): boolean {
   return family === 'vsp-one-block-20' || family === 'vsp-one-block-high-end'
 }
 
-export function storageFamilyHint(family: StorageFamily): string {
+export function storageFamilyHint(family?: StorageFamily): string {
   switch (family) {
     case 'vsp-5000-g-e-f':
       return 'VSP 5000 series, E series, and G/F 350–900. Same StorageClass shape as VSP One Block. Pool, ports, and type are set on the StorageClasses step.'
@@ -98,10 +98,12 @@ export function storageFamilyHint(family: StorageFamily): string {
       return 'Enables immutable snapshots and expandable clones. Use the service IP for REST. Pool, ports, and type are set on the StorageClasses step.'
     case 'vsp-one-sds-block':
       return 'FC, iSCSI, and NVMe/TCP. REST is IPv4 only (80/443).'
+    default:
+      return 'Choose the array model. Serial, GAD, and StorageClass options follow this choice.'
   }
 }
 
-export function storageRestUrlHint(family: StorageFamily): string {
+export function storageRestUrlHint(family?: StorageFamily): string {
   switch (family) {
     case 'vsp-5000-g-e-f':
       return 'SVP IP for VSP 5000 series; controller IP for G/E/F. IPv4 only (80/443).'
@@ -110,6 +112,8 @@ export function storageRestUrlHint(family: StorageFamily): string {
       return 'Use the service IP. IPv4 only (80/443).'
     case 'vsp-one-sds-block':
       return 'SDS Block REST URL. IPv4 only (80/443).'
+    default:
+      return 'Array REST API URL. IPv4 only (80/443). Format depends on the storage family.'
   }
 }
 
@@ -117,7 +121,7 @@ export function storageRestUrlHint(family: StorageFamily): string {
 export function migrateStorageFamily(
   family: string | undefined,
   flags?: { isB20Series?: boolean; isHighEnd?: boolean },
-): StorageFamily {
+): StorageFamily | undefined {
   if (
     family === 'vsp-5000-g-e-f' ||
     family === 'vsp-one-block-20' ||
@@ -128,17 +132,16 @@ export function migrateStorageFamily(
   }
   if (flags?.isB20Series) return 'vsp-one-block-20'
   if (flags?.isHighEnd) return 'vsp-one-block-high-end'
-  return 'vsp-5000-g-e-f'
+  if (family === 'vsp') return 'vsp-5000-g-e-f'
+  return undefined
 }
 
 export function migrateStorageSystemFamily<
   T extends { family?: string; isB20Series?: boolean; isHighEnd?: boolean },
->(sys: T): Omit<T, 'isB20Series' | 'isHighEnd'> & { family: StorageFamily } {
-  const { isB20Series, isHighEnd, ...rest } = sys
-  return {
-    ...rest,
-    family: migrateStorageFamily(sys.family, { isB20Series, isHighEnd }),
-  }
+>(sys: T): Omit<T, 'isB20Series' | 'isHighEnd' | 'family'> & { family?: StorageFamily } {
+  const { isB20Series, isHighEnd, family: rawFamily, ...rest } = sys
+  const family = migrateStorageFamily(rawFamily, { isB20Series, isHighEnd })
+  return family ? { ...rest, family } : rest
 }
 
 export type StorageClassKind = 'standard' | 'stretched' | 'stretched-adr' | 'vsp-one-sds-block'
@@ -379,7 +382,7 @@ devices {
 `
 
 /** Immutable snapshots (retentionPeriod): VSP One Block 20 Series and High End (B85) only. */
-export function supportsImmutableSnapshots(sys?: { family: StorageFamily }): boolean {
+export function supportsImmutableSnapshots(sys?: { family?: StorageFamily }): boolean {
   if (!sys) return false
   return sys.family === 'vsp-one-block-20' || sys.family === 'vsp-one-block-high-end'
 }

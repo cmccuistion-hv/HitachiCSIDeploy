@@ -25,7 +25,7 @@ export type {
 export interface StorageSystemConfig {
   id: string
   name: string
-  family: StorageFamily
+  family?: StorageFamily
   serial: string
   url: string
   user: string
@@ -277,7 +277,6 @@ export function createDefaultState(): WizardState {
       {
         id: 'storage-1',
         name: 'primary',
-        family: 'vsp-5000-g-e-f',
         serial: '',
         url: '',
         user: '',
