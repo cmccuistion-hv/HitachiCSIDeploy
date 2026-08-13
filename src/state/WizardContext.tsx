@@ -27,6 +27,7 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
+import { migrateMetricsConfig } from './migrateMetrics'
 import { STEPS_BASE, type VisibleStep } from './steps'
 import { persistSiteTabFocus } from './siteTabFocus'
 
