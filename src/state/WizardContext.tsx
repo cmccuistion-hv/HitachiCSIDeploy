@@ -14,7 +14,7 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
-import { ensureSitesForReplication, type SiteId } from '../catalog/sites'
+import { ensureSitesForReplication, resolvedStorageClassName, type SiteId } from '../catalog/sites'
 import type { WizardFix } from '../catalog/validation'
 import {
   PLATFORMS,
@@ -164,6 +164,10 @@ function loadState(): WizardState {
     if (merged.components.replication) {
       merged = ensureSitesForReplication(merged)
     }
+    merged.quickstart = {
+      ...merged.quickstart,
+      storageClassName: resolvedStorageClassName(merged),
+    }
     return merged
   } catch {
     return createDefaultState()
@@ -245,6 +249,20 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     state.components.disasterRecovery,
     state.components.metrics,
     state.components.replication,
+  ])
+
+  // Keep the saved PVC StorageClass name in the live class list (rename / delete / site switch).
+  useEffect(() => {
+    setState((s) => {
+      const next = resolvedStorageClassName(s)
+      if ((s.quickstart.storageClassName || '').trim() === next) return s
+      return { ...s, quickstart: { ...s.quickstart, storageClassName: next } }
+    })
+  }, [
+    state.storageClassesEnabled,
+    state.components.replication,
+    state.storageClasses,
+    state.sites,
   ])
 
   const visibleSteps = useMemo((): VisibleStep[] => {

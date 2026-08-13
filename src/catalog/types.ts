@@ -65,6 +65,7 @@ export interface StorageClassConfig {
   // Stretched / GAD
   quorumID?: string
   copyGroupName?: string
+  copyPairName?: string
   consistencyGroupId?: string
   primaryPoolID?: string
   primaryPortID?: string
@@ -72,6 +73,8 @@ export interface StorageClassConfig {
   secondaryPortID?: string
   /** Link to stretched secret name */
   stretchedSecretName?: string
+  /** Optional GAD virtual storage machine serial on the stretched Secret */
+  virtualStorageSerialNumber?: string
 }
 
 export type SiteId = 'primary' | 'secondary'

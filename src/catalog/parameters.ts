@@ -88,7 +88,7 @@ export const SECRET_FIELDS_STRETCHED: FieldDef[] = [
   {
     key: 'virtualStorageSerialNumber',
     label: 'Virtual storage serial',
-    description: 'Virtual storage machine serial used for GAD / stretched volumes.',
+    description: 'Optional GAD virtual storage machine serial. Same value at both arrays. Use a new stretched Secret for a different VSM.',
     optional: true,
     type: 'string',
   },
@@ -186,12 +186,20 @@ export const SC_FIELDS_STANDARD: FieldDef[] = [
 export const SC_FIELDS_STRETCHED: FieldDef[] = [
   { key: 'name', label: 'StorageClass name', description: 'Kubernetes StorageClass metadata.name', required: true, type: 'string', defaultValue: 'hitachi-csi-stretched' },
   { key: 'quorumID', label: 'Quorum ID', description: 'Quorum disk ID for GAD', required: true, type: 'string' },
-  { key: 'copyGroupName', label: 'Copy group name', description: 'GAD copy group name', required: true, type: 'string', defaultValue: 'spc-cpg1' },
-  { key: 'consistencyGroupId', label: 'Consistency group ID', description: 'Consistency group identifier', required: true, type: 'string' },
+  { key: 'copyGroupName', label: 'Copy group name', description: 'Must start with spc, 1–29 characters', required: true, type: 'string', defaultValue: 'spc-cpg1' },
+  { key: 'copyPairName', label: 'Copy pair name', description: 'Optional. Must start with spc, 1–31 characters. One GAD pair per StorageClass.', optional: true, type: 'string' },
+  { key: 'consistencyGroupId', label: 'Consistency group ID', description: 'Decimal consistency group ID', required: true, type: 'string', defaultValue: '1' },
   { key: 'primaryPoolID', label: 'Primary pool ID', description: 'Pool on the primary array', required: true, type: 'string' },
   { key: 'primaryPortID', label: 'Primary port ID(s)', description: 'Comma-separated primary ports', required: true, type: 'string', placeholder: 'CL1-A,CL2-A' },
   { key: 'secondaryPoolID', label: 'Secondary pool ID', description: 'Pool on the secondary array', required: true, type: 'string' },
   { key: 'secondaryPortID', label: 'Secondary port ID(s)', description: 'Comma-separated secondary ports', required: true, type: 'string', placeholder: 'CL1-F' },
+  {
+    key: 'virtualStorageSerialNumber',
+    label: 'Virtual storage serial',
+    description: 'Optional GAD VSM serial on the stretched Secret. Same at both arrays. New Secret for a different VSM.',
+    optional: true,
+    type: 'string',
+  },
 ]
 
 export const SC_FIELDS_SDS: FieldDef[] = [

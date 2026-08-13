@@ -67,6 +67,7 @@ function defaultSc(
   if (kind === 'stretched' || kind === 'stretched-adr') {
     base.stretchedSecretName = 'hitachi-csi-secret-stretched'
     base.copyGroupName = 'spc-cpg1'
+    base.consistencyGroupId = '1'
   }
   return base
 }
@@ -206,22 +207,29 @@ export function StorageClassesStep() {
   const updateSc = (id: string, patch: Partial<StorageClassConfig>) => {
     setState((s) => {
       if (!s.components.replication) {
+        const prev = s.storageClasses.find((sc) => sc.id === id)
+        const nextClasses = s.storageClasses.map((sc) => {
+          if (sc.id !== id) return sc
+          const next = { ...sc, ...patch }
+          if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
+            next.allowVolumeExpansion = false
+          }
+          const allowed = connectionsForStorageClassKind(next.kind, s.nodeEnvironment)
+          next.connectionType = coerceConnectionType(next.connectionType, allowed)
+          return next
+        })
+        const nextScName =
+          patch.name !== undefined &&
+          prev &&
+          (s.quickstart.storageClassName || '').trim() === (prev.name || '').trim()
+            ? patch.name
+            : s.quickstart.storageClassName
         return {
           ...s,
-          storageClasses: s.storageClasses.map((sc) => {
-            if (sc.id !== id) return sc
-            const next = { ...sc, ...patch }
-            if (next.kind === 'stretched' || next.kind === 'stretched-adr') {
-              next.allowVolumeExpansion = false
-            }
-            const allowed = connectionsForStorageClassKind(next.kind, s.nodeEnvironment)
-            next.connectionType = coerceConnectionType(next.connectionType, allowed)
-            return next
-          }),
+          storageClasses: nextClasses,
           quickstart: {
             ...s.quickstart,
-            storageClassName:
-              s.storageClasses[0]?.id === id && patch.name ? patch.name : s.quickstart.storageClassName,
+            storageClassName: nextScName,
           },
         }
       }
@@ -272,9 +280,18 @@ export function StorageClassesStep() {
 
       const primary = patchOne(getSiteStorage(ensured, 'primary'))
       const secondary = patchOne(getSiteStorage(ensured, 'secondary'))
+      const nextScName =
+        patch.name !== undefined &&
+        (ensured.quickstart.storageClassName || '').trim() === (sc.name || '').trim()
+          ? patch.name
+          : ensured.quickstart.storageClassName
       return {
         ...ensured,
         sites: { primary, secondary },
+        quickstart: {
+          ...ensured.quickstart,
+          storageClassName: nextScName,
+        },
       }
     })
   }
@@ -539,6 +556,8 @@ export function StorageClassesStep() {
             errors.secretName ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.stretchedSecretName : undefined) ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyGroupName : undefined) ||
+            (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyPairName : undefined) ||
+            (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.virtualStorageSerialNumber : undefined) ||
             (efficiencyBlocked
               ? 'VSP One Block 20 Series does not support Disabled storage efficiency. Use Compression or Compression + Deduplication.'
               : undefined)
@@ -755,7 +774,7 @@ export function StorageClassesStep() {
                     <>
                       <Field
                         label="Stretched secret name"
-                        hint="Secret that holds primary and secondary array credentials."
+                        hint="Secret that holds primary and secondary array credentials. Create a new Secret for a different VSM."
                         error={errors.stretchedSecretName}
                       >
                         <input
@@ -764,13 +783,35 @@ export function StorageClassesStep() {
                         />
                       </Field>
                       <Field
+                        label="Virtual storage serial"
+                        hint="Optional VSM serial (same on both arrays). Leave blank if you are not targeting a VSM."
+                        error={errors.virtualStorageSerialNumber}
+                      >
+                        <input
+                          value={sc.virtualStorageSerialNumber || ''}
+                          onChange={(e) => updateSc(sc.id, { virtualStorageSerialNumber: e.target.value })}
+                          placeholder="33333"
+                        />
+                      </Field>
+                      <Field
                         label="Copy group name"
-                        hint="GAD copy group name on the arrays."
+                        hint="Must start with spc, 1–29 characters. CSI rejects a missing prefix."
                         error={errors.copyGroupName}
                       >
                         <input
                           value={sc.copyGroupName || ''}
                           onChange={(e) => updateSc(sc.id, { copyGroupName: e.target.value })}
+                        />
+                      </Field>
+                      <Field
+                        label="Copy pair name"
+                        hint="Optional. Must start with spc, 1–31 characters. One GAD pair per StorageClass; leave blank to let CSI choose."
+                        error={errors.copyPairName}
+                      >
+                        <input
+                          value={sc.copyPairName || ''}
+                          onChange={(e) => updateSc(sc.id, { copyPairName: e.target.value })}
+                          placeholder="spc-cpp"
                         />
                       </Field>
                     </>
@@ -894,8 +935,16 @@ export function StorageClassesStep() {
                     <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
                       <input value={sc.quorumID || ''} onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })} />
                     </Field>
-                    <Field label="Consistency group ID" hint="Consistency group identifier for coordinated pairs." error={errors.consistencyGroupId}>
-                      <input value={sc.consistencyGroupId || ''} onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })} />
+                    <Field
+                      label="Consistency group ID"
+                      hint="Decimal number (for example 1). Applied with a custom copy group name."
+                      error={errors.consistencyGroupId}
+                    >
+                      <input
+                        value={sc.consistencyGroupId || ''}
+                        onChange={(e) => updateSc(sc.id, { consistencyGroupId: e.target.value })}
+                        placeholder="1"
+                      />
                     </Field>
                     <Field label="Primary pool ID" hint="HDP pool on the primary array." error={errors.primaryPoolID}>
                       <input value={sc.primaryPoolID || ''} onChange={(e) => updateSc(sc.id, { primaryPoolID: e.target.value })} />

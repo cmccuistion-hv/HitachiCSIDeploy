@@ -12,6 +12,7 @@ import {
   SDS_BLOCK_CONNECTIONS,
   STRETCHED_CONNECTIONS,
   coerceConnectionType,
+  stretchedSecretPackagePath,
 } from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
 import { generateMultipathMachineConfigs, getMultipathConf, expectedMultipathMachineConfigNames } from './multipath'
@@ -32,7 +33,7 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { effectiveSerialNumber } from '../catalog/validation'
-import { ensureSitesForReplication, getSiteStorage } from '../catalog/sites'
+import { ensureSitesForReplication, getSiteStorage, resolvedStorageClassName } from '../catalog/sites'
 import type { SiteId } from '../catalog/sites'
 
 export interface GeneratedFile {
@@ -96,7 +97,7 @@ export function generateStretchedSecret(
   secondary: StorageSystemConfig,
   name: string,
   namespace: string,
-  virtualSerial?: string,
+  opts?: { virtualSerial?: string; alternativeCloneMode?: boolean },
 ): string {
   const lines = [
     `  primarySerial: ${JSON.stringify(primary.serial)}`,
@@ -108,7 +109,9 @@ export function generateStretchedSecret(
     `  secondaryUser: ${secondary.user}`,
     `  secondaryPassword: ${secondary.password}`,
   ]
+  const virtualSerial = (opts?.virtualSerial || '').trim()
   if (virtualSerial) lines.push(`  virtualStorageSerialNumber: ${JSON.stringify(virtualSerial)}`)
+  if (opts?.alternativeCloneMode) lines.push(`  alternativeCloneMode: "true"`)
   return `apiVersion: v1
 kind: Secret
 metadata:
@@ -155,6 +158,7 @@ export function generateStorageClass(sc: StorageClassConfig): string {
     params.push(`  replicationType: stretched`)
     if (sc.quorumID) params.push(`  quorumID: ${JSON.stringify(sc.quorumID)}`)
     if (sc.copyGroupName) params.push(`  copyGroupName: ${JSON.stringify(sc.copyGroupName)}`)
+    if (sc.copyPairName) params.push(`  copyPairName: ${JSON.stringify(sc.copyPairName)}`)
     if (sc.consistencyGroupId) params.push(`  consistencyGroupId: ${JSON.stringify(sc.consistencyGroupId)}`)
     if (sc.primaryPoolID) params.push(`  primaryPoolID: ${JSON.stringify(sc.primaryPoolID)}`)
     if (sc.primaryPortID) params.push(`  primaryPortID: ${sc.primaryPortID}`)
@@ -698,8 +702,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
   if (state.components.replication) {
     const hrpcBase = `https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/${state.versions.replication}`
     const drScName =
-      (state.storageClassesEnabled && state.storageClasses[0]?.name?.trim()) ||
-      state.quickstart.storageClassName?.trim() ||
+      (state.storageClassesEnabled && resolvedStorageClassName(state)) ||
       'hitachi-csi'
     lines.push(
       '',
@@ -1071,15 +1074,25 @@ multipath -ll
 
   const primary = state.storageSystems.find((s) => s.stretchedRole === 'primary') || state.storageSystems[0]
   const secondary = state.storageSystems.find((s) => s.stretchedRole === 'secondary') || state.storageSystems[1]
-  const needsStretched = state.storageClasses.some((s) => s.kind === 'stretched' || s.kind === 'stretched-adr')
-  if (state.storageClassesEnabled && needsStretched && primary && secondary) {
-    const sc = state.storageClasses.find((s) => s.kind.startsWith('stretched'))!
-    files.push({
-      path: '01-storage/secret-stretched.yaml',
-      content: generateStretchedSecret(primary, secondary, sc.stretchedSecretName || 'hitachi-csi-secret-stretched', sc.secretNamespace),
-      description: 'Stretched / GAD dual-array Secret',
-      group: 'storage',
-    })
+  if (state.storageClassesEnabled && primary && secondary) {
+    const stretched = state.storageClasses.filter((s) => s.kind === 'stretched' || s.kind === 'stretched-adr')
+    const seen = new Set<string>()
+    for (const sc of stretched) {
+      const name = (sc.stretchedSecretName || 'hitachi-csi-secret-stretched').trim()
+      const ns = sc.secretNamespace
+      const key = `${name}\0${ns}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      files.push({
+        path: stretchedSecretPackagePath(name),
+        content: generateStretchedSecret(primary, secondary, name, ns, {
+          virtualSerial: sc.virtualStorageSerialNumber,
+          alternativeCloneMode: !!(primary.alternativeCloneMode || secondary.alternativeCloneMode),
+        }),
+        description: 'Stretched / GAD dual-array Secret',
+        group: 'storage',
+      })
+    }
   }
 
   if (state.storageClassesEnabled) {
@@ -1199,8 +1212,7 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
     const hrpcPaths = templatePaths('hrpc', state.versions.replication)
     const drScName =
       opts?.drScNameOverride?.trim() ||
-      (state.storageClassesEnabled && state.storageClasses[0]?.name?.trim()) ||
-      state.quickstart.storageClassName?.trim() ||
+      (state.storageClassesEnabled && resolvedStorageClassName(state)) ||
       'hitachi-csi'
 
     const certRaw = await fetchFirstAvailable(hrpcPaths.certManager ?? [])
@@ -1361,7 +1373,7 @@ You do not create these Secrets by hand.
   if (state.components.metrics) {
     const cmd = plat.useOc ? 'oc' : 'kubectl'
     const metricsNs = state.metrics.namespace || 'hspc-monitoring-system'
-    const stackSc = state.storageClasses[0]?.name || 'hitachi-csi'
+    const stackSc = resolvedStorageClassName(state)
     const hsppPaths = templatePaths('hspp', state.versions.metrics)
     const stackLines: string[] = []
     let fetchFailed = false
@@ -1459,7 +1471,7 @@ metadata:
       state.metrics.deployPrometheus || state.metrics.deployGrafana
         ? `Notes:
 - Stack manifests are filtered from upstream \`grafana-prometheus-sample.yaml\`.
-- \`storageClassName\` is set to \`${stackSc}\` (first StorageClass in the wizard). Change if needed.
+- \`storageClassName\` is set to \`${stackSc}\` (current StorageClass from this wizard). Change if needed.
 ${
   state.metrics.deployGrafana && !state.metrics.deployPrometheus
     ? `- Grafana datasource points at \`http://${state.consolePlugin.prometheusService}.${state.consolePlugin.prometheusNamespace}.svc:${state.consolePlugin.prometheusPort}\`.`
@@ -1530,7 +1542,10 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
   if (state.storageClassesEnabled) {
     files.push({
       path: '06-quickstart/pvc.yaml',
-      content: generatePvc(state.quickstart),
+      content: generatePvc({
+        ...state.quickstart,
+        storageClassName: resolvedStorageClassName(state),
+      }),
       description: 'Test PVC for first PV',
       group: 'quickstart',
     })
@@ -1566,8 +1581,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
 
   const drScName =
     primaryHrpcStorageClassName(ensured) ||
-    (ensured.storageClassesEnabled && ensured.storageClasses[0]?.name?.trim()) ||
-    ensured.quickstart.storageClassName?.trim() ||
+    (ensured.storageClassesEnabled && resolvedStorageClassName(ensured)) ||
     'hitachi-csi'
 
   const primaryState = stateForSite(ensured, 'primary')

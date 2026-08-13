@@ -3,8 +3,8 @@
  * mapped to generated manifest paths (no READMEs).
  */
 
-import { CONNECTION_TYPES, PLATFORMS } from './platforms'
-import { getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
+import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath } from './platforms'
+import { getSiteStorage, hrpcPairSystem, resolvedStorageClassName, type SiteId } from './sites'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { effectiveSerialNumber } from './validation'
 
@@ -257,7 +257,7 @@ function buildSite(
     const filesForSc = pick(files, [`01-storage/storageclass-${sc.name}.yaml`], prefix)
     const stretched =
       sc.kind === 'stretched' || sc.kind === 'stretched-adr'
-        ? pick(files, ['01-storage/secret-stretched.yaml'], prefix)
+        ? pick(files, [stretchedSecretPackagePath(sc.stretchedSecretName || 'hitachi-csi-secret-stretched')], prefix)
         : []
     addHit({
       id,
@@ -310,7 +310,7 @@ function buildSite(
     addHit({
       id,
       title: 'Test volume',
-      why: `PersistentVolumeClaim ${state.quickstart.pvcName || 'test-pvc'} binds to StorageClass ${state.quickstart.storageClassName || 'hitachi-csi'}; the Pod mounts it.`,
+      why: `PersistentVolumeClaim ${state.quickstart.pvcName || 'test-pvc'} binds to StorageClass ${resolvedStorageClassName(state)}; the Pod mounts it.`,
       files: pick(files, ['06-quickstart/pvc.yaml', '06-quickstart/pod.yaml'], prefix),
     })
     testVolume = {
@@ -336,7 +336,7 @@ function buildSite(
     files: secretFiles,
   })
 
-  const testScName = t(state.quickstart.storageClassName)
+  const testScName = t(resolvedStorageClassName(state))
   type Bucket = { key: string; poolId: string; scNames: string[]; test: boolean; gad?: 'primary' | 'secondary' }
   const buckets = new Map<string, Bucket>()
   if (detailed) {

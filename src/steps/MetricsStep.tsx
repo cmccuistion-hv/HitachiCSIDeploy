@@ -1,5 +1,6 @@
 import { DOCS } from '../catalog/components'
 import { PLATFORMS } from '../catalog/platforms'
+import { resolvedStorageClassName } from '../catalog/sites'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
@@ -219,6 +220,13 @@ export function MetricsStep() {
             )}
           </>
         )}
+        {(state.metrics.deployPrometheus || state.metrics.deployGrafana) &&
+          state.storageClassesEnabled && (
+            <Callout>
+              Prometheus and Grafana persistent volumes use StorageClass{' '}
+              <strong>{resolvedStorageClassName(state)}</strong>.
+            </Callout>
+          )}
         {plat.useOc && (
           <Callout>OpenShift: the export guide applies <code>scc-for-openshift.yaml</code>.</Callout>
         )}
