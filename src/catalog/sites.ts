@@ -247,3 +247,24 @@ export function updateSiteStorage(
   return withSiteStorage(state, site, { ...current, ...patch })
 }
 
+/** StorageClasses used for package-wide PVC names (Grafana, DR, test volume). */
+export function packageStorageClasses(state: WizardState): StorageClassConfig[] {
+  if (!state.storageClassesEnabled) return []
+  if (state.components.replication) return getSiteStorage(state, 'primary').storageClasses
+  return state.storageClasses || []
+}
+
+/**
+ * Live StorageClass name for Grafana/Prometheus PVCs, DR operator, and the test volume.
+ * Ignores a saved name that no longer exists after a rename.
+ */
+export function resolvedStorageClassName(state: WizardState): string {
+  const classes = packageStorageClasses(state)
+  const names = classes.map((sc) => (sc.name || '').trim()).filter(Boolean)
+  const saved = (state.quickstart?.storageClassName || '').trim()
+  if (saved && names.includes(saved)) return saved
+  const def = classes.find((sc) => sc.isDefault && (sc.name || '').trim())
+  if (def) return def.name.trim()
+  return names[0] || 'hitachi-csi'
+}
+

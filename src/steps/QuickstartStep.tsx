@@ -1,4 +1,5 @@
 import { PLATFORMS } from '../catalog/platforms'
+import { packageStorageClasses, resolvedStorageClassName } from '../catalog/sites'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { Callout, Field, Section } from '../components/ui'
@@ -7,6 +8,8 @@ export function QuickstartStep() {
   const { state, setState } = useWizard()
   const plat = PLATFORMS[state.platform]
   const qs = state.quickstart
+  const classes = packageStorageClasses(state)
+  const scName = resolvedStorageClassName(state)
 
   return (
     <div className="step-panel">
@@ -102,10 +105,10 @@ export function QuickstartStep() {
               }
             />
           </Field>
-          {state.storageClasses.length > 1 ? (
+          {classes.length > 1 ? (
             <Field label="StorageClass">
               <select
-                value={qs.storageClassName || state.storageClasses[0]?.name}
+                value={scName}
                 onChange={(e) =>
                   setState((s) => ({
                     ...s,
@@ -113,7 +116,7 @@ export function QuickstartStep() {
                   }))
                 }
               >
-                {state.storageClasses.map((sc) => (
+                {classes.map((sc) => (
                   <option key={sc.id} value={sc.name}>
                     {sc.name}
                   </option>
@@ -122,7 +125,7 @@ export function QuickstartStep() {
             </Field>
           ) : (
             <Field label="StorageClass" hint="Uses the only StorageClass in this package.">
-              <input value={state.storageClasses[0]?.name || ''} disabled readOnly />
+              <input value={scName} disabled readOnly />
             </Field>
           )}
         </div>

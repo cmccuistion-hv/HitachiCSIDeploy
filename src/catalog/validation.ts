@@ -86,6 +86,19 @@ export function nextUniqueName(base: string, taken: string[]): string {
   return `${stem}-${n}`
 }
 
+function spcPrefixedNameError(
+  value: string,
+  label: string,
+  max: number,
+  required: boolean,
+): string | undefined {
+  const v = t(value)
+  if (!v) return required ? `${label} is required.` : undefined
+  if (!v.startsWith('spc')) return `${label} must start with spc (CSI rejects a missing prefix).`
+  if (v.length > max) return `${label} must be 1–${max} characters.`
+  return undefined
+}
+
 export function validateStorageClass(
   sc: StorageClassConfig,
   ctx: {
@@ -129,8 +142,29 @@ export function validateStorageClass(
 
   if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
     if (!(sc.quorumID || '').trim()) errors.quorumID = 'Quorum ID is required.'
-    if (!(sc.copyGroupName || '').trim()) errors.copyGroupName = 'Copy group name is required.'
-    if (!(sc.consistencyGroupId || '').trim()) errors.consistencyGroupId = 'Consistency group ID is required.'
+    const copyGroupErr = spcPrefixedNameError(sc.copyGroupName || '', 'Copy group name', 29, true)
+    if (copyGroupErr) errors.copyGroupName = copyGroupErr
+    const copyPair = t(sc.copyPairName)
+    const copyPairErr = spcPrefixedNameError(sc.copyPairName || '', 'Copy pair name', 31, false)
+    if (copyPairErr) errors.copyPairName = copyPairErr
+    else if (
+      copyPair &&
+      ctx.siblings?.some(
+        (o) =>
+          o.id !== sc.id &&
+          (o.kind === 'stretched' || o.kind === 'stretched-adr') &&
+          t(o.copyPairName) === copyPair,
+      )
+    ) {
+      errors.copyPairName =
+        'This copy pair name is already used by another stretched StorageClass. CSI allows one GAD pair per copy pair name.'
+    }
+    const ctg = t(sc.consistencyGroupId)
+    if (!ctg) {
+      errors.consistencyGroupId = 'Consistency group ID is required.'
+    } else if (!/^[0-9]+$/.test(ctg)) {
+      errors.consistencyGroupId = 'Consistency group ID must be a decimal number.'
+    }
     if (!(sc.primaryPoolID || '').trim()) errors.primaryPoolID = 'Primary pool ID is required.'
     if (!(sc.primaryPortID || '').trim()) errors.primaryPortID = 'Primary port ID is required.'
     if (!(sc.secondaryPoolID || '').trim()) errors.secondaryPoolID = 'Secondary pool ID is required.'
@@ -150,6 +184,20 @@ export function validateStorageClass(
       if (standardTaken) {
         errors.stretchedSecretName = 'This Secret name is already used by another StorageClass on this site.'
       }
+    }
+    const vsm = t(sc.virtualStorageSerialNumber)
+    if (
+      ctx.siblings?.some(
+        (o) =>
+          o.id !== sc.id &&
+          (o.kind === 'stretched' || o.kind === 'stretched-adr') &&
+          t(o.stretchedSecretName || o.secretName) === t(sc.stretchedSecretName || sc.secretName) &&
+          t(o.secretNamespace) === secretNs &&
+          t(o.virtualStorageSerialNumber) !== vsm,
+      )
+    ) {
+      errors.virtualStorageSerialNumber =
+        'Stretched StorageClasses that share a Secret must use the same virtual storage serial. Use a new Secret for a different VSM.'
     }
     return errors
   }

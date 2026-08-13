@@ -9,16 +9,16 @@ export type OpenShiftTopology = 'classic' | 'hosted'
 export type MultipathDelivery = 'machineconfig' | 'daemonset' | 'conf' | 'none'
 /** CSI-relevant model family. VSP / VSP One Block share one StorageClass shape; SDS Block is the other. */
 export type StorageFamily =
-  | 'vsp-5000-g-e-f'
   | 'vsp-one-block-20'
   | 'vsp-one-block-high-end'
   | 'vsp-one-sds-block'
+  | 'vsp-5000-g-e-f'
 
 export const STORAGE_FAMILIES: { id: StorageFamily; label: string }[] = [
-  { id: 'vsp-5000-g-e-f', label: 'VSP 5000 / G / E / F' },
   { id: 'vsp-one-block-20', label: 'VSP One Block 20 Series' },
   { id: 'vsp-one-block-high-end', label: 'VSP One Block High End (B85)' },
   { id: 'vsp-one-sds-block', label: 'VSP One SDS Block' },
+  { id: 'vsp-5000-g-e-f', label: 'VSP 5000 / G / E / F' },
 ]
 
 export function isSdsBlockFamily(family: StorageFamily): boolean {
@@ -32,6 +32,14 @@ export function supportsStretchedGad(family: StorageFamily): boolean {
 
 export function isStretchedKind(kind: StorageClassKind): boolean {
   return kind === 'stretched' || kind === 'stretched-adr'
+}
+
+/** Package path for a stretched / GAD Secret. */
+export function stretchedSecretPackagePath(secretName: string): string {
+  const name = (secretName || 'hitachi-csi-secret-stretched').trim()
+  return name === 'hitachi-csi-secret-stretched'
+    ? '01-storage/secret-stretched.yaml'
+    : `01-storage/secret-${name}.yaml`
 }
 
 type GadRoleSystem = {

@@ -1,4 +1,5 @@
 import { PLATFORMS } from '../catalog/platforms'
+import { resolvedStorageClassName } from '../catalog/sites'
 import type { WizardState } from '../catalog/types'
 
 export interface NextStep {
@@ -132,10 +133,7 @@ export function buildNextSteps(state: WizardState): NextStep[] {
   }
 
   if (state.components.consolePlugin) {
-    const exampleSc =
-      (state.quickstart.storageClassName || '').trim() ||
-      (state.storageClasses[0]?.name || '').trim() ||
-      (state.sites?.primary.storageClasses[0]?.name || '').trim()
+    const exampleSc = resolvedStorageClassName(state)
     const scHint = exampleSc
       ? ` Open a Hitachi-backed StorageClass such as ${exampleSc}.`
       : ' Open a StorageClass provisioned by the Hitachi CSI Driver.'
