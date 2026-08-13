@@ -10,11 +10,12 @@ import {
 import { HELP } from '../catalog/help'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
+import { AlternativeCloneModeDiagram } from '../components/AlternativeCloneModeDiagram'
 import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { useSiteTab } from '../state/useSiteTab'
-import { Callout, Field, Section } from '../components/ui'
+import { Callout, Field, HelpTip, Section } from '../components/ui'
 
 function newSystem(n: number): StorageSystemConfig {
   return {
@@ -169,6 +170,9 @@ export function StorageStep() {
                     alternativeCloneMode: supportsAlternativeCloneMode(family)
                       ? sys.alternativeCloneMode
                       : false,
+                    serial: isSdsBlockFamily(family) ? '' : sys.serial,
+                    stretchedRole: isSdsBlockFamily(family) ? 'none' : sys.stretchedRole,
+                    resourceGroupID: isSdsBlockFamily(family) ? '' : sys.resourceGroupID,
                   })
                 }}
               >
@@ -179,13 +183,15 @@ export function StorageStep() {
                 ))}
               </select>
             </Field>
-            <Field label="Serial number" hint="Required for standard StorageClasses." error={sysErrors.serial}>
+            {!isSdsBlockFamily(sys.family) && (
+            <Field label="Serial number" hint="From the VSP storage system." error={sysErrors.serial}>
               <input
                 value={sys.serial}
                 onChange={(e) => updateSys(sys.id, { serial: e.target.value })}
                 placeholder="54321"
               />
             </Field>
+            )}
             <Field
               label="REST URL"
               hint={storageRestUrlHint(sys.family)}
@@ -222,7 +228,7 @@ export function StorageStep() {
                 />
               </Field>
             )}
-            {!(replicationOn && sys.hrpcPair) && (
+            {!(replicationOn && sys.hrpcPair) && !isSdsBlockFamily(sys.family) && (
               <Field label="Stretched / GAD role" help={HELP.gad.role}>
                 <select
                   value={sys.stretchedRole || 'none'}
@@ -240,15 +246,6 @@ export function StorageStep() {
             )}
           </div>
 
-          {isSdsBlockFamily(sys.family) && (
-            <>
-              <Callout>
-                SDS Block StorageClasses use <code>storageType: vsp-one-sds-block</code> and do not set
-                serial/pool/port on the SC. Connections: FC, iSCSI, NVMe/TCP.
-              </Callout>
-            </>
-          )}
-
           <AdvancedSection
             title="Advanced array options"
           >
@@ -263,7 +260,7 @@ export function StorageStep() {
                   placeholder="88,81"
                 />
               </Field>
-              {!(replicationOn && sys.hrpcPair && !isSdsBlockFamily(sys.family)) && (
+              {!isSdsBlockFamily(sys.family) && !(replicationOn && sys.hrpcPair) && (
                 <Field
                   label="Resource group ID (optional)"
                   hint="Required only if the user can access multiple resource groups."
@@ -287,10 +284,17 @@ export function StorageStep() {
                     onChange={(e) => updateSys(sys.id, { alternativeCloneMode: e.target.checked })}
                   />
                   <div>
-                    <strong>Alternative clone mode</strong>
+                    <strong>
+                      Alternative clone mode
+                      <HelpTip
+                        text={HELP.alternativeCloneMode}
+                        diagram={<AlternativeCloneModeDiagram />}
+                      />
+                    </strong>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                      VSP One Block High End (B85) / 20 Series only. Enables expandable clones from a retained
-                      base volume.
+                      Create VMs from a template, or clone volumes, and still grow those disks. CSI deletes the
+                      hidden parent — you do not have to delete clones first. Array clone rule — not an OpenShift
+                      Virtualization limit. Cost: about 2× pool space. 20 Series and High End (B85) only.
                     </p>
                   </div>
                 </label>

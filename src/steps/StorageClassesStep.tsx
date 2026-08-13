@@ -4,6 +4,7 @@ import {
   coerceConnectionType,
   connectionsForStorageClassKind,
   isVspOneBlock20,
+  storageClassKindsForSystems,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
@@ -66,6 +67,32 @@ function defaultSc(
   return base
 }
 
+function allowedKindsForSc(
+  systems: SiteStorageConfig['storageSystems'],
+  usedForReplication: boolean,
+): StorageClassKind[] {
+  if (usedForReplication) return ['standard']
+  return storageClassKindsForSystems(systems)
+}
+
+function coerceScToAllowedKind(
+  sc: StorageClassConfig,
+  allowed: StorageClassKind[],
+  connectionType: ConnectionType,
+  nodeEnvironment: NodeEnvironment,
+  secretNamespace: string,
+): StorageClassConfig {
+  if (allowed.includes(sc.kind)) return sc
+  const next = defaultSc(allowed[0] ?? 'standard', connectionType, nodeEnvironment, secretNamespace)
+  next.id = sc.id
+  next.name = sc.name
+  next.secretName = sc.secretName
+  next.secretNamespace = sc.secretNamespace
+  next.isDefault = sc.isDefault
+  if (sc.hrpcPairId) next.hrpcPairId = sc.hrpcPairId
+  return next
+}
+
 export function StorageClassesStep() {
   const { state, setState } = useWizard()
   const { isAdvanced } = useUiMode()
@@ -110,6 +137,58 @@ export function StorageClassesStep() {
     primary?.serial,
     state.storageSystems.length,
     state.storageClasses,
+    setState,
+  ])
+
+  useEffect(() => {
+    if (!state.storageClassesEnabled) return
+    setState((s) => {
+      const coerceList = (
+        systems: SiteStorageConfig['storageSystems'],
+        classes: StorageClassConfig[],
+      ): StorageClassConfig[] | null => {
+        let changed = false
+        const next = classes.map((sc) => {
+          const allowed = allowedKindsForSc(systems, !!(sc.hrpcPairId || '').trim())
+          const coerced = coerceScToAllowedKind(
+            sc,
+            allowed,
+            s.connectionType,
+            s.nodeEnvironment,
+            s.driverNamespace,
+          )
+          if (coerced === sc) return sc
+          changed = true
+          return coerced
+        })
+        return changed ? next : null
+      }
+
+      if (s.components.replication) {
+        const ensured = ensureSitesForReplication(s)
+        const p = getSiteStorage(ensured, 'primary')
+        const sec = getSiteStorage(ensured, 'secondary')
+        const np = coerceList(p.storageSystems, p.storageClasses)
+        const ns = coerceList(sec.storageSystems, sec.storageClasses)
+        if (!np && !ns) return s
+        return {
+          ...ensured,
+          sites: {
+            primary: np ? { ...p, storageClasses: np } : p,
+            secondary: ns ? { ...sec, storageClasses: ns } : sec,
+          },
+        }
+      }
+      const next = coerceList(s.storageSystems, s.storageClasses)
+      if (!next) return s
+      return { ...s, storageClasses: next }
+    })
+  }, [
+    state.storageClassesEnabled,
+    state.components.replication,
+    state.storageSystems,
+    state.storageClasses,
+    state.sites,
     setState,
   ])
 
@@ -309,7 +388,8 @@ export function StorageClassesStep() {
   const addStorageClass = () => {
     setState((s) => {
       if (!s.components.replication) {
-        const nextSc = defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)
+        const kind = storageClassKindsForSystems(s.storageSystems)[0] ?? 'standard'
+        const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace)
         nextSc.name = nextUniqueName(
           nextSc.name,
           s.storageClasses.map((sc) => sc.name),
@@ -318,7 +398,8 @@ export function StorageClassesStep() {
       }
       const ensured = ensureSitesForReplication(s)
       const current = getSiteStorage(ensured, site)
-      const nextSc = defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)
+      const kind = storageClassKindsForSystems(current.storageSystems)[0] ?? 'standard'
+      const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace)
       nextSc.name = nextUniqueName(
         nextSc.name,
         current.storageClasses.map((sc) => sc.name),
@@ -384,7 +465,14 @@ export function StorageClassesStep() {
                   storageClasses:
                     s.storageClasses.length >= 1
                       ? s.storageClasses
-                      : [defaultSc('standard', s.connectionType, s.nodeEnvironment, s.driverNamespace)],
+                      : [
+                          defaultSc(
+                            storageClassKindsForSystems(s.storageSystems)[0] ?? 'standard',
+                            s.connectionType,
+                            s.nodeEnvironment,
+                            s.driverNamespace,
+                          ),
+                        ],
                 }
               })
             }
@@ -413,6 +501,7 @@ export function StorageClassesStep() {
         storage.storageClasses.map((sc) => {
 
           const usedForReplication = !!(sc.hrpcPairId || '').trim()
+          const allowedKinds = allowedKindsForSc(storage.storageSystems, usedForReplication)
           const ctxSystems =
             replicationOn && usedForReplication
               ? systemsWithHrpcFirst(storage.storageSystems)
@@ -462,6 +551,7 @@ export function StorageClassesStep() {
               }
             >
               <div className="field-grid">
+                {allowedKinds.length > 1 && (
                 <Field
                   label="Type"
                   help={
@@ -496,16 +586,21 @@ export function StorageClassesStep() {
                       updateSc(sc.id, next)
                     }}
                   >
-                    <option value="standard">Standard (VSP / VSP One Block)</option>
-                    {!usedForReplication && (
-                      <>
-                        <option value="stretched">Stretched / GAD</option>
-                        <option value="stretched-adr">Stretched + ADR</option>
-                        <option value="vsp-one-sds-block">VSP One SDS Block</option>
-                      </>
+                    {allowedKinds.includes('standard') && (
+                      <option value="standard">Standard (VSP / VSP One Block)</option>
+                    )}
+                    {allowedKinds.includes('stretched') && (
+                      <option value="stretched">Stretched / GAD</option>
+                    )}
+                    {allowedKinds.includes('stretched-adr') && (
+                      <option value="stretched-adr">Stretched + ADR</option>
+                    )}
+                    {allowedKinds.includes('vsp-one-sds-block') && (
+                      <option value="vsp-one-sds-block">VSP One SDS Block</option>
                     )}
                   </select>
                 </Field>
+                )}
                 <Field label="Connection type" help={HELP.protocolMultipath}>
                   <select
                     value={effectiveConn}
