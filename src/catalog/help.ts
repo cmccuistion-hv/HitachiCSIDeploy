@@ -7,8 +7,6 @@ export const HELP = {
   secretVsStorageClass: {
     storageCallout:
       'These credentials become Kubernetes Secrets the CSI Driver uses to call the array REST API. How volumes are provisioned (pool, ports, efficiency) is set on the StorageClasses step.',
-    storageClassCallout:
-      'A StorageClass is a reusable profile apps use when requesting a PVC. It references the storage Secret for credentials and adds pool, port, and efficiency settings.',
     storageLede:
       'Enter one or more array connection details used to authenticate the CSI software to storage(s). Secrets are generated with base64-encoded credentials. Add a second array for stretched (GAD) StorageClasses and/or add additional primary storage systems arrays.',
     storageClassLede:
@@ -58,9 +56,12 @@ export const HELP = {
     'Wizard multipath packaging is off and this StorageClass lists multiple Port IDs. Multiple ports need multipathing on the nodes — confirm your own config covers this, or enable multipath in Prerequisites.',
 
   gad: {
-    role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary.',
+    role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary. Leave as None if this array is not part of a GAD pair.',
     type: 'Standard uses one array. Stretched / GAD pairs two arrays for active-style volumes (quorum, copy group, dual pools/ports; volume expansion is off). SDS Block uses a different StorageClass shape without serial/pool/port.',
   },
+
+  storageClassType:
+    'Standard uses one VSP / VSP One Block array. SDS Block uses a different StorageClass shape without serial/pool/port.',
 
   journal:
     'Journal volume ID on the array used for replication between primary and secondary. Get this from your storage admin or storage UI.',

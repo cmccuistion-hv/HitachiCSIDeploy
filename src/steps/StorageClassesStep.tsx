@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
 import {
   CONNECTION_TYPES,
+  PLATFORMS,
   coerceConnectionType,
   connectionsForStorageClassKind,
+  gadPairSystems,
+  isStretchedKind,
   isVspOneBlock20,
   storageClassKindsForSystems,
   supportsImmutableSnapshots,
@@ -20,6 +23,7 @@ import type { SiteId } from '../catalog/sites'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
 import { AdvancedSection } from '../components/AdvancedSection'
+import { GadStretchedPvcDiagram } from '../components/GadStretchedPvcDiagram'
 import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
 import { useSiteTab } from '../state/useSiteTab'
@@ -97,6 +101,7 @@ export function StorageClassesStep() {
   const { state, setState } = useWizard()
   const { isAdvanced } = useUiMode()
   const replicationOn = state.components.replication
+  const clusterLabel = PLATFORMS[state.platform].useOc ? 'OpenShift cluster' : 'Kubernetes cluster'
   const [site, setSite] = useSiteTab(replicationOn)
   const ensured = replicationOn ? ensureSitesForReplication(state) : state
   const storage: SiteStorageConfig = replicationOn
@@ -418,8 +423,6 @@ export function StorageClassesStep() {
         {replicationOn ? HELP.replicationSitesLede : HELP.secretVsStorageClass.storageClassLede}
       </p>
 
-      <Callout>{HELP.secretVsStorageClass.storageClassCallout}</Callout>
-
       {replicationOn && (
         <>
           <div className="tabs" style={{ marginTop: '0.75rem' }}>
@@ -502,6 +505,8 @@ export function StorageClassesStep() {
 
           const usedForReplication = !!(sc.hrpcPairId || '').trim()
           const allowedKinds = allowedKindsForSc(storage.storageSystems, usedForReplication)
+          const stretchedOffered = allowedKinds.some(isStretchedKind)
+          const gadPair = stretchedOffered ? gadPairSystems(storage.storageSystems) : null
           const ctxSystems =
             replicationOn && usedForReplication
               ? systemsWithHrpcFirst(storage.storageSystems)
@@ -557,7 +562,26 @@ export function StorageClassesStep() {
                   help={
                     usedForReplication
                       ? 'Replication uses a standard StorageClass on each site (one array per site). Stretched / GAD is a different, single-cluster pattern. VSP One SDS Block is not used with Replication.'
-                      : HELP.gad.type
+                      : stretchedOffered
+                        ? HELP.gad.type
+                        : HELP.storageClassType
+                  }
+                  helpDiagram={
+                    stretchedOffered && gadPair ? (
+                      <GadStretchedPvcDiagram
+                        clusterLabel={clusterLabel}
+                        primary={{
+                          family: gadPair.primary.family,
+                          serial: gadPair.primary.serial,
+                          url: gadPair.primary.url,
+                        }}
+                        secondary={{
+                          family: gadPair.secondary.family,
+                          serial: gadPair.secondary.serial,
+                          url: gadPair.secondary.url,
+                        }}
+                      />
+                    ) : undefined
                   }
                 >
                   <select
@@ -859,10 +883,6 @@ export function StorageClassesStep() {
 
               {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
                 <>
-                  <Callout>
-                    Stretched StorageClasses require a dual-array Secret, support Fibre Channel and iSCSI only
-                    (not NVMe), and set <code>allowVolumeExpansion: false</code>.
-                  </Callout>
                   {multipathOff && (
                     <Callout variant="warn">
                       {portIdCount(sc.primaryPortID) > 1 || portIdCount(sc.secondaryPortID) > 1

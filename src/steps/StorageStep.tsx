@@ -1,5 +1,6 @@
 import { type StorageFamily, type StorageSystemConfig } from '../catalog/types'
 import {
+  PLATFORMS,
   STORAGE_FAMILIES,
   isSdsBlockFamily,
   storageFamilyHint,
@@ -11,6 +12,7 @@ import { HELP } from '../catalog/help'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
 import { AlternativeCloneModeDiagram } from '../components/AlternativeCloneModeDiagram'
+import { GadDataPathsDiagram } from '../components/GadDataPathsDiagram'
 import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
@@ -33,6 +35,7 @@ function newSystem(n: number): StorageSystemConfig {
 export function StorageStep() {
   const { state, setState } = useWizard()
   const replicationOn = state.components.replication
+  const clusterLabel = PLATFORMS[state.platform].useOc ? 'OpenShift cluster' : 'Kubernetes cluster'
   const [site, setSite] = useSiteTab(replicationOn)
   const storage = replicationOn ? getSiteStorage(state, site) : null
   const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
@@ -229,7 +232,11 @@ export function StorageStep() {
               </Field>
             )}
             {!(replicationOn && sys.hrpcPair) && !isSdsBlockFamily(sys.family) && (
-              <Field label="Stretched / GAD role" help={HELP.gad.role}>
+              <Field
+                label="Stretched / GAD role"
+                help={HELP.gad.role}
+                helpDiagram={<GadDataPathsDiagram clusterLabel={clusterLabel} />}
+              >
                 <select
                   value={sys.stretchedRole || 'none'}
                   onChange={(e) =>
