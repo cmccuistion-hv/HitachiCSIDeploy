@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { StorageClassConfig } from '../catalog/types'
-import { filledState } from '../test/fixtures'
+import { filledReplicationState, filledState } from '../test/fixtures'
 import {
   CATALOG_ONLY_KEYS,
   SECRET_PORT_MIGRATION_KEYS,
@@ -167,6 +167,114 @@ describe('Secret contract', () => {
 describe('assertCsiContract on generateAll', () => {
   it('accepts classic OpenShift FC', async () => {
     const state = filledState()
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts OpenShift iSCSI', async () => {
+    const base = filledState()
+    const state = filledState({
+      connectionType: 'iscsi',
+      storageClasses: [{ ...base.storageClasses[0], connectionType: 'iscsi' }],
+    })
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts NVMe/TCP', async () => {
+    const base = filledState()
+    const state = filledState({
+      connectionType: 'nvme-tcp',
+      multipath: {
+        enabled: false,
+        includeConf: false,
+        includeMachineConfig: false,
+        includeDaemonSet: false,
+        alreadyApplied: false,
+        machineConfigName: 'hitachi-csi-multipath',
+        machineConfigRole: 'worker',
+        customConf: '',
+      },
+      storageClasses: [
+        {
+          ...base.storageClasses[0],
+          connectionType: 'nvme-tcp',
+          nvmSubsystemID: '1',
+          portID: '',
+        },
+      ],
+    })
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts VSP One SDS Block', async () => {
+    const base = filledState()
+    const state = filledState({
+      storageSystems: [{ ...base.storageSystems[0], family: 'vsp-one-sds-block' }],
+      storageClasses: [
+        {
+          ...base.storageClasses[0],
+          kind: 'vsp-one-sds-block',
+          name: 'hitachi-csi-sds',
+          serialNumber: '',
+          poolID: '',
+          portID: '',
+        },
+      ],
+    })
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts a GAD stretched pair', async () => {
+    const base = filledState()
+    const state = filledState({
+      storageSystems: [
+        { ...base.storageSystems[0], stretchedRole: 'primary' },
+        {
+          ...base.storageSystems[0],
+          id: 'storage-2',
+          name: 'secondary',
+          serial: '400002',
+          url: 'https://192.0.2.11',
+          stretchedRole: 'secondary',
+        },
+      ],
+      storageClasses: [
+        {
+          ...base.storageClasses[0],
+          kind: 'stretched',
+          serialNumber: '',
+          quorumID: '1',
+          copyGroupName: 'spc-test-cg',
+          copyPairName: 'spc-test-pair',
+          consistencyGroupId: '10',
+          primaryPoolID: '0',
+          primaryPortID: 'CL1-A',
+          secondaryPoolID: '1',
+          secondaryPortID: 'CL2-A',
+          stretchedSecretName: 'hitachi-csi-secret-stretched',
+        },
+      ],
+    })
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts Replication with journals on both site folders', async () => {
+    const state = filledReplicationState({
+      replication: {
+        primaryKubeconfig: 'dummy-primary-kubeconfig',
+        secondaryKubeconfig: 'dummy-secondary-kubeconfig',
+      },
+    })
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
+  })
+
+  it('accepts StorageClasses off (Secret and HSPC only)', async () => {
+    const state = filledState({ storageClassesEnabled: false })
     const files = await generateAll(state)
     expect(() => assertCsiContract(files, state)).not.toThrow()
   })

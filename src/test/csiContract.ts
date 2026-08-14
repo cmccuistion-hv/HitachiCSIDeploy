@@ -12,6 +12,8 @@ import {
 import { CONNECTION_TYPES } from '../catalog/platforms'
 import { getSiteStorage } from '../catalog/sites'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
+import { effectiveSerialNumber } from '../catalog/validation'
+import { snapshotClassOpts } from '../generator/yaml'
 
 export const UPSTREAM_SAMPLE_VERSION = 'v3.18.3'
 
@@ -325,6 +327,25 @@ function selectionReason(sc: StorageClassConfig): string {
   return CONNECTION_TYPES.find((item) => item.id === sc.connectionType)?.label ?? sc.connectionType
 }
 
+function expectedStandardSecretName(
+  sys: StorageSystemConfig,
+  classes: StorageClassConfig[],
+): string {
+  const primaryName = classes[0]?.secretName || 'hitachi-csi-secret'
+  return sys.name === 'primary' ? primaryName : `hitachi-csi-secret-${sys.name}`
+}
+
+function inferStorageClassKind(
+  params: Record<string, unknown>,
+  sc: StorageClassConfig,
+): StorageClassKind {
+  if (paramStr(params.storageType) === 'vsp-one-sds-block') return 'vsp-one-sds-block'
+  if (paramStr(params.replicationType) === 'stretched') {
+    return sc.kind === 'stretched-adr' ? 'stretched-adr' : 'stretched'
+  }
+  return sc.kind
+}
+
 function storageForPath(
   state: WizardState,
   path: string,
@@ -341,6 +362,7 @@ function assertStorageClassFile(
   path: string,
   content: string,
   classes: StorageClassConfig[],
+  systems: StorageSystemConfig[],
 ): void {
   const doc = parse(content) as {
     metadata?: { name?: string }
@@ -353,11 +375,12 @@ function assertStorageClassFile(
     throw new Error(`${path}: StorageClass "${name}" is not in wizard state`)
   }
   const params = doc.parameters ?? {}
-  const kind: StorageClassKind = sc.kind
+  const kind = inferStorageClassKind(params, sc)
+  const scForRules: StorageClassConfig = { ...sc, kind }
   assertAllowedKeys(path, Object.keys(params), allowedStorageClassParameterKeys(kind))
-  const reason = selectionReason(sc)
-  assertRequiredKeys(path, params, requiredStorageClassParameterKeys(sc), reason)
-  assertForbiddenKeys(path, params, forbiddenStorageClassParameterKeys(sc), reason)
+  const reason = selectionReason(scForRules)
+  assertRequiredKeys(path, params, requiredStorageClassParameterKeys(scForRules), reason)
+  assertForbiddenKeys(path, params, forbiddenStorageClassParameterKeys(scForRules), reason)
 
   if (kind === 'stretched' || kind === 'stretched-adr') {
     if (doc.allowVolumeExpansion !== false) {
@@ -397,7 +420,7 @@ function assertStorageClassFile(
     return
   }
 
-  const expectedSerial = sc.serialNumber || ''
+  const expectedSerial = effectiveSerialNumber(sc, systems)
   if (expectedSerial && paramStr(params.serialNumber) !== expectedSerial) {
     throw new Error(`${path}: serialNumber "${paramStr(params.serialNumber)}" !== wizard state`)
   }
@@ -422,6 +445,7 @@ function assertSecretFile(
   classes: StorageClassConfig[],
 ): void {
   const doc = parse(content) as {
+    metadata?: { name?: string }
     data?: Record<string, string>
     stringData?: Record<string, string>
   }
@@ -451,11 +475,10 @@ function assertSecretFile(
     return
   }
   assertSecretEmittedKeys(path, keys, 'standard')
-  const fileName = path.split('/').pop() || ''
-  const sysName = fileName.replace(/^secret-/, '').replace(/\.yaml$/, '')
-  const sys = systems.find((item) => (item.name || item.id) === sysName) || systems[0]
+  const secretName = doc.metadata?.name || ''
+  const sys = systems.find((item) => expectedStandardSecretName(item, classes) === secretName)
   if (!sys) {
-    throw new Error(`${path}: no storage system in wizard state for this Secret`)
+    throw new Error(`${path}: no storage system in wizard state for Secret "${secretName}"`)
   }
   assertSecretCoherence(path, doc, {
     url: sys.url,
@@ -479,14 +502,15 @@ function assertSnapshotFile(path: string, content: string, state: WizardState): 
     'retentionPeriod',
   ])
   assertAllowedKeys(path, Object.keys(params), allowed)
-  assertRequiredKeys(
-    path,
-    params,
-    ['poolID', 'csi.storage.k8s.io/snapshotter-secret-name', 'csi.storage.k8s.io/snapshotter-secret-namespace'],
-    'VolumeSnapshotClass',
-  )
-  const sc = state.storageClasses.find((item) => item.kind === 'standard' && item.poolID) || state.storageClasses[0]
-  if (sc?.poolID && paramStr(params.poolID) !== sc.poolID) {
+  const opts = snapshotClassOpts(state)
+  const required = [
+    'csi.storage.k8s.io/snapshotter-secret-name',
+    'csi.storage.k8s.io/snapshotter-secret-namespace',
+  ]
+  if (opts.poolID) required.unshift('poolID')
+  assertRequiredKeys(path, params, required, 'VolumeSnapshotClass')
+  const { poolID } = opts
+  if (poolID && paramStr(params.poolID) !== poolID) {
     throw new Error(`${path}: poolID "${paramStr(params.poolID)}" !== wizard state`)
   }
 }
@@ -539,24 +563,27 @@ function assertHrpcStorageSecrets(path: string, content: string, state: WizardSt
   const storages = inner.storages ?? []
   for (const item of storages) {
     for (const key of ['serial', 'url', 'user', 'password', 'journal'] as const) {
-      if (!item[key]) {
+      const value = item[key]
+      if (value === undefined || value === null || String(value).trim() === '') {
         throw new Error(`${path}: HRPC storage-secrets requires ${key}`)
       }
     }
-    const expected = state.replication.storageSecrets.find((secret) => secret.serial === item.serial)
+    const expected = state.replication.storageSecrets.find(
+      (secret) => String(secret.serial) === String(item.serial),
+    )
     if (!expected) {
       throw new Error(`${path}: serial "${item.serial}" !== wizard state`)
     }
-    if (item.url !== expected.url) {
+    if (String(item.url) !== expected.url) {
       throw new Error(`${path}: url "${item.url}" !== wizard state`)
     }
-    if (item.user !== expected.user) {
+    if (String(item.user) !== expected.user) {
       throw new Error(`${path}: user "${item.user}" !== wizard state`)
     }
-    if (item.password !== expected.password) {
+    if (String(item.password) !== expected.password) {
       throw new Error(`${path}: password does not match wizard state`)
     }
-    if (item.journal !== expected.journal) {
+    if (String(item.journal) !== String(expected.journal)) {
       throw new Error(`${path}: journal "${item.journal}" !== wizard state`)
     }
   }
@@ -591,7 +618,7 @@ export function assertCsiContract(
     }
     const { systems, classes } = storageForPath(state, file.path)
     if (file.path.includes('/storageclass-') || /(?:^|\/)01-storage\/storageclass-/.test(file.path)) {
-      assertStorageClassFile(file.path, file.content, classes)
+      assertStorageClassFile(file.path, file.content, classes, systems)
     } else if (file.path.includes('/volumesnapshotclass-') || /(?:^|\/)01-storage\/volumesnapshotclass-/.test(file.path)) {
       assertSnapshotFile(file.path, file.content, {
         ...state,
