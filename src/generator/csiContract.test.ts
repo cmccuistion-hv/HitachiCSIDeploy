@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { StorageClassConfig } from '../catalog/types'
+import { filledState } from '../test/fixtures'
 import {
   CATALOG_ONLY_KEYS,
   SECRET_PORT_MIGRATION_KEYS,
   allowedSecretKeys,
   allowedStorageClassParameterKeys,
   assertAllowedKeys,
+  assertCsiContract,
   assertForbiddenKeys,
   assertNoPortMigrationSecretKeys,
   assertRequiredKeys,
@@ -15,6 +17,17 @@ import {
   requiredStorageClassParameterKeys,
   sampleParameterKeys,
 } from '../test/csiContract'
+import { generateAll } from './yaml'
+
+vi.mock('../services/versions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/versions')>()
+  return {
+    ...actual,
+    fetchFirstAvailable: vi.fn(async () =>
+      ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n'),
+    ),
+  }
+})
 
 function sc(partial: Partial<StorageClassConfig>): StorageClassConfig {
   return {
@@ -148,5 +161,13 @@ describe('Secret contract', () => {
         { password: 'fixture-password' },
       ),
     ).not.toThrow(/fixture-password/)
+  })
+})
+
+describe('assertCsiContract on generateAll', () => {
+  it('accepts classic OpenShift FC', async () => {
+    const state = filledState()
+    const files = await generateAll(state)
+    expect(() => assertCsiContract(files, state)).not.toThrow()
   })
 })
