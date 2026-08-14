@@ -53,8 +53,37 @@ describe('platform defaults and constraints', () => {
     expect(flags.includeMachineConfig).toBe(false)
   })
 
-  it('does not support the console plugin on Kubernetes', () => {
+  it('does not support the console plugin on Kubernetes, RKE2, or EKS', () => {
     expect(PLATFORMS.kubernetes.supportsConsolePlugin).toBe(false)
+    expect(PLATFORMS.rke2.supportsConsolePlugin).toBe(false)
+    expect(PLATFORMS.eks.supportsConsolePlugin).toBe(false)
+  })
+
+  it('uses a loose multipath.conf for RKE2 and EKS dm-multipath', () => {
+    expect(
+      effectiveMultipathDelivery({
+        platform: 'rke2',
+        openshiftTopology: 'classic',
+        needsDm: true,
+      }),
+    ).toBe('conf')
+    expect(
+      effectiveMultipathDelivery({
+        platform: 'eks',
+        openshiftTopology: 'classic',
+        needsDm: true,
+      }),
+    ).toBe('conf')
+  })
+
+  it('skips dm-multipath packaging when the protocol is native NVMe', () => {
+    expect(
+      effectiveMultipathDelivery({
+        platform: 'openshift',
+        openshiftTopology: 'classic',
+        needsDm: false,
+      }),
+    ).toBe('none')
   })
 
   it('installs through OperatorHub on OpenShift', () => {
