@@ -30,6 +30,14 @@ export function supportsStretchedGad(family?: StorageFamily): boolean {
   return !!family && !isSdsBlockFamily(family)
 }
 
+/** CSI volume snapshots for a PVC are not supported on VSP One SDS Block (MK-92ADPTR142). */
+export function supportsCsiVolumeSnapshots(
+  classes: Array<{ kind: StorageClassKind }>,
+): boolean {
+  if (classes.length === 0) return true
+  return classes.some((sc) => sc.kind !== 'vsp-one-sds-block')
+}
+
 export function isStretchedKind(kind: StorageClassKind): boolean {
   return kind === 'stretched' || kind === 'stretched-adr'
 }

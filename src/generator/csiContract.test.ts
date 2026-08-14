@@ -104,6 +104,40 @@ describe('required and forbidden StorageClass parameters', () => {
     )
   })
 
+  it('rejects a VolumeSnapshotClass for SDS Block-only storage', () => {
+    const base = filledState()
+    const state = filledState({
+      storageSystems: [{ ...base.storageSystems[0], family: 'vsp-one-sds-block' }],
+      storageClasses: [
+        {
+          ...base.storageClasses[0],
+          kind: 'vsp-one-sds-block',
+          name: 'hitachi-csi-sds',
+          serialNumber: '',
+          poolID: '',
+          portID: '',
+        },
+      ],
+    })
+    expect(() =>
+      assertCsiContract(
+        [
+          {
+            path: '01-storage/volumesnapshotclass-hitachi-csi-snapshot.yaml',
+            content: [
+              'driver: hspc.csi.hitachi.com',
+              'parameters:',
+              '  poolID: "0"',
+              '  csi.storage.k8s.io/snapshotter-secret-name: hitachi-csi-secret',
+              '  csi.storage.k8s.io/snapshotter-secret-namespace: hspc-operator-system',
+            ].join('\n'),
+          },
+        ],
+        state,
+      ),
+    ).toThrow(/VolumeSnapshotClass is not supported for VSP One SDS Block/)
+  })
+
   it('throws a path-qualified missing-key error', () => {
     expect(() =>
       assertRequiredKeys('sc.yaml', { connectionType: 'nvme-tcp' }, ['nvmSubsystemID']),
@@ -224,6 +258,7 @@ describe('assertCsiContract on generateAll', () => {
       ],
     })
     const files = await generateAll(state)
+    expect(files.some((file) => file.path.includes('volumesnapshotclass-'))).toBe(false)
     expect(() => assertCsiContract(files, state)).not.toThrow()
   })
 

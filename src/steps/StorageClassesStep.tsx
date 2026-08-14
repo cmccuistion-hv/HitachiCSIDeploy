@@ -8,6 +8,7 @@ import {
   isStretchedKind,
   isVspOneBlock20,
   storageClassKindsForSystems,
+  supportsCsiVolumeSnapshots,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
@@ -111,6 +112,7 @@ export function StorageClassesStep() {
   const primary = replicationOn ? getSiteStorage(ensured, 'primary').storageSystems[0] : state.storageSystems[0]
   const previewSc = storage.storageClasses[0]
   const canImmutableSnapshots = supportsImmutableSnapshots(primary)
+  const snapshotsSupported = supportsCsiVolumeSnapshots(storage.storageClasses)
 
   useEffect(() => {
     if (state.components.replication) return
@@ -984,7 +986,19 @@ export function StorageClassesStep() {
         </button>
       )}
 
-      {state.storageClassesEnabled && (
+      {state.storageClassesEnabled && !snapshotsSupported && (
+        <Section
+          title="VolumeSnapshotClass"
+          help="CSI volume snapshots for a PVC are not supported on VSP One SDS Block."
+        >
+          <Callout>
+            Hitachi CSI does not support volume snapshots on VSP One SDS Block, so this package does not include a
+            VolumeSnapshotClass.
+          </Callout>
+        </Section>
+      )}
+
+      {state.storageClassesEnabled && snapshotsSupported && (
       <Section
         title="VolumeSnapshotClass"
         help="Enables CSI volume snapshots. Deletion policy controls whether snapshot content is removed when the VolumeSnapshot is deleted."
@@ -1133,7 +1147,7 @@ export function StorageClassesStep() {
       {isAdvanced && state.storageClassesEnabled && previewSc && (
         <Section title="Live YAML preview">
           <CodeBlock className="yaml-preview">{generateStorageClass(previewSc)}</CodeBlock>
-          {state.snapshotClass.enabled && (
+          {state.snapshotClass.enabled && snapshotsSupported && (
             <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem' }}>
               {generateSnapshotClass(state.snapshotClass, snapshotClassOpts(state))}
             </CodeBlock>
