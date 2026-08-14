@@ -3,7 +3,7 @@
  * mapped to generated manifest paths (no READMEs).
  */
 
-import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath } from './platforms'
+import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath, supportsCsiVolumeSnapshots } from './platforms'
 import { getSiteStorage, hrpcPairSystem, resolvedStorageClassName, type SiteId } from './sites'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { effectiveSerialNumber } from './validation'
@@ -288,7 +288,11 @@ function buildSite(
   }
 
   let snapshot: ReviewChip | undefined
-  if (state.storageClassesEnabled && state.snapshotClass.enabled) {
+  if (
+    state.storageClassesEnabled &&
+    state.snapshotClass.enabled &&
+    supportsCsiVolumeSnapshots(classes)
+  ) {
     const id = `${site}:snapshot`
     addHit({
       id,

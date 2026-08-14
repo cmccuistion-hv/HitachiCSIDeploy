@@ -13,6 +13,7 @@ import {
   STRETCHED_CONNECTIONS,
   coerceConnectionType,
   stretchedSecretPackagePath,
+  supportsCsiVolumeSnapshots,
 } from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
 import { generateMultipathMachineConfigs, getMultipathConf, expectedMultipathMachineConfigNames } from './multipath'
@@ -1128,7 +1129,11 @@ multipath -ll
       })
     }
 
-    if (state.snapshotClass.enabled) {
+    if (
+      state.snapshotClass.enabled &&
+      supportsCsiVolumeSnapshots(state.storageClasses) &&
+      snapshotClassOpts(state).poolID
+    ) {
       files.push({
         path: `01-storage/volumesnapshotclass-${state.snapshotClass.name}.yaml`,
         content: generateSnapshotClass(state.snapshotClass, snapshotClassOpts(state)),

@@ -9,7 +9,7 @@ import {
   SECRET_FIELDS_STANDARD,
   SECRET_FIELDS_STRETCHED,
 } from '../catalog/parameters'
-import { CONNECTION_TYPES } from '../catalog/platforms'
+import { CONNECTION_TYPES, supportsCsiVolumeSnapshots } from '../catalog/platforms'
 import { getSiteStorage } from '../catalog/sites'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 import { effectiveSerialNumber } from '../catalog/validation'
@@ -503,12 +503,16 @@ function assertSnapshotFile(path: string, content: string, state: WizardState): 
   ])
   assertAllowedKeys(path, Object.keys(params), allowed)
   const opts = snapshotClassOpts(state)
-  const required = [
-    'csi.storage.k8s.io/snapshotter-secret-name',
-    'csi.storage.k8s.io/snapshotter-secret-namespace',
-  ]
-  if (opts.poolID) required.unshift('poolID')
-  assertRequiredKeys(path, params, required, 'VolumeSnapshotClass')
+  assertRequiredKeys(
+    path,
+    params,
+    [
+      'poolID',
+      'csi.storage.k8s.io/snapshotter-secret-name',
+      'csi.storage.k8s.io/snapshotter-secret-namespace',
+    ],
+    'VolumeSnapshotClass',
+  )
   const { poolID } = opts
   if (poolID && paramStr(params.poolID) !== poolID) {
     throw new Error(`${path}: poolID "${paramStr(params.poolID)}" !== wizard state`)
@@ -620,6 +624,9 @@ export function assertCsiContract(
     if (file.path.includes('/storageclass-') || /(?:^|\/)01-storage\/storageclass-/.test(file.path)) {
       assertStorageClassFile(file.path, file.content, classes, systems)
     } else if (file.path.includes('/volumesnapshotclass-') || /(?:^|\/)01-storage\/volumesnapshotclass-/.test(file.path)) {
+      if (classes.length > 0 && !supportsCsiVolumeSnapshots(classes)) {
+        throw new Error(`${file.path}: VolumeSnapshotClass is not supported for VSP One SDS Block`)
+      }
       assertSnapshotFile(file.path, file.content, {
         ...state,
         storageClasses: classes,
