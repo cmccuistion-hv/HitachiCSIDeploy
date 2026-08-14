@@ -7,7 +7,8 @@ import {
   SC_FIELDS_STANDARD,
   SC_FIELDS_STRETCHED,
 } from '../catalog/parameters'
-import type { StorageClassKind } from '../catalog/types'
+import { CONNECTION_TYPES } from '../catalog/platforms'
+import type { StorageClassConfig, StorageClassKind } from '../catalog/types'
 
 export const UPSTREAM_SAMPLE_VERSION = 'v3.18.3'
 
@@ -100,6 +101,72 @@ export function assertAllowedKeys(path: string, emitted: string[], allowed: Set<
   for (const key of emitted) {
     if (!allowed.has(key)) {
       throw new Error(`${path}: unknown parameter "${key}" (not in sample or catalog)`)
+    }
+  }
+}
+
+export function requiredStorageClassParameterKeys(sc: StorageClassConfig): string[] {
+  if (sc.kind === 'vsp-one-sds-block') return ['storageType', 'connectionType']
+  if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
+    const fromCatalog = SC_FIELDS_STRETCHED.filter((field) => field.required)
+      .map((field) => field.key)
+      .filter((key) => key !== 'name' && key !== 'virtualStorageSerialNumber')
+    return ['connectionType', 'replicationType', ...fromCatalog]
+  }
+  const conn = CONNECTION_TYPES.find((item) => item.id === sc.connectionType)
+  const keys = ['connectionType', 'serialNumber', 'poolID']
+  if (conn?.needsPortId) keys.push('portID')
+  if (conn?.needsNvmSubsystem) keys.push('nvmSubsystemID')
+  return keys
+}
+
+export function forbiddenStorageClassParameterKeys(sc: StorageClassConfig): string[] {
+  const stretchedKeys = [
+    'replicationType',
+    'quorumID',
+    'copyGroupName',
+    'consistencyGroupId',
+    'primaryPoolID',
+    'primaryPortID',
+    'secondaryPoolID',
+    'secondaryPortID',
+  ]
+  if (sc.kind === 'vsp-one-sds-block') {
+    return ['serialNumber', 'poolID', 'portID', 'nvmSubsystemID', ...stretchedKeys]
+  }
+  if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
+    return ['serialNumber', 'poolID', 'portID', 'nvmSubsystemID', 'storageType']
+  }
+  const conn = CONNECTION_TYPES.find((item) => item.id === sc.connectionType)
+  const keys = ['storageType', ...stretchedKeys]
+  if (conn?.needsPortId) keys.push('nvmSubsystemID')
+  if (conn?.needsNvmSubsystem) keys.push('portID')
+  return keys
+}
+
+export function assertRequiredKeys(
+  path: string,
+  params: Record<string, unknown>,
+  required: string[],
+  reason = 'this StorageClass',
+): void {
+  for (const key of required) {
+    const value = params[key]
+    if (value === undefined || value === null || String(value).trim() === '') {
+      throw new Error(`${path}: ${reason} requires ${key}`)
+    }
+  }
+}
+
+export function assertForbiddenKeys(
+  path: string,
+  params: Record<string, unknown>,
+  forbidden: string[],
+  reason: string,
+): void {
+  for (const key of forbidden) {
+    if (params[key] !== undefined) {
+      throw new Error(`${path}: ${reason} must not emit ${key}`)
     }
   }
 }
