@@ -10,7 +10,8 @@ import {
   SECRET_FIELDS_STRETCHED,
 } from '../catalog/parameters'
 import { CONNECTION_TYPES } from '../catalog/platforms'
-import type { StorageClassConfig, StorageClassKind } from '../catalog/types'
+import { getSiteStorage } from '../catalog/sites'
+import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 
 export const UPSTREAM_SAMPLE_VERSION = 'v3.18.3'
 
@@ -308,4 +309,302 @@ export function assertSecretEmittedKeys(
     }
   }
   assertNoPortMigrationSecretKeys(path, keys)
+}
+
+const CSI_PATH =
+  /^(?:primary\/|secondary\/)?(?:01-storage\/(?:storageclass-|secret-|volumesnapshotclass-).*|02-driver\/hspc-cr\.yaml|03-replication\/(?:storage-secrets\.yaml|remote-kubeconfig-.+\.yaml))$/
+
+function paramStr(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  return String(value)
+}
+
+function selectionReason(sc: StorageClassConfig): string {
+  if (sc.kind === 'vsp-one-sds-block') return 'SDS Block'
+  if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') return 'stretched StorageClass'
+  return CONNECTION_TYPES.find((item) => item.id === sc.connectionType)?.label ?? sc.connectionType
+}
+
+function storageForPath(
+  state: WizardState,
+  path: string,
+): { systems: StorageSystemConfig[]; classes: StorageClassConfig[] } {
+  if (path.startsWith('primary/') || path.startsWith('secondary/')) {
+    const site = path.startsWith('primary/') ? 'primary' : 'secondary'
+    const storage = getSiteStorage(state, site)
+    return { systems: storage.storageSystems, classes: storage.storageClasses }
+  }
+  return { systems: state.storageSystems, classes: state.storageClasses }
+}
+
+function assertStorageClassFile(
+  path: string,
+  content: string,
+  classes: StorageClassConfig[],
+): void {
+  const doc = parse(content) as {
+    metadata?: { name?: string }
+    allowVolumeExpansion?: boolean
+    parameters?: Record<string, unknown>
+  }
+  const name = doc.metadata?.name || ''
+  const sc = classes.find((item) => item.name === name)
+  if (!sc) {
+    throw new Error(`${path}: StorageClass "${name}" is not in wizard state`)
+  }
+  const params = doc.parameters ?? {}
+  const kind: StorageClassKind = sc.kind
+  assertAllowedKeys(path, Object.keys(params), allowedStorageClassParameterKeys(kind))
+  const reason = selectionReason(sc)
+  assertRequiredKeys(path, params, requiredStorageClassParameterKeys(sc), reason)
+  assertForbiddenKeys(path, params, forbiddenStorageClassParameterKeys(sc), reason)
+
+  if (kind === 'stretched' || kind === 'stretched-adr') {
+    if (doc.allowVolumeExpansion !== false) {
+      throw new Error(`${path}: stretched StorageClass must set allowVolumeExpansion false`)
+    }
+    if (params['csi.storage.k8s.io/controller-expand-secret-name'] !== undefined) {
+      throw new Error(`${path}: stretched StorageClass must not emit controller-expand secret refs`)
+    }
+    const expected: Record<string, string> = {
+      connectionType: sc.connectionType,
+      replicationType: 'stretched',
+      quorumID: sc.quorumID || '',
+      copyGroupName: sc.copyGroupName || '',
+      consistencyGroupId: sc.consistencyGroupId || '',
+      primaryPoolID: sc.primaryPoolID || '',
+      primaryPortID: sc.primaryPortID || '',
+      secondaryPoolID: sc.secondaryPoolID || '',
+      secondaryPortID: sc.secondaryPortID || '',
+    }
+    if (sc.copyPairName) expected.copyPairName = sc.copyPairName
+    for (const [key, want] of Object.entries(expected)) {
+      const actual = paramStr(params[key])
+      if (actual !== want) {
+        throw new Error(`${path}: ${key} "${actual}" !== wizard state`)
+      }
+    }
+    return
+  }
+
+  if (kind === 'vsp-one-sds-block') {
+    if (paramStr(params.storageType) !== 'vsp-one-sds-block') {
+      throw new Error(`${path}: storageType "${paramStr(params.storageType)}" !== wizard state`)
+    }
+    if (paramStr(params.connectionType) !== sc.connectionType) {
+      throw new Error(`${path}: connectionType "${paramStr(params.connectionType)}" !== wizard state`)
+    }
+    return
+  }
+
+  const expectedSerial = sc.serialNumber || ''
+  if (expectedSerial && paramStr(params.serialNumber) !== expectedSerial) {
+    throw new Error(`${path}: serialNumber "${paramStr(params.serialNumber)}" !== wizard state`)
+  }
+  if (sc.poolID && paramStr(params.poolID) !== sc.poolID) {
+    throw new Error(`${path}: poolID "${paramStr(params.poolID)}" !== wizard state`)
+  }
+  if (sc.portID && paramStr(params.portID) !== sc.portID) {
+    throw new Error(`${path}: portID "${paramStr(params.portID)}" !== wizard state`)
+  }
+  if (sc.nvmSubsystemID && paramStr(params.nvmSubsystemID) !== sc.nvmSubsystemID) {
+    throw new Error(`${path}: nvmSubsystemID "${paramStr(params.nvmSubsystemID)}" !== wizard state`)
+  }
+  if (paramStr(params.connectionType) !== sc.connectionType) {
+    throw new Error(`${path}: connectionType "${paramStr(params.connectionType)}" !== wizard state`)
+  }
+}
+
+function assertSecretFile(
+  path: string,
+  content: string,
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+): void {
+  const doc = parse(content) as {
+    data?: Record<string, string>
+    stringData?: Record<string, string>
+  }
+  const keys = secretKeys(doc)
+  const stretched = doc.stringData?.primarySerial !== undefined
+  if (stretched) {
+    assertSecretEmittedKeys(path, keys, 'stretched')
+    const primary = systems.find((sys) => sys.stretchedRole === 'primary') || systems[0]
+    const secondary = systems.find((sys) => sys.stretchedRole === 'secondary') || systems[1]
+    if (!primary || !secondary) {
+      throw new Error(`${path}: stretched Secret generated without a GAD pair in wizard state`)
+    }
+    const expected: Record<string, string> = {
+      primarySerial: primary.serial,
+      primaryURL: primary.url,
+      primaryUser: primary.user,
+      primaryPassword: primary.password,
+      secondarySerial: secondary.serial,
+      secondaryURL: secondary.url,
+      secondaryUser: secondary.user,
+      secondaryPassword: secondary.password,
+    }
+    const vsm = classes.find((sc) => sc.kind === 'stretched' || sc.kind === 'stretched-adr')
+      ?.virtualStorageSerialNumber
+    if (vsm) expected.virtualStorageSerialNumber = vsm
+    assertSecretCoherence(path, doc, expected)
+    return
+  }
+  assertSecretEmittedKeys(path, keys, 'standard')
+  const fileName = path.split('/').pop() || ''
+  const sysName = fileName.replace(/^secret-/, '').replace(/\.yaml$/, '')
+  const sys = systems.find((item) => (item.name || item.id) === sysName) || systems[0]
+  if (!sys) {
+    throw new Error(`${path}: no storage system in wizard state for this Secret`)
+  }
+  assertSecretCoherence(path, doc, {
+    url: sys.url,
+    user: sys.user,
+    password: sys.password,
+  })
+}
+
+function assertSnapshotFile(path: string, content: string, state: WizardState): void {
+  const doc = parse(content) as {
+    driver?: string
+    parameters?: Record<string, unknown>
+  }
+  if (doc.driver !== 'hspc.csi.hitachi.com') {
+    throw new Error(`${path}: driver "${doc.driver ?? ''}" !== wizard state`)
+  }
+  const params = doc.parameters ?? {}
+  const allowed = new Set([
+    ...sampleParameterKeys('volumesnapshotclass-sample.yaml'),
+    ...sampleParameterKeys('volumesnapshotclass-immutable-sample.yaml'),
+    'retentionPeriod',
+  ])
+  assertAllowedKeys(path, Object.keys(params), allowed)
+  assertRequiredKeys(
+    path,
+    params,
+    ['poolID', 'csi.storage.k8s.io/snapshotter-secret-name', 'csi.storage.k8s.io/snapshotter-secret-namespace'],
+    'VolumeSnapshotClass',
+  )
+  const sc = state.storageClasses.find((item) => item.kind === 'standard' && item.poolID) || state.storageClasses[0]
+  if (sc?.poolID && paramStr(params.poolID) !== sc.poolID) {
+    throw new Error(`${path}: poolID "${paramStr(params.poolID)}" !== wizard state`)
+  }
+}
+
+function assertHspcCr(path: string, content: string, state: WizardState): void {
+  const doc = parse(content) as {
+    apiVersion?: string
+    kind?: string
+    metadata?: { name?: string; namespace?: string }
+    spec?: Record<string, unknown>
+  }
+  if (doc.apiVersion !== 'csi.hitachi.com/v1') {
+    throw new Error(`${path}: apiVersion "${doc.apiVersion ?? ''}" !== wizard state`)
+  }
+  if (doc.kind !== 'HSPC') {
+    throw new Error(`${path}: kind "${doc.kind ?? ''}" !== wizard state`)
+  }
+  if (doc.metadata?.name !== 'hspc') {
+    throw new Error(`${path}: metadata.name "${doc.metadata?.name ?? ''}" !== wizard state`)
+  }
+  if (doc.metadata?.namespace !== state.driverNamespace) {
+    throw new Error(
+      `${path}: namespace "${doc.metadata?.namespace ?? ''}" !== wizard state`,
+    )
+  }
+  const sample = parse(readFileSync(join(samplesDir, 'hspc_v1_hspc.yaml'), 'utf8')) as {
+    spec?: Record<string, unknown>
+  }
+  const allowedSpec = new Set(Object.keys(sample.spec ?? {}))
+  for (const key of Object.keys(doc.spec ?? {})) {
+    if (!allowedSpec.has(key)) {
+      throw new Error(`${path}: unknown parameter "${key}" (not in sample or catalog)`)
+    }
+  }
+}
+
+function assertHrpcStorageSecrets(path: string, content: string, state: WizardState): void {
+  const doc = parse(content) as {
+    metadata?: { name?: string }
+    stringData?: Record<string, string>
+  }
+  if (doc.metadata?.name !== 'hspc-replication-operator-storage-secrets') {
+    throw new Error(
+      `${path}: metadata.name "${doc.metadata?.name ?? ''}" !== wizard state`,
+    )
+  }
+  const inner = parse(String(doc.stringData?.['storage-secrets.yaml'] ?? '')) as {
+    storages?: Array<{ serial?: string; url?: string; user?: string; password?: string; journal?: string }>
+  }
+  const storages = inner.storages ?? []
+  for (const item of storages) {
+    for (const key of ['serial', 'url', 'user', 'password', 'journal'] as const) {
+      if (!item[key]) {
+        throw new Error(`${path}: HRPC storage-secrets requires ${key}`)
+      }
+    }
+    const expected = state.replication.storageSecrets.find((secret) => secret.serial === item.serial)
+    if (!expected) {
+      throw new Error(`${path}: serial "${item.serial}" !== wizard state`)
+    }
+    if (item.url !== expected.url) {
+      throw new Error(`${path}: url "${item.url}" !== wizard state`)
+    }
+    if (item.user !== expected.user) {
+      throw new Error(`${path}: user "${item.user}" !== wizard state`)
+    }
+    if (item.password !== expected.password) {
+      throw new Error(`${path}: password does not match wizard state`)
+    }
+    if (item.journal !== expected.journal) {
+      throw new Error(`${path}: journal "${item.journal}" !== wizard state`)
+    }
+  }
+}
+
+function assertRemoteKubeconfig(path: string, content: string): void {
+  const doc = parse(content) as {
+    metadata?: { name?: string }
+    data?: Record<string, string>
+  }
+  if (doc.metadata?.name !== 'hspc-replication-operator-remote-kubeconfig') {
+    throw new Error(
+      `${path}: metadata.name "${doc.metadata?.name ?? ''}" !== wizard state`,
+    )
+  }
+  const dataKeys = Object.keys(doc.data ?? {})
+  if (dataKeys.length !== 1 || dataKeys[0] !== 'remote-kubeconfig') {
+    throw new Error(`${path}: unknown parameter "${dataKeys.join(',')}" (not in sample or catalog)`)
+  }
+}
+
+export function assertCsiContract(
+  files: Array<{ path: string; content: string }>,
+  state: WizardState,
+): void {
+  for (const file of files) {
+    if (!CSI_PATH.test(file.path)) continue
+    if (!state.storageClassesEnabled) {
+      if (file.path.includes('storageclass-') || file.path.includes('volumesnapshotclass-')) {
+        throw new Error(`${file.path}: StorageClasses are off but this file was generated`)
+      }
+    }
+    const { systems, classes } = storageForPath(state, file.path)
+    if (file.path.includes('/storageclass-') || /(?:^|\/)01-storage\/storageclass-/.test(file.path)) {
+      assertStorageClassFile(file.path, file.content, classes)
+    } else if (file.path.includes('/volumesnapshotclass-') || /(?:^|\/)01-storage\/volumesnapshotclass-/.test(file.path)) {
+      assertSnapshotFile(file.path, file.content, {
+        ...state,
+        storageClasses: classes,
+      })
+    } else if (file.path.includes('/secret-') || /(?:^|\/)01-storage\/secret-/.test(file.path)) {
+      assertSecretFile(file.path, file.content, systems, classes)
+    } else if (file.path.endsWith('02-driver/hspc-cr.yaml')) {
+      assertHspcCr(file.path, file.content, state)
+    } else if (file.path.endsWith('03-replication/storage-secrets.yaml')) {
+      assertHrpcStorageSecrets(file.path, file.content, state)
+    } else if (file.path.includes('03-replication/remote-kubeconfig-')) {
+      assertRemoteKubeconfig(file.path, file.content)
+    }
+  }
 }
