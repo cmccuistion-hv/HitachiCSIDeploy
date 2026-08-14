@@ -20,6 +20,7 @@ export const CATALOG_ONLY_KEYS: Record<string, string> = {
   storageEfficiencyMode: 'optional; not in sc-sample.yaml',
   copyPairName: 'optional stretched; not in sc-sample-stretched.yaml',
   retentionPeriod: 'immutable snapshots; not in volumesnapshotclass-sample.yaml',
+  resourceGroupID: 'optional; not in secret-sample.yaml',
 }
 
 export const SECRET_PORT_MIGRATION_KEYS = [
@@ -71,6 +72,69 @@ export function sampleParameterKeys(sampleFile: string): string[] {
     parameters?: Record<string, unknown>
   }
   return Object.keys(doc.parameters ?? {})
+}
+
+function catalogKeyInSample(catalogKey: string, sampleKeys: string[]): boolean {
+  if (catalogKey === 'fstype') return sampleKeys.includes('csi.storage.k8s.io/fstype')
+  return sampleKeys.includes(catalogKey)
+}
+
+function missingCatalogKeysFromSample(
+  label: string,
+  fields: { key: string }[],
+  sampleFile: string,
+): string[] {
+  const sampleKeys = sampleParameterKeys(sampleFile)
+  const missing: string[] = []
+  for (const field of fields) {
+    const key = field.key
+    if (UI_ONLY_SC_KEYS.has(key)) continue
+    if (CATALOG_ONLY_KEYS[key]) continue
+    if (!catalogKeyInSample(key, sampleKeys)) missing.push(`${label}: ${key}`)
+  }
+  return missing
+}
+
+function missingSecretCatalogKeys(
+  label: string,
+  fields: { key: string }[],
+  sampleFile: string,
+): string[] {
+  const sample = parse(readFileSync(join(samplesDir, sampleFile), 'utf8')) as {
+    data?: Record<string, string>
+    stringData?: Record<string, string>
+  }
+  const sampleKeys = secretKeys(sample)
+  const missing: string[] = []
+  for (const field of fields) {
+    const key = field.key
+    if (CATALOG_ONLY_KEYS[key]) continue
+    if (!sampleKeys.includes(key)) missing.push(`${label}: ${key}`)
+  }
+  return missing
+}
+
+export function catalogKeysMissingFromSamples(): string[] {
+  return [
+    ...missingCatalogKeysFromSample('standard SC', SC_FIELDS_STANDARD, 'sc-sample.yaml'),
+    ...missingCatalogKeysFromSample('stretched SC', SC_FIELDS_STRETCHED, 'sc-sample-stretched.yaml'),
+    ...missingCatalogKeysFromSample(
+      'stretched-adr SC',
+      SC_FIELDS_STRETCHED,
+      'sc-sample-stretched-adr.yaml',
+    ),
+    ...missingCatalogKeysFromSample(
+      'SDS SC',
+      SC_FIELDS_SDS,
+      'sc-sample-vsp-one-sds-block.yaml',
+    ),
+    ...missingSecretCatalogKeys('standard Secret', SECRET_FIELDS_STANDARD, 'secret-sample.yaml'),
+    ...missingSecretCatalogKeys(
+      'stretched Secret',
+      SECRET_FIELDS_STRETCHED,
+      'secret-sample-stretched.yaml',
+    ),
+  ]
 }
 
 function catalogParameterKeys(kind: StorageClassKind): string[] {
