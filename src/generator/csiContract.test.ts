@@ -10,6 +10,7 @@ import {
   assertNoPortMigrationSecretKeys,
   assertRequiredKeys,
   assertSecretCoherence,
+  catalogKeysMissingFromSamples,
   forbiddenStorageClassParameterKeys,
   requiredStorageClassParameterKeys,
   sampleParameterKeys,
@@ -29,6 +30,12 @@ function sc(partial: Partial<StorageClassConfig>): StorageClassConfig {
     ...partial,
   }
 }
+
+describe('catalog vs sample names', () => {
+  it('every catalog Hitachi key is in a sample or CATALOG_ONLY_KEYS', () => {
+    expect(catalogKeysMissingFromSamples()).toEqual([])
+  })
+})
 
 describe('allowed StorageClass parameter keys', () => {
   it('accepts keys from the standard sample', () => {
