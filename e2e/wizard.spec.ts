@@ -1,39 +1,19 @@
-import { expect, test, type Page } from '@playwright/test'
-import { readFile } from 'node:fs/promises'
-import JSZip from 'jszip'
+import { expect, test } from '@playwright/test'
 import { ensureSitesForReplication } from '../src/catalog/sites'
 import { filledState } from '../src/test/fixtures'
-
-const STORAGE_KEY = 'hitachi-csi-wizard-state'
-const WELCOME_SEEN_KEY = 'hitachi-csi-wizard-welcome-seen'
-
-async function openFresh(page: Page) {
-  await page.addInitScript(() => localStorage.clear())
-  await page.goto('/')
-}
-
-function choice(page: Page, title: string) {
-  return page.locator('button.choice-card').filter({
-    has: page.getByRole('heading', { name: title, exact: true }),
-  })
-}
-
-function field(page: Page, label: string) {
-  return page.locator('.field').filter({ hasText: label }).first()
-}
-
-function continueButton(page: Page) {
-  return page.locator('footer').locator('button.btn-primary')
-}
-
-function sidebar(page: Page) {
-  return page.locator('ol.step-list')
-}
-
-async function continueTo(page: Page, heading: string) {
-  await continueButton(page).click()
-  await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
-}
+import {
+  STORAGE_KEY,
+  choice,
+  continueButton,
+  continueTo,
+  downloadZip,
+  field,
+  fillArray,
+  fillStandardStorageClass,
+  openFresh,
+  seedWizardState,
+  sidebar,
+} from './helpers'
 
 function replicationStateWithoutJournals() {
   const state = ensureSitesForReplication(
@@ -89,26 +69,14 @@ test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) 
   await continueTo(page, 'Checklist')
   await continueTo(page, 'Storage systems')
 
-  await field(page, 'Storage family').locator('select').selectOption({
-    label: 'VSP 5000 / G / E / F',
-  })
-  await field(page, 'Serial number').locator('input').fill('400001')
-  await field(page, 'REST URL').locator('input').fill('https://192.0.2.10')
-  await field(page, 'Username').locator('input').fill('maintenance')
-  await field(page, 'Password').locator('input').fill('fixture-password')
+  await fillArray(page)
   await continueTo(page, 'StorageClasses & snapshots')
 
-  await field(page, 'Pool ID').locator('input').fill('0')
-  await field(page, 'Port ID(s)').locator('input').fill('CL1-A')
+  await fillStandardStorageClass(page)
   await continueTo(page, 'Test volume')
   await continueTo(page, 'Review & export')
 
-  const downloadButton = page.getByRole('button', { name: 'Download ZIP' })
-  await expect(downloadButton).toBeEnabled({ timeout: 30_000 })
-  const downloadPromise = page.waitForEvent('download')
-  await downloadButton.click()
-  const download = await downloadPromise
-  const zip = await JSZip.loadAsync(await readFile(await download.path()))
+  const zip = await downloadZip(page)
   const paths = Object.keys(zip.files)
 
   expect(paths).toEqual(expect.arrayContaining([
@@ -136,13 +104,7 @@ test('blocks incomplete StorageClasses and hides the OpenShift console step on K
 
   await expect(sidebar(page)).not.toContainText('Console Plugin')
   await sidebar(page).getByRole('button', { name: /Storage systems/ }).click()
-  await field(page, 'Storage family').locator('select').selectOption({
-    label: 'VSP 5000 / G / E / F',
-  })
-  await field(page, 'Serial number').locator('input').fill('400001')
-  await field(page, 'REST URL').locator('input').fill('https://192.0.2.10')
-  await field(page, 'Username').locator('input').fill('maintenance')
-  await field(page, 'Password').locator('input').fill('fixture-password')
+  await fillArray(page)
   await continueTo(page, 'StorageClasses & snapshots')
 
   await expect(field(page, 'Pool ID').locator('input')).toHaveValue('')
@@ -154,24 +116,7 @@ test('blocks incomplete StorageClasses and hides the OpenShift console step on K
 test('blocks Replication export when journal IDs are missing', async ({ page }) => {
   const state = replicationStateWithoutJournals()
   expect(state.components.replication).toBe(true)
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-  const reloaded = page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame())
-  await page.evaluate(
-    ({ storageKey, welcomeSeenKey, seededState }) => {
-      localStorage.clear()
-      localStorage.setItem(storageKey, JSON.stringify(seededState))
-      localStorage.setItem(welcomeSeenKey, '1')
-      window.location.reload()
-    },
-    {
-      storageKey: STORAGE_KEY,
-      welcomeSeenKey: WELCOME_SEEN_KEY,
-      seededState: state,
-    },
-  )
-  await reloaded
-  await page.waitForLoadState('domcontentloaded')
+  await seedWizardState(page, state)
   await expect
     .poll(() =>
       page.evaluate((storageKey) => {

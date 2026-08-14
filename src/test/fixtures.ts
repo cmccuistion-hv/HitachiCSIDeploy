@@ -1,3 +1,4 @@
+import { ensureSitesForReplication } from '../catalog/sites'
 import { createDefaultState, type WizardState } from '../catalog/types'
 
 type NestedObjectKey =
@@ -51,5 +52,59 @@ export function filledState(overrides: FilledStateOverrides = {}): WizardState {
     consolePlugin: { ...state.consolePlugin, ...overrides.consolePlugin },
     quickstart: { ...state.quickstart, ...overrides.quickstart },
     versions: { ...state.versions, ...overrides.versions },
+  }
+}
+
+/** Two-site Replication with journals filled. Kubeconfigs are left empty unless the caller sets them. */
+export function filledReplicationState(overrides: FilledStateOverrides = {}): WizardState {
+  const state = ensureSitesForReplication(
+    filledState({
+      ...overrides,
+      components: { replication: true, disasterRecovery: true, ...overrides.components },
+      replication: {
+        enabled: true,
+        disasterRecovery: true,
+        storageSecrets: [
+          {
+            serial: '400001',
+            url: 'https://192.0.2.10',
+            user: 'maintenance',
+            password: 'fixture-password',
+            journal: '0',
+          },
+          {
+            serial: '400002',
+            url: 'https://192.0.2.11',
+            user: 'maintenance',
+            password: 'fixture-password',
+            journal: '1',
+          },
+        ],
+        ...overrides.replication,
+      },
+    }),
+  )
+
+  return {
+    ...state,
+    sites: {
+      primary: state.sites!.primary,
+      secondary: {
+        storageSystems: state.sites!.secondary.storageSystems.map((system) => ({
+          ...system,
+          family: 'vsp-5000-g-e-f',
+          serial: '400002',
+          url: 'https://192.0.2.11',
+          user: 'maintenance',
+          password: 'fixture-password',
+        })),
+        storageClasses: state.sites!.secondary.storageClasses.map((storageClass) => ({
+          ...storageClass,
+          serialNumber: '400002',
+          poolID: '1',
+          portID: 'CL2-A',
+        })),
+      },
+    },
   }
 }

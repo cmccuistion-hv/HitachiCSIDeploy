@@ -986,18 +986,6 @@ export function StorageClassesStep() {
         </button>
       )}
 
-      {state.storageClassesEnabled && !snapshotsSupported && (
-        <Section
-          title="VolumeSnapshotClass"
-          help="CSI volume snapshots for a PVC are not supported on VSP One SDS Block."
-        >
-          <Callout>
-            Hitachi CSI does not support volume snapshots on VSP One SDS Block, so this package does not include a
-            VolumeSnapshotClass.
-          </Callout>
-        </Section>
-      )}
-
       {state.storageClassesEnabled && snapshotsSupported && (
       <Section
         title="VolumeSnapshotClass"

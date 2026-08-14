@@ -139,6 +139,43 @@ describe('storage artifact validation', () => {
     expect(storageArtifactsValidForContinue(state)).toBe(true)
     expect(storageArtifactsValid(state)).toBe(true)
   })
+
+  it('requires NVMe subsystem ID (and not Port ID) for NVMe/TCP', () => {
+    const state = filledState()
+    const nvme = {
+      ...state.storageClasses[0],
+      connectionType: 'nvme-tcp' as const,
+      portID: '',
+      nvmSubsystemID: '',
+    }
+
+    expect(validateStorageClass(nvme, { storageSystems: state.storageSystems })).toEqual(
+      expect.objectContaining({ nvmSubsystemID: expect.any(String) }),
+    )
+    expect(validateStorageClass(nvme, { storageSystems: state.storageSystems })).not.toHaveProperty(
+      'portID',
+    )
+
+    expect(
+      validateStorageClass(
+        { ...nvme, nvmSubsystemID: '1' },
+        { storageSystems: state.storageSystems },
+      ),
+    ).toEqual({})
+  })
+
+  it('does not require serial, pool, or port on a VSP One SDS Block StorageClass', () => {
+    const state = filledState()
+    const sds = {
+      ...state.storageClasses[0],
+      kind: 'vsp-one-sds-block' as const,
+      serialNumber: '',
+      poolID: '',
+      portID: '',
+    }
+
+    expect(validateStorageClass(sds, { storageSystems: state.storageSystems })).toEqual({})
+  })
 })
 
 describe('GAD and stretched StorageClass constraints', () => {

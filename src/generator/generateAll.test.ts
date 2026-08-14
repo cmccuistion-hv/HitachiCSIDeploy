@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ensureSitesForReplication } from '../catalog/sites'
 import type { MultipathConfig, WizardState } from '../catalog/types'
 import { exportConfigJson } from '../state/exportConfig'
-import { filledState } from '../test/fixtures'
+import { filledReplicationState, filledState } from '../test/fixtures'
 import { generateAll, type GeneratedFile } from './yaml'
 
 vi.mock('../services/versions', async (importOriginal) => {
@@ -36,57 +35,36 @@ function fileAt(files: GeneratedFile[], path: string): GeneratedFile {
   return file!
 }
 
-function filledReplicationState(): WizardState {
-  const state = ensureSitesForReplication(
-    filledState({
-      components: { replication: true, disasterRecovery: true },
-      replication: {
-        enabled: true,
-        disasterRecovery: true,
-        primaryKubeconfig: 'dummy-primary-kubeconfig',
-        secondaryKubeconfig: 'dummy-secondary-kubeconfig',
-        storageSecrets: [
-          {
-            serial: '400001',
-            url: 'https://192.0.2.10',
-            user: 'maintenance',
-            password: 'fixture-password',
-            journal: '0',
-          },
-          {
-            serial: '400002',
-            url: 'https://192.0.2.11',
-            user: 'maintenance',
-            password: 'fixture-password',
-            journal: '1',
-          },
-        ],
-      },
-    }),
-  )
+const confMultipath: MultipathConfig = {
+  enabled: true,
+  includeConf: true,
+  includeMachineConfig: false,
+  includeDaemonSet: false,
+  alreadyApplied: false,
+  machineConfigName: 'hitachi-csi-multipath',
+  machineConfigRole: 'worker',
+  customConf: '',
+}
 
-  return {
-    ...state,
-    sites: {
-      primary: state.sites!.primary,
-      secondary: {
-        storageSystems: state.sites!.secondary.storageSystems.map((system) => ({
-          ...system,
-          family: 'vsp-5000-g-e-f',
-          serial: '400002',
-          url: 'https://192.0.2.11',
-          user: 'maintenance',
-          password: 'fixture-password',
-        })),
-        storageClasses: state.sites!.secondary.storageClasses.map((storageClass) => ({
-          ...storageClass,
-          serialNumber: '400002',
-          poolID: '1',
-          portID: 'CL2-A',
-        })),
-      },
-    },
-  }
+const nativeNvmeMultipath: MultipathConfig = {
+  enabled: false,
+  includeConf: false,
+  includeMachineConfig: false,
+  includeDaemonSet: false,
+  alreadyApplied: false,
+  machineConfigName: 'hitachi-csi-multipath',
+  machineConfigRole: 'worker',
+  customConf: '',
+}
+
+function k8sLike(platform: 'kubernetes' | 'rke2' | 'eks'): WizardState {
+  return filledState({
+    platform,
+    connectionType: 'iscsi',
+    driverNamespace: 'kube-system',
+    operatorNamespace: 'hspc-operator-system',
+    multipath: confMultipath,
+  })
 }
 
 describe('generateAll package matrix', () => {
@@ -151,18 +129,47 @@ describe('generateAll package matrix', () => {
     expect(fileAt(files, 'install.sh').content).not.toContain('wait_mcp_healthy')
   })
 
-  it('packages Kubernetes iSCSI with loose multipath config and kubectl', async () => {
+  it.each(['kubernetes', 'rke2', 'eks'] as const)(
+    'packages %s iSCSI with loose multipath config and kubectl',
+    async (platform) => {
+      const files = await generateAll(k8sLike(platform))
+      const generatedPaths = paths(files)
+
+      expect(generatedPaths).toEqual(
+        expect.arrayContaining(['00-prereq/multipath.conf', '02-driver/README.md', 'install.sh']),
+      )
+      expect(generatedPaths.some((path) => path.includes('operatorhub-'))).toBe(false)
+      expect(generatedPaths.some((path) => path.startsWith('05-console/'))).toBe(false)
+      expect(fileAt(files, 'install.sh').content).toContain('CMD="kubectl"')
+      expect(fileAt(files, '02-driver/hspc-cr.yaml').content).toContain('namespace: kube-system')
+    },
+  )
+
+  it('packages OpenShift iSCSI with MachineConfig (dm-multipath still required)', async () => {
+    const base = filledState()
     const files = await generateAll(
       filledState({
-        platform: 'kubernetes',
         connectionType: 'iscsi',
-        driverNamespace: 'kube-system',
-        operatorNamespace: 'hspc-operator-system',
+        storageClasses: [{ ...base.storageClasses[0], connectionType: 'iscsi' }],
+      }),
+    )
+
+    expect(fileAt(files, '00-prereq/hitachi-csi-multipath.yaml').content).toContain('kind: MachineConfig')
+    expect(fileAt(files, '01-storage/storageclass-hitachi-csi.yaml').content).toContain(
+      'connectionType: iscsi',
+    )
+  })
+
+  it('packages ROSA self-managed (classic) with MachineConfig when the user picks it', async () => {
+    const files = await generateAll(
+      filledState({
+        platform: 'rosa',
+        openshiftTopology: 'classic',
         multipath: {
           enabled: true,
-          includeConf: true,
-          includeMachineConfig: false,
+          includeMachineConfig: true,
           includeDaemonSet: false,
+          includeConf: false,
           alreadyApplied: false,
           machineConfigName: 'hitachi-csi-multipath',
           machineConfigRole: 'worker',
@@ -172,13 +179,117 @@ describe('generateAll package matrix', () => {
     )
     const generatedPaths = paths(files)
 
-    expect(generatedPaths).toEqual(
-      expect.arrayContaining(['00-prereq/multipath.conf', '02-driver/README.md', 'install.sh']),
+    expect(generatedPaths).toContain('00-prereq/hitachi-csi-multipath.yaml')
+    expect(fileAt(files, '00-prereq/hitachi-csi-multipath.yaml').content).toContain('kind: MachineConfig')
+    expect(generatedPaths.some((path) => path.startsWith('00-prereq/') && path.includes('daemonset'))).toBe(
+      false,
     )
-    expect(generatedPaths.some((path) => path.includes('operatorhub-'))).toBe(false)
-    expect(generatedPaths.some((path) => path.startsWith('05-console/'))).toBe(false)
-    expect(fileAt(files, 'install.sh').content).toContain('CMD="kubectl"')
-    expect(fileAt(files, '02-driver/hspc-cr.yaml').content).toContain('namespace: kube-system')
+  })
+
+  it('omits dm-multipath artifacts for NVMe/TCP and emits nvmSubsystemID', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        connectionType: 'nvme-tcp',
+        multipath: nativeNvmeMultipath,
+        storageClasses: [
+          {
+            ...base.storageClasses[0],
+            connectionType: 'nvme-tcp',
+            nvmSubsystemID: '1',
+            portID: '',
+          },
+        ],
+      }),
+    )
+    const generatedPaths = paths(files)
+    const storageClass = fileAt(files, '01-storage/storageclass-hitachi-csi.yaml').content
+
+    expect(generatedPaths.some((path) => path.startsWith('00-prereq/'))).toBe(false)
+    expect(storageClass).toContain('connectionType: nvme-tcp')
+    expect(storageClass).toContain('nvmSubsystemID: "1"')
+    expect(storageClass).not.toContain('portID:')
+  })
+
+  it('packages a VSP One SDS Block StorageClass without serial/pool/port', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        storageSystems: [{ ...base.storageSystems[0], family: 'vsp-one-sds-block' }],
+        storageClasses: [
+          {
+            ...base.storageClasses[0],
+            kind: 'vsp-one-sds-block',
+            name: 'hitachi-csi-sds',
+            serialNumber: '',
+            poolID: '',
+            portID: '',
+          },
+        ],
+      }),
+    )
+    const storageClass = fileAt(files, '01-storage/storageclass-hitachi-csi-sds.yaml').content
+
+    expect(storageClass).toContain('storageType: vsp-one-sds-block')
+    expect(storageClass).not.toContain('serialNumber:')
+    expect(storageClass).not.toContain('poolID:')
+  })
+
+  it('packages Performance Metrics with a secret, exporter, and OpenShift SCC', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: {
+          enabled: true,
+          storages: [
+            {
+              serial: base.storageSystems[0].serial,
+              url: base.storageSystems[0].url,
+              user: base.storageSystems[0].user,
+              password: base.storageSystems[0].password,
+            },
+          ],
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).toEqual(
+      expect.arrayContaining([
+        '04-metrics/namespace.yaml',
+        '04-metrics/scc-for-openshift.yaml',
+        '04-metrics/metrics-secret.yaml',
+        '04-metrics/exporter.yaml',
+        '04-metrics/README.md',
+      ]),
+    )
+    expect(fileAt(files, '04-metrics/metrics-secret.yaml').content).toContain('serial: 400001')
+    expect(fileAt(files, 'install.sh').content).toMatch(/04-metrics/)
+  })
+
+  it('packages Performance Metrics and the OpenShift Console Plugin together', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true, consolePlugin: true },
+        metrics: {
+          enabled: true,
+          storages: [
+            {
+              serial: base.storageSystems[0].serial,
+              url: base.storageSystems[0].url,
+              user: base.storageSystems[0].user,
+              password: base.storageSystems[0].password,
+            },
+          ],
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths.some((path) => path.startsWith('04-metrics/'))).toBe(true)
+    expect(generatedPaths.some((path) => path.startsWith('05-console/'))).toBe(true)
   })
 
   it('packages the telemetry opt-out manifest and guarded operator restart', async () => {
@@ -202,7 +313,12 @@ describe('generateAll package matrix', () => {
   })
 
   it('packages Replication as two site folders without exporting kubeconfig values', async () => {
-    const state = filledReplicationState()
+    const state = filledReplicationState({
+      replication: {
+        primaryKubeconfig: 'dummy-primary-kubeconfig',
+        secondaryKubeconfig: 'dummy-secondary-kubeconfig',
+      },
+    })
     const files = await generateAll(state)
     const generatedPaths = paths(files)
 
