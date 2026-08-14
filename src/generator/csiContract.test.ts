@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 import type { StorageClassConfig } from '../catalog/types'
 import {
   CATALOG_ONLY_KEYS,
+  SECRET_PORT_MIGRATION_KEYS,
+  allowedSecretKeys,
   allowedStorageClassParameterKeys,
   assertAllowedKeys,
   assertForbiddenKeys,
+  assertNoPortMigrationSecretKeys,
   assertRequiredKeys,
+  assertSecretCoherence,
   forbiddenStorageClassParameterKeys,
   requiredStorageClassParameterKeys,
   sampleParameterKeys,
@@ -90,5 +94,52 @@ describe('required and forbidden StorageClass parameters', () => {
     expect(() =>
       assertForbiddenKeys('sc.yaml', { portID: 'CL1-A' }, ['portID'], 'NVMe/TCP'),
     ).toThrow(/sc.yaml: NVMe\/TCP must not emit portID/)
+  })
+})
+
+describe('Secret contract', () => {
+  it('allows catalog standard secret keys and rejects port migration', () => {
+    expect(allowedSecretKeys('standard').has('url')).toBe(true)
+    expect(allowedSecretKeys('standard').has('user')).toBe(true)
+    expect(allowedSecretKeys('standard').has('password')).toBe(true)
+    expect(() => assertNoPortMigrationSecretKeys('secret.yaml', ['url', 'user'])).not.toThrow()
+    expect(() => assertNoPortMigrationSecretKeys('secret.yaml', ['portIP'])).toThrow(
+      /secret.yaml: Secret must not emit port-migration key "portIP"/,
+    )
+    expect(SECRET_PORT_MIGRATION_KEYS).toContain('portIP')
+  })
+
+  it('matches stringData values to wizard state', () => {
+    expect(() =>
+      assertSecretCoherence(
+        'secret.yaml',
+        { stringData: { primarySerial: '400001' } },
+        { primarySerial: '400001' },
+      ),
+    ).not.toThrow()
+    expect(() =>
+      assertSecretCoherence(
+        'secret.yaml',
+        { stringData: { primarySerial: '999' } },
+        { primarySerial: '400001' },
+      ),
+    ).toThrow(/secret.yaml: primarySerial "999" !== wizard state/)
+  })
+
+  it('does not put the password in the error', () => {
+    expect(() =>
+      assertSecretCoherence(
+        'secret.yaml',
+        { stringData: { password: 'wrong' } },
+        { password: 'fixture-password' },
+      ),
+    ).toThrow(/secret.yaml: password does not match wizard state/)
+    expect(() =>
+      assertSecretCoherence(
+        'secret.yaml',
+        { stringData: { password: 'wrong' } },
+        { password: 'fixture-password' },
+      ),
+    ).not.toThrow(/fixture-password/)
   })
 })

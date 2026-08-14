@@ -6,6 +6,8 @@ import {
   SC_FIELDS_SDS,
   SC_FIELDS_STANDARD,
   SC_FIELDS_STRETCHED,
+  SECRET_FIELDS_STANDARD,
+  SECRET_FIELDS_STRETCHED,
 } from '../catalog/parameters'
 import { CONNECTION_TYPES } from '../catalog/platforms'
 import type { StorageClassConfig, StorageClassKind } from '../catalog/types'
@@ -169,4 +171,77 @@ export function assertForbiddenKeys(
       throw new Error(`${path}: ${reason} must not emit ${key}`)
     }
   }
+}
+
+export function secretKeys(doc: {
+  data?: Record<string, string>
+  stringData?: Record<string, string>
+}): string[] {
+  return [...Object.keys(doc.data ?? {}), ...Object.keys(doc.stringData ?? {})]
+}
+
+export function allowedSecretKeys(kind: 'standard' | 'stretched'): Set<string> {
+  const fields = kind === 'stretched' ? SECRET_FIELDS_STRETCHED : SECRET_FIELDS_STANDARD
+  const fromCatalog = fields.map((field) => field.key)
+  const sampleFile = kind === 'stretched' ? 'secret-sample-stretched.yaml' : 'secret-sample.yaml'
+  const sample = parse(readFileSync(join(samplesDir, sampleFile), 'utf8')) as {
+    data?: Record<string, string>
+    stringData?: Record<string, string>
+  }
+  return new Set([...fromCatalog, ...secretKeys(sample)])
+}
+
+export function assertNoPortMigrationSecretKeys(path: string, keys: string[]): void {
+  for (const key of keys) {
+    if ((SECRET_PORT_MIGRATION_KEYS as readonly string[]).includes(key)) {
+      throw new Error(`${path}: Secret must not emit port-migration key "${key}"`)
+    }
+  }
+}
+
+function decodeSecretValue(
+  doc: { data?: Record<string, string>; stringData?: Record<string, string> },
+  key: string,
+): string | undefined {
+  if (doc.stringData?.[key] !== undefined) return doc.stringData[key]
+  if (doc.data?.[key] !== undefined) {
+    return Buffer.from(doc.data[key], 'base64').toString('utf8')
+  }
+  return undefined
+}
+
+const PASSWORD_KEYS = new Set(['password', 'primaryPassword', 'secondaryPassword'])
+
+export function assertSecretCoherence(
+  path: string,
+  doc: { data?: Record<string, string>; stringData?: Record<string, string> },
+  expected: Record<string, string>,
+): void {
+  for (const [key, want] of Object.entries(expected)) {
+    const actual = decodeSecretValue(doc, key)
+    if (actual !== want) {
+      if (PASSWORD_KEYS.has(key)) {
+        throw new Error(`${path}: ${key} does not match wizard state`)
+      }
+      throw new Error(`${path}: ${key} "${actual ?? ''}" !== wizard state`)
+    }
+  }
+}
+
+export function assertSecretEmittedKeys(
+  path: string,
+  keys: string[],
+  kind: 'standard' | 'stretched',
+): void {
+  const catalog = new Set(
+    (kind === 'stretched' ? SECRET_FIELDS_STRETCHED : SECRET_FIELDS_STANDARD).map(
+      (field) => field.key,
+    ),
+  )
+  for (const key of keys) {
+    if (!catalog.has(key)) {
+      throw new Error(`${path}: unknown parameter "${key}" (not in sample or catalog)`)
+    }
+  }
+  assertNoPortMigrationSecretKeys(path, keys)
 }
