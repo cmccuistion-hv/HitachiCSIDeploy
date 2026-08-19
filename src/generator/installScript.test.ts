@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { filledState } from '../test/fixtures'
 import { generateInstallScript, type GeneratedFile } from './yaml'
@@ -54,5 +55,22 @@ describe('generateInstallScript', () => {
     expect(script).not.toContain('operatorhub-namespace.yaml')
     expect(script).not.toContain('operatorhub-operatorgroup.yaml')
     expect(script).not.toContain('operatorhub-subscription.yaml')
+  })
+
+  it('quotes MCP jsonpath filters so bash command substitution can parse them', () => {
+    const script = generateInstallScript(filledState(), [
+      {
+        path: '00-prereq/hitachi-csi-multipath.yaml',
+        content: 'apiVersion: machineconfiguration.openshift.io/v1',
+        description: 'multipath MachineConfig',
+        group: 'prereq',
+      },
+    ])
+    const lines = script.split('\n').filter((l) => l.includes('get mcp') && l.includes('jsonpath='))
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(line, line).toMatch(/jsonpath="/)
+      execFileSync('bash', ['-c', `CMD=true; p=worker; ${line.trim()}`], { encoding: 'utf8' })
+    }
   })
 })
