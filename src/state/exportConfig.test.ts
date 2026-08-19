@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { filledState } from '../test/fixtures'
-import { exportConfigJson } from './exportConfig'
+import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
+import { wizardVersion } from '../wizardVersion'
 
 describe('exportConfigJson', () => {
   it('omits kubeconfig values from exported state', () => {
@@ -12,6 +13,22 @@ describe('exportConfigJson', () => {
 
     expect(exported.replication.primaryKubeconfig).toBeUndefined()
     expect(exported.replication.secondaryKubeconfig).toBeUndefined()
+  })
+
+  it('adds wizardVersion and parseWizardConfigJson strips it', () => {
+    const exported = JSON.parse(exportConfigJson(filledState()))
+    expect(exported.wizardVersion).toBe(wizardVersion())
+    expect(exported.version).toBe(1)
+
+    const parsed = parseWizardConfigJson(JSON.stringify(exported))
+    expect('wizardVersion' in parsed).toBe(false)
+    expect(parsed.platform).toBe('openshift')
+  })
+
+  it('parses configs that omit wizardVersion', () => {
+    const parsed = parseWizardConfigJson(JSON.stringify({ version: 1, platform: 'kubernetes' }))
+    expect('wizardVersion' in parsed).toBe(false)
+    expect(parsed.platform).toBe('kubernetes')
   })
 })
 

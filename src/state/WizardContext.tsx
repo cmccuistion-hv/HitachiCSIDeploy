@@ -27,7 +27,7 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { fetchVersions, type VersionInfo } from '../services/versions'
-import { exportConfigJson } from './exportConfig'
+import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
 import { migrateMetricsConfig } from './migrateMetrics'
 import { STEPS_BASE, type VisibleStep } from './steps'
 import { persistSiteTabFocus } from './siteTabFocus'
@@ -334,7 +334,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const exportConfig = useCallback(() => exportConfigJson(state), [state])
 
   const importConfig = useCallback((json: string) => {
-    const parsed = JSON.parse(json) as WizardState
+    const parsed = parseWizardConfigJson(json)
     const base = createDefaultState()
     const next = { ...base, ...parsed, version: WIZARD_STATE_VERSION }
     next.metrics = migrateMetricsConfig(parsed.metrics, base.metrics)
