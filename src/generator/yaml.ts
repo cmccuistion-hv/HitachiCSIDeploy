@@ -16,6 +16,7 @@ import {
   supportsCsiVolumeSnapshots,
 } from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
+import { wizardVersion } from '../wizardVersion'
 import { generateMultipathMachineConfigs, getMultipathConf, expectedMultipathMachineConfigNames } from './multipath'
 import {
   expectedMultipathDaemonSet,
@@ -421,6 +422,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     '#!/usr/bin/env bash',
     'set -euo pipefail',
     `# Hitachi CSI Deployment Wizard — generated install script`,
+    `# Wizard: ${wizardVersion()}`,
     `# Platform: ${plat.displayName} ${state.platformVersion}`,
     `CMD="${cmd}"`,
     '',
@@ -433,6 +435,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     'echo "==> Logging this run to $INSTALL_LOG"',
     '# Tee all subsequent stdout/stderr to the log and the console.',
     'exec > >(tee -a "$INSTALL_LOG") 2>&1',
+    `echo "==> Wizard ${wizardVersion()}"`,
     'trap \'echo "==> Full log: $INSTALL_LOG"\' EXIT',
     '',
     'apply() {',

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { filledState } from '../test/fixtures'
+import { wizardVersion } from '../wizardVersion'
 import { generateInstallScript, type GeneratedFile } from './yaml'
 
 function yamlFile(path: string): GeneratedFile {
@@ -55,6 +56,16 @@ describe('generateInstallScript', () => {
     expect(script).not.toContain('operatorhub-namespace.yaml')
     expect(script).not.toContain('operatorhub-operatorgroup.yaml')
     expect(script).not.toContain('operatorhub-subscription.yaml')
+  })
+
+  it('stamps the wizard build id in the header and after logging starts', () => {
+    const stamp = wizardVersion()
+    const script = generateInstallScript(filledState(), [yamlFile('02-driver/hspc-cr.yaml')])
+    const lines = script.split('\n')
+    const teeIdx = lines.findIndex((line) => line.includes('exec > >(tee -a "$INSTALL_LOG") 2>&1'))
+    expect(script).toContain(`# Wizard: ${stamp}`)
+    expect(teeIdx).toBeGreaterThan(-1)
+    expect(lines.slice(teeIdx + 1).some((line) => line === `echo "==> Wizard ${stamp}"`)).toBe(true)
   })
 
   it('quotes MCP jsonpath filters so bash command substitution can parse them', () => {
