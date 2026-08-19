@@ -39,6 +39,7 @@ Constraints and parameters in `src/catalog/` are curated from the official guide
 | Journals / remote path | Configuring the storage system |
 | DR Operator | Installing DR operator |
 | Remote kubeconfig | Configuring Replication Plug-in |
+| OpenShift DR operator fsGroup | Installing DR operator — set `fsGroup` from namespace `openshift.io/sa.scc.supplemental-groups` (start of range) on both sites |
 
 ## Performance Metrics
 

@@ -68,6 +68,85 @@ describe('generateInstallScript', () => {
     execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
   })
 
+  it('sets DR operator fsGroup from the OpenShift namespace supplemental-groups range before apply', () => {
+    const script = generateInstallScript(filledReplicationState(), [
+      yamlFile('03-replication/cert-manager.yaml', 'replication'),
+      yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+    ])
+
+    const patch = script.indexOf('ensure_dr_operator_fsgroup')
+    const applyDr = script.indexOf('apply "03-replication/dr-operator-install.yaml"')
+    expect(patch).toBeGreaterThan(-1)
+    expect(applyDr).toBeGreaterThan(patch)
+    expect(script).toContain('openshift.io/sa.scc.supplemental-groups')
+    expect(script).toContain('hspc-replication-operator-system')
+    expect(script).toMatch(/sed -i/)
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
+  it('does not patch DR operator fsGroup on Kubernetes', () => {
+    const script = generateInstallScript(
+      filledReplicationState({
+        platform: 'kubernetes',
+        driverNamespace: 'kube-system',
+        operatorNamespace: 'hspc-operator-system',
+      }),
+      [
+        yamlFile('03-replication/cert-manager.yaml', 'replication'),
+        yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+      ],
+    )
+
+    expect(script).toContain('CMD="kubectl"')
+    expect(script).not.toContain('ensure_dr_operator_fsgroup')
+    expect(script).toContain('apply "03-replication/dr-operator-install.yaml"')
+  })
+
+  it('rewrites fsGroup in dr-operator-install.yaml from the namespace supplemental-groups start', () => {
+    const script = generateInstallScript(filledReplicationState(), [
+      yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+    ])
+    const start = script.indexOf('ensure_dr_operator_fsgroup() {')
+    expect(start).toBeGreaterThan(-1)
+    const end = script.indexOf('\n}', start)
+    const fn = script.slice(start, end + 3)
+
+    const yaml = [
+      'spec:',
+      '  template:',
+      '    spec:',
+      '      securityContext:',
+      '        fsGroup: 2000',
+      '        runAsNonRoot: true',
+      '',
+    ].join('\n')
+
+    const out = execFileSync(
+      'bash',
+      [
+        '-c',
+        `${fn}
+set -euo pipefail
+file=$(mktemp)
+printf '%s' ${JSON.stringify(yaml)} > "$file"
+oc() {
+  if [[ "$1" == get && "$2" == ns ]]; then
+    echo '1000830000/10000'
+    return 0
+  fi
+  return 0
+}
+CMD=oc
+ensure_dr_operator_fsgroup "$file" hspc-replication-operator-system
+grep -F 'fsGroup: 1000830000' "$file"
+grep -F 'runAsNonRoot: true' "$file"
+`,
+      ],
+      { encoding: 'utf8' },
+    )
+    expect(out).toContain('fsGroup: 1000830000')
+  })
+
   it('retries every apply when kubectl cannot map a CRD kind yet', () => {
     const script = generateInstallScript(filledReplicationState(), [
       yamlFile('03-replication/cert-manager.yaml', 'replication'),
