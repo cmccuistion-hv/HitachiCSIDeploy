@@ -1,15 +1,15 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { filledState } from '../test/fixtures'
+import { filledReplicationState, filledState } from '../test/fixtures'
 import { wizardVersion } from '../wizardVersion'
 import { generateInstallScript, type GeneratedFile } from './yaml'
 
-function yamlFile(path: string): GeneratedFile {
+function yamlFile(path: string, group: GeneratedFile['group'] = 'driver'): GeneratedFile {
   return {
     path,
     content: 'apiVersion: v1',
     description: path,
-    group: 'driver',
+    group,
   }
 }
 
@@ -45,8 +45,111 @@ describe('generateInstallScript', () => {
     expect(applyCr).toBeGreaterThan(crdWait)
     expect(script).toContain('hspcs.csi.hitachi.com')
     expect(script).toContain('condition=Established')
-    expect(script).toMatch(/"\$CMD" get hspc /)
+    expect(script).toContain('wait_crd hspcs.csi.hitachi.com hspc')
     execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
+  it('waits for cert-manager Certificate and Issuer APIs before applying the DR operator', () => {
+    const script = generateInstallScript(filledReplicationState(), [
+      yamlFile('03-replication/cert-manager.yaml', 'replication'),
+      yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+    ])
+
+    const webhookWait = script.lastIndexOf('wait_cert_manager')
+    const certCrd = script.indexOf('wait_crd certificates.cert-manager.io')
+    const issuerCrd = script.indexOf('wait_crd issuers.cert-manager.io')
+    const applyDr = script.indexOf('apply "03-replication/dr-operator-install.yaml"')
+
+    expect(webhookWait).toBeGreaterThan(-1)
+    expect(certCrd).toBeGreaterThan(webhookWait)
+    expect(issuerCrd).toBeGreaterThan(certCrd)
+    expect(applyDr).toBeGreaterThan(issuerCrd)
+    expect(script).toContain('condition=Established')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
+  it('retries every apply when kubectl cannot map a CRD kind yet', () => {
+    const script = generateInstallScript(filledReplicationState(), [
+      yamlFile('03-replication/cert-manager.yaml', 'replication'),
+      yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+    ])
+
+    const rawApply = [...script.matchAll(/"\$CMD" apply -f[^\n]*/g)].map((m) => m[0])
+    expect(rawApply).toHaveLength(1)
+    expect(rawApply[0]).toContain('"$CMD" apply -f "$src"')
+    expect(script).toContain('apply_manifest()')
+    expect(script).toContain('is_crd_discovery_error')
+    expect(script).toContain('no matches for kind')
+    expect(script).toContain('ensure CRDs are installed first')
+    expect(script).toContain('apply_manifest "$1"')
+    expect(script).toContain('apply_manifest "$f"')
+    expect(script).not.toMatch(/apply_url\(\) \{ echo "==> Applying \$1"; "\$CMD" apply -f "\$1"; \}/)
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
+  it('retries apply_manifest until the CRD kind is discoverable and fails other apply errors immediately', () => {
+    const script = generateInstallScript(filledState(), [yamlFile('02-driver/hspc-cr.yaml')])
+    const start = script.indexOf('APPLY_CRD_WAIT_SEC="${APPLY_CRD_WAIT_SEC:-300}"')
+    const end = script.indexOf('# Wait until a CRD is Established')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const helpers = script.slice(start, end)
+
+    const retryThenOk = execFileSync(
+      'bash',
+      [
+        '-c',
+        `${helpers}
+set -euo pipefail
+attempts_file=$(mktemp)
+echo 0 > "$attempts_file"
+kubectl() {
+  if [[ "$1" == apply ]]; then
+    local n
+    n=$(($(cat "$attempts_file") + 1))
+    echo "$n" > "$attempts_file"
+    if (( n < 3 )); then
+      echo 'error: resource mapping not found for name: "hspc" namespace: "ns" from "cr.yaml": no matches for kind "HSPC" in version "csi.hitachi.com/v1"' >&2
+      echo 'ensure CRDs are installed first' >&2
+      return 1
+    fi
+    echo 'hspc.csi.hitachi.com/hspc created'
+    return 0
+  fi
+  return 0
+}
+CMD=kubectl
+APPLY_CRD_WAIT_SEC=30
+APPLY_CRD_POLL_SEC=0
+apply_manifest cr.yaml
+echo attempts=$(cat "$attempts_file")
+`,
+      ],
+      { encoding: 'utf8' },
+    )
+    expect(retryThenOk).toContain('hspc.csi.hitachi.com/hspc created')
+    expect(retryThenOk).toContain('attempts=3')
+
+    expect(() =>
+      execFileSync(
+        'bash',
+        [
+          '-c',
+          `${helpers}
+set -euo pipefail
+attempts=0
+kubectl() {
+  attempts=$((attempts + 1))
+  echo 'error: error validating "bad.yaml": invalid' >&2
+  return 1
+}
+CMD=kubectl
+apply_manifest bad.yaml
+`,
+        ],
+        { encoding: 'utf8' },
+      ),
+    ).toThrow(/error validating/)
   })
 
   it('skips day-0 InstallPlan approval when the operator CSV already succeeded', () => {
