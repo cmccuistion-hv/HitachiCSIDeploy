@@ -51,4 +51,9 @@ describe('buildNextSteps', () => {
     expect(stepIds(filledState({ storageClassesEnabled: false }))).not.toContain('verify-test-volume')
     expect(stepIds(filledState())).toContain('verify-test-volume')
   })
+
+  it('uses a stable unzip directory name without the CSI Driver tag', () => {
+    const unzip = buildNextSteps(filledState()).find((step) => step.id === 'unzip')
+    expect(unzip?.command).toBe('unzip hitachi-csi-deployment.zip -d hitachi-csi-deployment\ncd hitachi-csi-deployment')
+  })
 })
