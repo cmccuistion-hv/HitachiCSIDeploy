@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 import { filledReplicationState } from '../src/test/fixtures'
 import {
@@ -213,7 +216,10 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
   expect(versionFiles).toEqual(['VERSION'])
   const versionText = (await zip.file('VERSION')!.async('string')).trim()
   expect(versionText).toBe(config.wizardVersion)
-  expect(config.wizardVersion).toMatch(/^1\.1\.0\+/)
+  const pkg = JSON.parse(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'),
+  ) as { version: string }
+  expect(config.wizardVersion).toMatch(new RegExp(`^${pkg.version.replaceAll('.', '\\.')}\\+`))
 
   expect(paths).toEqual(
     expect.arrayContaining(['README.md', 'primary/install.sh', 'secondary/install.sh']),
