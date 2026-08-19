@@ -848,7 +848,43 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       'wait_crd issuers.cert-manager.io issuer',
       '',
     )
+    if (plat.useOc) {
+      lines.push(
+        'ensure_dr_operator_fsgroup() {',
+        '  local file="$1"',
+        '  local ns="$2"',
+        '  local end=$((SECONDS + 120))',
+        '  local ann="" gid=""',
+        '  if ! "$CMD" get ns "$ns" >/dev/null 2>&1; then',
+        '    echo "    Creating namespace $ns so OpenShift can allocate supplemental-groups"',
+        '    "$CMD" create namespace "$ns"',
+        '  fi',
+        '  while (( SECONDS < end )); do',
+        `    ann="$("$CMD" get ns "$ns" -o go-template='{{index .metadata.annotations "openshift.io/sa.scc.supplemental-groups"}}' 2>/dev/null || true)"`,
+        '    gid="${ann%%/*}"',
+        '    if [[ "$gid" =~ ^[0-9]+$ ]]; then',
+        '      echo "    Namespace $ns supplemental-groups=$ann → fsGroup=$gid"',
+        '      sed -i -E "s/(fsGroup:[[:space:]]*)[0-9]+/\\1${gid}/" "$file"',
+        '      return 0',
+        '    fi',
+        '    echo "    Waiting for openshift.io/sa.scc.supplemental-groups on $ns..."',
+        '    sleep 2',
+        '  done',
+        '  echo "Timed out waiting for supplemental-groups on namespace $ns." >&2',
+        '  echo "HRPC requires fsGroup in dr-operator-install.yaml to match this namespace range." >&2',
+        '  "$CMD" get ns "$ns" -o yaml 2>/dev/null | grep -E "supplemental-groups|uid-range" || true',
+        '  return 1',
+        '}',
+        '',
+      )
+    }
     if (hasLocalDr) {
+      if (plat.useOc) {
+        lines.push(
+          `echo "==> OpenShift: set DR operator fsGroup from namespace ${JSON.stringify(state.replication.namespace)}"`,
+          `ensure_dr_operator_fsgroup "03-replication/dr-operator-install.yaml" ${JSON.stringify(state.replication.namespace)}`,
+        )
+      }
       lines.push(
         `echo "==> Applying DR operator (PVC storageClassName=${JSON.stringify(drScName)})"`,
         'apply "03-replication/dr-operator-install.yaml"',
@@ -1362,7 +1398,8 @@ Version: ${state.versions.replication}
 2. Applies \`storage-secrets.yaml\` when present
 3. Applies cert-manager, waits for the webhook **and Certificate/Issuer APIs**, then applies the Disaster Recovery operator
 4. DR operator PVC \`hspc-dr-operator-pvc\` uses StorageClass \`${drScName}\` (from this wizard — not the upstream \`<storage-class-name>\` placeholder)
-5. Remote kubeconfig Secrets — **either**:
+5. On OpenShift, \`install.sh\` sets \`fsGroup\` in \`dr-operator-install.yaml\` from this cluster’s \`openshift.io/sa.scc.supplemental-groups\` on \`${state.replication.namespace}\` (primary and secondary ranges often differ)
+6. Remote kubeconfig Secrets — **either**:
    - ${remoteKcInstallBlurb}
    - Or runs \`create-remote-kubeconfig-secrets.sh\` when \`KUBECONFIG_P\` and \`KUBECONFIG_S\` are set
 
