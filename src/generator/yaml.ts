@@ -691,6 +691,31 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       '}',
       'wait_csv_succeeded "$OPERATOR_NS" "$OPERATOR_SUB"',
       '',
+      'echo "==> Waiting for HSPC CRD (CSV Succeeded does not always mean the API is ready)..."',
+      'wait_hspc_crd() {',
+      '  local end=$((SECONDS + 300))',
+      '  local crd="hspcs.csi.hitachi.com"',
+      '  while (( SECONDS < end )); do',
+      '    if "$CMD" get crd "$crd" >/dev/null 2>&1; then',
+      '      if "$CMD" wait --for=condition=Established "crd/$crd" --timeout=30s >/dev/null 2>&1 \\',
+      '        && "$CMD" get hspc -n "$OPERATOR_NS" >/dev/null 2>&1; then',
+      '        echo "    HSPC API is available (CRD Established)"',
+      '        return 0',
+      '      fi',
+      '      echo "    CRD $crd found; waiting until the HSPC kind is discoverable..."',
+      '    else',
+      '      echo "    Waiting for CRD $crd..."',
+      '    fi',
+      '    sleep 5',
+      '  done',
+      '  echo "Timed out waiting for HSPC CRD $crd." >&2',
+      '  echo "CSV Succeeded can land before the CRD is Established and before oc/kubectl can map kind HSPC." >&2',
+      '  "$CMD" get crd "$crd" -o yaml 2>/dev/null || "$CMD" get crd | grep -i hspc || true',
+      '  "$CMD" api-resources --api-group=csi.hitachi.com || true',
+      '  return 1',
+      '}',
+      'wait_hspc_crd',
+      '',
       'echo "==> Applying CSI Driver HSPC instance"',
       'apply "02-driver/hspc-cr.yaml"',
       `echo "Waiting for CSI Driver HSPC READY..."`,
@@ -1186,7 +1211,8 @@ after the CSI Driver HSPC instance is READY.`
 2. Approves the **day-0** InstallPlan. The Subscription keeps \`installPlanApproval: Manual\` so later
    upgrades still require approval (per product docs).
 3. Waits for ClusterServiceVersion **Succeeded**.
-4. Applies \`hspc-cr.yaml\` in \`${state.driverNamespace}\` and waits until READY.
+4. Waits until CRD \`hspcs.csi.hitachi.com\` is Established and kind HSPC is discoverable.
+5. Applies \`hspc-cr.yaml\` in \`${state.driverNamespace}\` and waits until READY.
 
 Air-gapped: mirror the \`certified-operators\` catalog first.
 

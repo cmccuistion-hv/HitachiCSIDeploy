@@ -28,6 +28,27 @@ describe('generateInstallScript', () => {
     expect(script).toContain('wait_csv_succeeded')
   })
 
+  it('waits for the HSPC CRD before applying the CSI Driver instance', () => {
+    const script = generateInstallScript(filledState(), [
+      yamlFile('02-driver/operatorhub-namespace.yaml'),
+      yamlFile('02-driver/operatorhub-operatorgroup.yaml'),
+      yamlFile('02-driver/operatorhub-subscription.yaml'),
+      yamlFile('02-driver/hspc-cr.yaml'),
+    ])
+
+    const csvWait = script.indexOf('wait_csv_succeeded "$OPERATOR_NS" "$OPERATOR_SUB"')
+    const crdWait = script.indexOf('wait_hspc_crd')
+    const applyCr = script.indexOf('apply "02-driver/hspc-cr.yaml"')
+
+    expect(csvWait).toBeGreaterThan(-1)
+    expect(crdWait).toBeGreaterThan(csvWait)
+    expect(applyCr).toBeGreaterThan(crdWait)
+    expect(script).toContain('hspcs.csi.hitachi.com')
+    expect(script).toContain('condition=Established')
+    expect(script).toMatch(/"\$CMD" get hspc /)
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('skips day-0 InstallPlan approval when the operator CSV already succeeded', () => {
     const script = generateInstallScript(filledState(), [
       yamlFile('02-driver/operatorhub-namespace.yaml'),
