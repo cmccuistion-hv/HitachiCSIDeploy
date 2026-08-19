@@ -18,7 +18,7 @@ function formatList(items: string[]): string {
 export function buildNextSteps(state: WizardState): NextStep[] {
   const plat = PLATFORMS[state.platform]
   const clusterCommand = plat.useOc ? 'oc' : 'kubectl'
-  const archiveName = `hitachi-csi-deployment-${state.versions.driver}`
+  const archiveName = 'hitachi-csi-deployment'
   const steps: NextStep[] = [
     {
       id: 'download',

@@ -349,6 +349,9 @@ describe('generateAll package matrix', () => {
     ).toBe(false)
     expect(exportConfigJson(state)).not.toContain('dummy-primary-kubeconfig')
     expect(exportConfigJson(state)).not.toContain('dummy-secondary-kubeconfig')
+    expect(generatedPaths).not.toContain('VERSION')
+    expect(generatedPaths).not.toContain('primary/VERSION')
+    expect(generatedPaths).not.toContain('secondary/VERSION')
   })
 
   it('packages the console plugin only on a supported OpenShift platform', async () => {

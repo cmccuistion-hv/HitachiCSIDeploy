@@ -4,6 +4,7 @@ import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import { storageArtifactsInvalidFix, storageArtifactsValid, wizardFixCta } from '../catalog/validation'
+import { wizardVersion } from '../wizardVersion'
 import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
 import { ReviewTopologyDiagram } from '../components/ReviewTopologyDiagram'
@@ -45,6 +46,7 @@ export function ExportStep() {
       const latest = await generateAll(state)
       setFiles(latest)
       const zip = new JSZip()
+      zip.file('VERSION', `${wizardVersion()}\n`)
       zip.file(
         'INSTALL.md',
         nextStepsToMarkdown(buildNextSteps(state), {
@@ -61,7 +63,7 @@ export function ExportStep() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `hitachi-csi-deployment-${state.versions.driver}.zip`
+      a.download = 'hitachi-csi-deployment.zip'
       a.click()
       URL.revokeObjectURL(url)
     } finally {

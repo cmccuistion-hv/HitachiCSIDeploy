@@ -88,5 +88,6 @@ export async function downloadZip(page: Page) {
   const downloadPromise = page.waitForEvent('download')
   await downloadButton.click()
   const download = await downloadPromise
+  expect(download.suggestedFilename()).toBe('hitachi-csi-deployment.zip')
   return JSZip.loadAsync(await readFile(await download.path()))
 }

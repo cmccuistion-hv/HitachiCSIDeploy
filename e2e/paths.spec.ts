@@ -209,6 +209,11 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
   const zip = await downloadZip(page)
   const paths = Object.keys(zip.files)
   const config = JSON.parse(await zip.file('wizard-config.json')!.async('string'))
+  const versionFiles = paths.filter((path) => path === 'VERSION' || path.endsWith('/VERSION'))
+  expect(versionFiles).toEqual(['VERSION'])
+  const versionText = (await zip.file('VERSION')!.async('string')).trim()
+  expect(versionText).toBe(config.wizardVersion)
+  expect(config.wizardVersion).toMatch(/^1\.1\.0\+/)
 
   expect(paths).toEqual(
     expect.arrayContaining(['README.md', 'primary/install.sh', 'secondary/install.sh']),
