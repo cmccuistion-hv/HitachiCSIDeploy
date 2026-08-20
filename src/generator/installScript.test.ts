@@ -245,6 +245,25 @@ apply_manifest bad.yaml
     expect(script).toContain('approve_installplan "$OPERATOR_NS" "$OPERATOR_SUB"')
   })
 
+  it('after applying MachineConfig, waits for a new MCP rendered configuration', () => {
+    const script = generateInstallScript(filledState(), [
+      yamlFile('00-prereq/hitachi-csi-multipath.yaml', 'prereq'),
+    ])
+
+    const record = script.indexOf('record_mcp_rendered')
+    const applyMc = script.indexOf('apply "00-prereq/hitachi-csi-multipath.yaml"')
+    const requireNew = script.indexOf('MCP_REQUIRE_NEW_RENDERED=1')
+    const wait = script.lastIndexOf('wait_mcp_healthy')
+
+    expect(record).toBeGreaterThan(-1)
+    expect(applyMc).toBeGreaterThan(record)
+    expect(requireNew).toBeGreaterThan(applyMc)
+    expect(wait).toBeGreaterThan(requireNew)
+    expect(script).toContain('status.configuration.name')
+    expect(script).toContain('status.configuration.source')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('uses kubectl without applying OperatorHub manifests on Kubernetes', () => {
     const script = generateInstallScript(
       filledState({

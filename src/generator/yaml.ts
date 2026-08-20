@@ -35,7 +35,14 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { effectiveSerialNumber } from '../catalog/validation'
-import { ensureSitesForReplication, getSiteStorage, resolvedStorageClassName } from '../catalog/sites'
+import {
+  ensureSitesForReplication,
+  getSiteStorage,
+  resolvedCurrentStorageClassName,
+  resolvedStorageClassName,
+  standardSecretNameForSystem,
+  standardSecretNamespaceForSystem,
+} from '../catalog/sites'
 import type { SiteId } from '../catalog/sites'
 
 export interface GeneratedFile {
@@ -414,7 +421,11 @@ spec:
 `
 }
 
-export function generateInstallScript(state: WizardState, files: GeneratedFile[]): string {
+export function generateInstallScript(
+  state: WizardState,
+  files: GeneratedFile[],
+  opts?: { drScNameOverride?: string },
+): string {
   const plat = PLATFORMS[state.platform]
   const cmd = plat.useOc ? 'oc' : 'kubectl'
   const applyFiles = files.filter((f) => f.group !== 'scripts' && f.path.endsWith('.yaml'))
@@ -582,12 +593,48 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       `MCP_POOLS=(${mcpPoolsBash})`,
       'MCP_WAIT_TIMEOUT_SEC="${MCP_WAIT_TIMEOUT_SEC:-3600}"',
       'MCP_POLL_SEC="${MCP_POLL_SEC:-5}"',
+      'MCP_REQUIRE_NEW_RENDERED=0',
+      'MCP_PREV_RENDERED=""',
+      '',
+      'record_mcp_rendered() {',
+      '  MCP_PREV_RENDERED=""',
+      '  local p r',
+      '  for p in "${MCP_POOLS[@]}"; do',
+      '    r="$("$CMD" get mcp "$p" -o jsonpath="{.status.configuration.name}" 2>/dev/null || true)"',
+      '    MCP_PREV_RENDERED+="${p}=${r}"$\'\\n\'',
+      '  done',
+      '}',
+      '',
+      'mcp_prev_rendered() {',
+      '  local p="$1" line',
+      '  while IFS= read -r line; do',
+      '    if [[ "$line" == "${p}="* ]]; then',
+      '      printf "%s" "${line#*=}"',
+      '      return 0',
+      '    fi',
+      '  done <<< "$MCP_PREV_RENDERED"',
+      '}',
+      '',
+      'mcp_has_all_mcs() {',
+      '  local sources=" $1 "',
+      '  local n',
+      '  for n in "${MULTIPATH_MC_NAMES[@]}"; do',
+      '    case "$sources" in',
+      '      *" $n "*) ;;',
+      '      *) return 1 ;;',
+      '    esac',
+      '  done',
+      '  return 0',
+      '}',
       '',
       'wait_mcp_healthy() {',
       '  local pools=("$@")',
       '  local start=$SECONDS',
       '  local last_sig="" last_change=$SECONDS',
       '  echo "==> Waiting for MachineConfigPools to finish updating (auto-continues when healthy)"',
+      '  if [[ "${MCP_REQUIRE_NEW_RENDERED:-0}" == "1" ]]; then',
+      '    echo "    Waiting for pools to pick up the new MachineConfig (ignores pre-apply UPDATED=True)."',
+      '  fi',
       '  echo "    Pools: ${pools[*]}  timeout=${MCP_WAIT_TIMEOUT_SEC}s  (override MCP_WAIT_TIMEOUT_SEC)"',
       '  echo "    Detail snapshots append to: $INSTALL_LOG"',
       '  # Hide cursor while redrawing',
@@ -606,7 +653,7 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       '    local all_ok=1 line sig="" block=""',
       "    block+=$'MachineConfigPool status\\n'",
       "    block+=$(printf '  elapsed %dm%02ds | heartbeat: waiting…\\n' $((elapsed/60)) $((elapsed%60)))",
-      '    local p updated updating mc ready updatedc',
+      '    local p updated updating mc ready updatedc rendered sources prev render_ok',
       '    for p in "${pools[@]}"; do',
       '      if ! "$CMD" get mcp "$p" >/dev/null 2>&1; then',
       "        block+=$(printf '  %-8s  (not found yet)\\n' \"$p\")",
@@ -619,9 +666,22 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       '      mc="$("$CMD" get mcp "$p" -o jsonpath="{.status.machineCount}" 2>/dev/null || echo "?")"',
       '      ready="$("$CMD" get mcp "$p" -o jsonpath="{.status.readyMachineCount}" 2>/dev/null || echo "?")"',
       '      updatedc="$("$CMD" get mcp "$p" -o jsonpath="{.status.updatedMachineCount}" 2>/dev/null || echo "?")"',
+      '      rendered="$("$CMD" get mcp "$p" -o jsonpath="{.status.configuration.name}" 2>/dev/null || true)"',
+      '      sources="$("$CMD" get mcp "$p" -o jsonpath="{.status.configuration.source[*].name}" 2>/dev/null || true)"',
+      '      render_ok=1',
+      '      if [[ "${MCP_REQUIRE_NEW_RENDERED:-0}" == "1" ]]; then',
+      '        prev="$(mcp_prev_rendered "$p")"',
+      '        if [[ "$rendered" == "$prev" ]] && ! mcp_has_all_mcs "$sources"; then',
+      '          render_ok=0',
+      '          all_ok=0',
+      '        fi',
+      '      fi',
       "      block+=$(printf '  %-8s  UPDATED=%s UPDATING=%s  machines %s/%s ready, %s updated\\n' \\",
       '        "$p" "${updated:-?}" "${updating:-?}" "${ready}" "${mc}" "${updatedc}")',
-      '      sig+="${p}:${updated}:${updating}:${mc}:${ready}:${updatedc};"',
+      '      if [[ "${MCP_REQUIRE_NEW_RENDERED:-0}" == "1" && "$render_ok" != "1" ]]; then',
+      "        block+=$(printf '           waiting for MachineConfig to render (still previous config)\\n')",
+      '      fi',
+      '      sig+="${p}:${updated}:${updating}:${mc}:${ready}:${updatedc}:${rendered}:${render_ok};"',
       '      if [[ "$updated" != "True" || "$updating" != "False" ]]; then',
       '        all_ok=0',
       '      fi',
@@ -675,12 +735,14 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
       '  echo "YAML remains under 00-prereq/ for reference."',
       '  echo "If you changed multipath.conf after applying, re-apply the YAML manually before continuing."',
       '  echo "Checking MachineConfigPool health (auto-continues when UPDATED=True / UPDATING=False)..."',
+      '  MCP_REQUIRE_NEW_RENDERED=0',
       '  wait_mcp_healthy "${MCP_POOLS[@]}"',
       'else',
       '  echo "==> Applying multipath MachineConfig(s)"',
       '  echo "WARNING: MachineConfig updates reboot nodes in the targeted pool (rolling)."',
       '  echo "Do not install the CSI Driver until MCP shows UPDATED=True / UPDATING=False."',
       '  read -r -p "Press Enter to apply MachineConfig(s) and begin node reboots... " ',
+      '  record_mcp_rendered',
       '',
     )
     for (const f of prereqYaml) {
@@ -689,7 +751,9 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
     lines.push(
       '',
       '  echo "Nodes will reboot rolling as MachineConfigPools update."',
+      '  MCP_REQUIRE_NEW_RENDERED=1',
       '  wait_mcp_healthy "${MCP_POOLS[@]}"',
+      '  MCP_REQUIRE_NEW_RENDERED=0',
       'fi',
       '',
     )
@@ -799,7 +863,8 @@ export function generateInstallScript(state: WizardState, files: GeneratedFile[]
   if (state.components.replication) {
     const hrpcBase = `https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/${state.versions.replication}`
     const drScName =
-      (state.storageClassesEnabled && resolvedStorageClassName(state)) ||
+      opts?.drScNameOverride?.trim() ||
+      (state.storageClassesEnabled && resolvedCurrentStorageClassName(state)) ||
       'hitachi-csi'
     lines.push(
       '',
@@ -1115,9 +1180,10 @@ The Hitachi multipath sample is embedded in the MachineConfig as base64 Ignition
    \`oc apply\` it so nodes reboot while you finish the wizard. Check **I already applied this
    MachineConfig** so \`install.sh\` skips apply.
 2. **Via install.sh (default):** Leave that checkbox unchecked. \`install.sh\` applies the YAML,
-   polls MachineConfigPool status with a compact live status block, writes detail snapshots to
-   \`logs/install-*.log\`, and **continues automatically** when pools are healthy (UPDATED=True,
-   UPDATING=False). It also skips apply if the MachineConfig already exists on the cluster.
+   snapshots the current MachineConfigPool rendered config, then waits until pools pick up the
+   new MachineConfig **and** show UPDATED=True / UPDATING=False (so it does not continue on the
+   pre-apply healthy state). Detail snapshots go to \`logs/install-*.log\`. It also skips apply
+   if the MachineConfig already exists on the cluster.
 
 \`\`\`bash
 # Early apply example:
@@ -1198,11 +1264,16 @@ multipath -ll
   // Secrets from storage systems
   for (const sys of state.storageSystems) {
     if (!sys.serial && !sys.url) continue
-    const name = state.storageClasses[0]?.secretName || 'hitachi-csi-secret'
-    const ns = state.storageClasses[0]?.secretNamespace || state.driverNamespace
+    const name = standardSecretNameForSystem(sys, state.storageSystems, state.storageClasses)
+    const ns = standardSecretNamespaceForSystem(
+      sys,
+      state.storageSystems,
+      state.storageClasses,
+      state.driverNamespace,
+    )
     files.push({
       path: `01-storage/secret-${sys.name || sys.id}.yaml`,
-      content: generateStandardSecret(sys, sys.name === 'primary' ? name : `hitachi-csi-secret-${sys.name}`, ns),
+      content: generateStandardSecret(sys, name, ns),
       description: `Storage Secret for ${sys.name || sys.serial}`,
       group: 'storage',
     })
@@ -1353,7 +1424,7 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
     const hrpcPaths = templatePaths('hrpc', state.versions.replication)
     const drScName =
       opts?.drScNameOverride?.trim() ||
-      (state.storageClassesEnabled && resolvedStorageClassName(state)) ||
+      (state.storageClassesEnabled && resolvedCurrentStorageClassName(state)) ||
       'hitachi-csi'
 
     const certRaw = await fetchFirstAvailable(hrpcPaths.certManager ?? [])
@@ -1515,7 +1586,7 @@ You do not create these Secrets by hand.
   if (state.components.metrics) {
     const cmd = plat.useOc ? 'oc' : 'kubectl'
     const metricsNs = state.metrics.namespace || 'hspc-monitoring-system'
-    const stackSc = resolvedStorageClassName(state)
+    const stackSc = resolvedCurrentStorageClassName(state)
     const hsppPaths = templatePaths('hspp', state.versions.metrics)
     const stackLines: string[] = []
     let fetchFailed = false
@@ -1686,7 +1757,7 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
       path: '06-quickstart/pvc.yaml',
       content: generatePvc({
         ...state.quickstart,
-        storageClassName: resolvedStorageClassName(state),
+        storageClassName: resolvedCurrentStorageClassName(state),
       }),
       description: 'Test PVC for first PV',
       group: 'quickstart',
@@ -1699,7 +1770,9 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
     })
   }
 
-  const installSh = generateInstallScript(state, files)
+  const installSh = generateInstallScript(state, files, {
+    drScNameOverride: opts?.drScNameOverride,
+  })
   files.push({
     path: 'install.sh',
     content: installSh,

@@ -10,7 +10,7 @@ import {
   SECRET_FIELDS_STRETCHED,
 } from '../catalog/parameters'
 import { CONNECTION_TYPES, supportsCsiVolumeSnapshots } from '../catalog/platforms'
-import { getSiteStorage } from '../catalog/sites'
+import { getSiteStorage, standardSecretNameForSystem } from '../catalog/sites'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 import { effectiveSerialNumber } from '../catalog/validation'
 import { snapshotClassOpts } from '../generator/yaml'
@@ -330,9 +330,9 @@ function selectionReason(sc: StorageClassConfig): string {
 function expectedStandardSecretName(
   sys: StorageSystemConfig,
   classes: StorageClassConfig[],
+  systems: StorageSystemConfig[],
 ): string {
-  const primaryName = classes[0]?.secretName || 'hitachi-csi-secret'
-  return sys.name === 'primary' ? primaryName : `hitachi-csi-secret-${sys.name}`
+  return standardSecretNameForSystem(sys, systems, classes)
 }
 
 function inferStorageClassKind(
@@ -476,7 +476,7 @@ function assertSecretFile(
   }
   assertSecretEmittedKeys(path, keys, 'standard')
   const secretName = doc.metadata?.name || ''
-  const sys = systems.find((item) => expectedStandardSecretName(item, classes) === secretName)
+  const sys = systems.find((item) => expectedStandardSecretName(item, classes, systems) === secretName)
   if (!sys) {
     throw new Error(`${path}: no storage system in wizard state for Secret "${secretName}"`)
   }

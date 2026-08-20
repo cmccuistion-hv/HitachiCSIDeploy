@@ -354,6 +354,114 @@ describe('generateAll package matrix', () => {
     expect(generatedPaths).not.toContain('secondary/VERSION')
   })
 
+  it('uses each site’s StorageClasses and StorageClass secretName in the dual-site package', async () => {
+    const base = filledReplicationState({
+      quickstart: { storageClassName: 'hitachi-csi-b85' },
+    })
+    const secretNs = 'hspc-operator-system'
+    const primarySys = base.sites!.primary.storageSystems[0]
+    const secondarySys = {
+      ...base.sites!.secondary.storageSystems[0],
+      name: 'secondary' as const,
+    }
+    const state = {
+      ...base,
+      sites: {
+        primary: {
+          storageSystems: [{ ...primarySys, name: 'primary', hrpcPair: true }],
+          storageClasses: [
+            {
+              id: 'sc-b85',
+              kind: 'standard' as const,
+              name: 'hitachi-csi-b85',
+              connectionType: 'iscsi' as const,
+              secretName: 'hitachi-csi-secret',
+              secretNamespace: secretNs,
+              serialNumber: primarySys.serial,
+              poolID: '0',
+              portID: 'CL3-G',
+              fstype: 'ext4',
+              reclaimPolicy: 'Delete' as const,
+              volumeBindingMode: 'Immediate' as const,
+              allowVolumeExpansion: true,
+              isDefault: true,
+            },
+            {
+              id: 'sc-dr',
+              kind: 'standard' as const,
+              name: 'hitachi-csi-dr',
+              connectionType: 'iscsi' as const,
+              secretName: 'hitachi-csi-secret',
+              secretNamespace: secretNs,
+              serialNumber: primarySys.serial,
+              poolID: '0',
+              portID: 'CL3-G',
+              fstype: 'ext4',
+              reclaimPolicy: 'Delete' as const,
+              volumeBindingMode: 'Immediate' as const,
+              allowVolumeExpansion: true,
+              hrpcPairId: 'hrpc-sc-1',
+            },
+          ],
+        },
+        secondary: {
+          storageSystems: [secondarySys],
+          storageClasses: [
+            {
+              id: 'sc-dr-sec',
+              kind: 'standard' as const,
+              name: 'hitachi-csi-dr',
+              connectionType: 'iscsi' as const,
+              secretName: 'hitachi-csi-secret',
+              secretNamespace: secretNs,
+              serialNumber: secondarySys.serial,
+              poolID: '0',
+              portID: 'CL1-D',
+              fstype: 'ext4',
+              reclaimPolicy: 'Delete' as const,
+              volumeBindingMode: 'Immediate' as const,
+              allowVolumeExpansion: true,
+              hrpcPairId: 'hrpc-sc-1',
+            },
+            {
+              id: 'sc-b28',
+              kind: 'standard' as const,
+              name: 'sc-b28',
+              connectionType: 'iscsi' as const,
+              secretName: 'hitachi-csi-secret',
+              secretNamespace: secretNs,
+              serialNumber: secondarySys.serial,
+              poolID: '0',
+              portID: 'CL1-D',
+              fstype: 'ext4',
+              reclaimPolicy: 'Delete' as const,
+              volumeBindingMode: 'Immediate' as const,
+              allowVolumeExpansion: true,
+              isDefault: true,
+            },
+          ],
+        },
+      },
+    }
+
+    const files = await generateAll(state)
+    const secondarySecret = fileAt(files, 'secondary/01-storage/secret-secondary.yaml').content
+    const secondaryPvc = fileAt(files, 'secondary/06-quickstart/pvc.yaml').content
+    const primaryPvc = fileAt(files, 'primary/06-quickstart/pvc.yaml').content
+    const secondaryInstall = fileAt(files, 'secondary/install.sh').content
+    const primaryInstall = fileAt(files, 'primary/install.sh').content
+    const secondarySc = fileAt(files, 'secondary/01-storage/storageclass-hitachi-csi-dr.yaml').content
+
+    expect(secondarySecret).toMatch(/^ {2}name: hitachi-csi-secret$/m)
+    expect(secondarySecret).not.toMatch(/hitachi-csi-secret-secondary/)
+    expect(secondarySc).toContain('csi.storage.k8s.io/provisioner-secret-name: "hitachi-csi-secret"')
+    expect(primaryPvc).toContain('storageClassName: hitachi-csi-b85')
+    expect(secondaryPvc).toContain('storageClassName: sc-b28')
+    expect(secondaryPvc).not.toContain('hitachi-csi-b85')
+    expect(primaryInstall).toContain('storageClassName="hitachi-csi-dr"')
+    expect(secondaryInstall).toContain('storageClassName="hitachi-csi-dr"')
+  })
+
   it('packages the console plugin only on a supported OpenShift platform', async () => {
     const openshiftFiles = await generateAll(
       filledState({ components: { consolePlugin: true } }),
