@@ -2242,16 +2242,55 @@ textarea {
 }
 
 @media (max-width: 720px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  .app-header {
+    position: sticky;
+    top: env(safe-area-inset-top);
+    padding: env(safe-area-inset-top) calc(0.75rem + env(safe-area-inset-right)) 0
+      calc(0.75rem + env(safe-area-inset-left));
+  }
+
+  .footer-bar {
+    position: sticky;
+    bottom: env(safe-area-inset-bottom);
+    padding-bottom: calc(0.9rem + env(safe-area-inset-bottom));
+    padding-left: calc(1.75rem + env(safe-area-inset-left));
+    padding-right: calc(1.75rem + env(safe-area-inset-right));
+  }
+
+  .main-scroll {
+    overflow: visible;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    scroll-margin-bottom: 6rem;
+  }
+
   .brand-logo {
     height: 18px;
   }
 
   .brand-divider {
     display: none;
-  }
-
-  .app-header {
-    padding: 0 0.75rem;
   }
 
   .app-header h1 {
