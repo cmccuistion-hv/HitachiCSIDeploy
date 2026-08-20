@@ -3,7 +3,7 @@ import { PLATFORMS } from '../catalog/platforms'
 import { resolvedStorageClassName } from '../catalog/sites'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
-import { Callout, Field, Section } from '../components/ui'
+import { Callout, Field, PasswordInput, Section } from '../components/ui'
 
 export function MetricsStep() {
   const { state, setState } = useWizard()
@@ -269,12 +269,11 @@ export function MetricsStep() {
               />
             </Field>
             <Field label="Password">
-              <input
-                type="password"
+              <PasswordInput
                 value={sec.password}
-                onChange={(e) => {
+                onChange={(value) => {
                   const next = [...storages]
-                  next[idx] = { ...next[idx], password: e.target.value }
+                  next[idx] = { ...next[idx], password: value }
                   setState((s) => ({ ...s, metrics: { ...s.metrics, storages: next } }))
                 }}
               />

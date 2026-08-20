@@ -5,8 +5,8 @@
 
 export const HELP = {
   secretVsStorageClass: {
-    storageCallout:
-      'These credentials become Kubernetes Secrets the CSI Driver uses to call the array REST API. How volumes are provisioned (pool, ports, efficiency) is set on the StorageClasses step.',
+    restUrlHelp:
+      'These credentials become a Kubernetes Secret the CSI Driver uses to call the array REST API. Pool, ports, and efficiency are set on the StorageClasses step.',
     storageLede:
       'Enter one or more array connection details used to authenticate the CSI software to storage(s). Secrets are generated with base64-encoded credentials. Add a second array for stretched (GAD) StorageClasses and/or add additional primary storage systems arrays.',
     storageClassLede:

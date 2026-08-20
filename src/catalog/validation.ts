@@ -412,6 +412,86 @@ export function storageSystemsContinueInvalidReason(state: WizardState): string 
   return storageSystemsContinueInvalidFix(state)?.message ?? null
 }
 
+function siteSystemsHaveUniqueNamesAndSerials(systems: StorageSystemConfig[]): boolean {
+  if (systems.some((sys) => !t(sys.name))) return false
+  const names = new Map<string, number>()
+  const serials = new Map<string, number>()
+  for (const sys of systems) {
+    if (t(sys.name)) names.set(t(sys.name), (names.get(t(sys.name)) || 0) + 1)
+    if (t(sys.serial)) serials.set(t(sys.serial), (serials.get(t(sys.serial)) || 0) + 1)
+  }
+  if ([...names.values()].some((n) => n > 1)) return false
+  if ([...serials.values()].some((n) => n > 1)) return false
+  return true
+}
+
+/** True when this Replication site’s arrays are complete enough for the site switcher. */
+export function siteStorageSystemsReady(state: WizardState, site: SiteId): boolean {
+  if (!state.components.replication) return false
+  const ensured = ensureSitesForReplication(state)
+  const storage = getSiteStorage(ensured, site)
+  if (storage.storageSystems.length < 1) return false
+  if (hrpcPairCount(storage.storageSystems) !== 1) return false
+  if (storage.storageSystems.some((s) => !s.family)) return false
+  if (!siteSystemsHaveUniqueNamesAndSerials(storage.storageSystems)) return false
+  return replicationArrayMissingFields(hrpcPairSystem(storage.storageSystems), site) === null
+}
+
+function siteClassesValid(storage: { storageSystems: StorageSystemConfig[]; storageClasses: StorageClassConfig[] }): boolean {
+  return storage.storageClasses.every((sc) => {
+    const ctxSystems = t(sc.hrpcPairId)
+      ? systemsWithHrpcFirst(storage.storageSystems)
+      : storage.storageSystems
+    return (
+      Object.keys(
+        validateStorageClass(sc, {
+          storageSystems: ctxSystems,
+          siblings: storage.storageClasses,
+        }),
+      ).length === 0
+    )
+  })
+}
+
+/** True when this site’s StorageClasses are complete. Does not include array checks. */
+export function siteStorageClassesReady(state: WizardState, site: SiteId): boolean {
+  if (!state.components.replication) return true
+  if (!state.storageClassesEnabled) return true
+
+  const ensured = ensureSitesForReplication(state)
+  const primary = getSiteStorage(ensured, 'primary')
+  const secondary = getSiteStorage(ensured, 'secondary')
+  const storage = site === 'primary' ? primary : secondary
+  if (!siteClassesValid(storage)) return false
+
+  const primaryPairSerial = t(hrpcPairSystem(primary.storageSystems)?.serial)
+  const secondaryPairSerial = t(hrpcPairSystem(secondary.storageSystems)?.serial)
+
+  for (const primarySc of primary.storageClasses.filter((sc) => !!t(sc.hrpcPairId))) {
+    const pairId = t(primarySc.hrpcPairId)
+    const secondarySc = secondary.storageClasses.find((sc) => t(sc.hrpcPairId) === pairId)
+
+    if (site === 'primary') {
+      if (primaryPairSerial) {
+        const eff = t(effectiveSerialNumber(primarySc, systemsWithHrpcFirst(primary.storageSystems)))
+        if (eff && eff !== primaryPairSerial) return false
+      }
+      continue
+    }
+
+    if (!secondarySc) return false
+    if (t(primarySc.name) !== t(secondarySc.name) || t(primarySc.fstype) !== t(secondarySc.fstype)) {
+      return false
+    }
+    if (secondaryPairSerial) {
+      const eff = t(effectiveSerialNumber(secondarySc, systemsWithHrpcFirst(secondary.storageSystems)))
+      if (eff && eff !== secondaryPairSerial) return false
+    }
+  }
+
+  return true
+}
+
 function validateHrpcStorageClassesFix(state: WizardState): WizardFix | null {
   if (!state.components.replication) return null
 

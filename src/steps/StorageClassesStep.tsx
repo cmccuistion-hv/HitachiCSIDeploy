@@ -19,11 +19,17 @@ import type {
   StorageClassConfig,
   StorageClassKind,
 } from '../catalog/types'
-import { nextUniqueName, validateStorageClass } from '../catalog/validation'
+import {
+  nextUniqueName,
+  siteStorageClassesReady,
+  siteStorageSystemsReady,
+  validateStorageClass,
+} from '../catalog/validation'
 import type { SiteId } from '../catalog/sites'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
 import { AdvancedSection } from '../components/AdvancedSection'
+import { SiteSwitcher } from '../components/SiteSwitcher'
 import { GadStretchedPvcDiagram } from '../components/GadStretchedPvcDiagram'
 import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
@@ -443,24 +449,16 @@ export function StorageClassesStep() {
       </p>
 
       {replicationOn && (
-        <>
-          <div className="tabs" style={{ marginTop: '0.75rem' }}>
-            <button
-              type="button"
-              className={`tab${site === 'primary' ? ' active' : ''}`}
-              onClick={() => setSite('primary')}
-            >
-              Primary site
-            </button>
-            <button
-              type="button"
-              className={`tab${site === 'secondary' ? ' active' : ''}`}
-              onClick={() => setSite('secondary')}
-            >
-              Secondary site
-            </button>
-          </div>
-        </>
+        <SiteSwitcher
+          site={site}
+          onSiteChange={setSite}
+          primaryReady={
+            siteStorageSystemsReady(state, 'primary') && siteStorageClassesReady(state, 'primary')
+          }
+          secondaryReady={
+            siteStorageSystemsReady(state, 'secondary') && siteStorageClassesReady(state, 'secondary')
+          }
+        />
       )}
 
       <label className="toggle-row" style={{ marginBottom: '0.85rem' }}>

@@ -8,6 +8,8 @@ import {
 import { ensureSitesForReplication } from './sites'
 import { createDefaultState, type WizardState } from './types'
 import {
+  siteStorageClassesReady,
+  siteStorageSystemsReady,
   storageArtifactsValid,
   storageArtifactsValidForContinue,
   storageSystemsValidForContinue,
@@ -94,6 +96,43 @@ describe('storage system Continue validation', () => {
       serial: '452339',
     })
     expect(storageSystemsValidForContinue(twoPrimaryPairs)).toBe(false)
+  })
+})
+
+describe('per-site readiness for the site switcher', () => {
+  it('treats seeded Replication primary arrays as ready and secondary as not', () => {
+    const seeded = ensureSitesForReplication(
+      filledState({
+        components: { replication: true, disasterRecovery: true },
+        replication: { enabled: true, disasterRecovery: true },
+      }),
+    )
+
+    expect(siteStorageSystemsReady(seeded, 'primary')).toBe(true)
+    expect(siteStorageSystemsReady(seeded, 'secondary')).toBe(false)
+    expect(storageSystemsValidForContinue(seeded)).toBe(false)
+  })
+
+  it('treats validReplicationState arrays as ready on both sites', () => {
+    const state = validReplicationState()
+    expect(siteStorageSystemsReady(state, 'primary')).toBe(true)
+    expect(siteStorageSystemsReady(state, 'secondary')).toBe(true)
+    expect(siteStorageClassesReady(state, 'primary')).toBe(true)
+    expect(siteStorageClassesReady(state, 'secondary')).toBe(true)
+  })
+
+  it('treats both StorageClass sites as ready when generation is off', () => {
+    const state = { ...validReplicationState(), storageClassesEnabled: false }
+    expect(siteStorageClassesReady(state, 'primary')).toBe(true)
+    expect(siteStorageClassesReady(state, 'secondary')).toBe(true)
+  })
+
+  it('badges Secondary when the matching Replication StorageClass is incomplete', () => {
+    const state = structuredClone(validReplicationState())
+    state.sites!.secondary.storageClasses[0].poolID = ''
+
+    expect(siteStorageClassesReady(state, 'primary')).toBe(true)
+    expect(siteStorageClassesReady(state, 'secondary')).toBe(false)
   })
 })
 

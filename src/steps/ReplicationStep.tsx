@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useWizard } from '../state/WizardContext'
 import { ResourcePartitioningDiagram } from '../components/ResourcePartitioningDiagram'
-import { Callout, CodeBlock, DownloadButton, Field, HelpTip, Section } from '../components/ui'
+import { Callout, CodeBlock, DownloadButton, Field, HelpTip, PasswordInput, Section } from '../components/ui'
 import { PLATFORMS } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../catalog/sites'
@@ -413,10 +413,9 @@ export function ReplicationStep() {
                   <input value={sec.user} onChange={(e) => updateSecret(idx, { user: e.target.value })} />
                 </Field>
                 <Field label={`${siteLabel(idx)} password`}>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={sec.password}
-                    onChange={(e) => updateSecret(idx, { password: e.target.value })}
+                    onChange={(value) => updateSecret(idx, { password: value })}
                   />
                 </Field>
                 <Field label={`${siteLabel(idx)} journal ID`} help={HELP.journal}>

@@ -550,6 +550,43 @@ textarea {
   border-color: var(--hv-primary);
 }
 
+.password-input {
+  position: relative;
+  display: block;
+}
+
+.password-input input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--hv-text-subtle);
+  cursor: pointer;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  color: var(--hv-text);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--hv-primary-subtle);
+}
+
 .field.error input,
 .field.error select {
   border-color: var(--hv-negative);
@@ -1218,6 +1255,57 @@ textarea {
   height: 18px;
   margin-top: 2px;
   accent-color: var(--hv-primary);
+}
+
+.site-switcher {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.site-switcher-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--hv-text);
+}
+
+.site-switcher-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.site-switcher-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  border: 2px solid var(--hv-border);
+  background: var(--hv-bg-elevated);
+  border-radius: var(--hv-radius);
+  padding: 0.65rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--hv-text);
+}
+
+.site-switcher-tab.active {
+  background: var(--hv-primary);
+  border-color: var(--hv-primary);
+  color: var(--hv-text-on-primary);
+}
+
+.site-switcher-tab.needs-attention:not(.active) {
+  border-color: var(--hv-warning);
+  background: var(--hv-callout-warn-bg);
+}
+
+.site-switcher-tab.active .badge.warn {
+  background: color-mix(in srgb, #fff 22%, transparent);
+  color: var(--hv-text-on-primary);
 }
 
 .tabs {

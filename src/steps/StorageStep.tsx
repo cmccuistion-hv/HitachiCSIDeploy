@@ -10,14 +10,15 @@ import {
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
-import { nextUniqueName, validateStorageSystem } from '../catalog/validation'
+import { nextUniqueName, siteStorageSystemsReady, validateStorageSystem } from '../catalog/validation'
 import { AlternativeCloneModeDiagram } from '../components/AlternativeCloneModeDiagram'
+import { SiteSwitcher } from '../components/SiteSwitcher'
 import { GadDataPathsDiagram } from '../components/GadDataPathsDiagram'
 import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { useSiteTab } from '../state/useSiteTab'
-import { Callout, Field, HelpTip, Section } from '../components/ui'
+import { Callout, Field, HelpTip, PasswordInput, Section } from '../components/ui'
 
 function newSystem(n: number): StorageSystemConfig {
   return {
@@ -88,31 +89,13 @@ export function StorageStep() {
       <h2>Storage systems</h2>
       <p className="lede">{replicationOn ? HELP.replicationSitesLede : HELP.secretVsStorageClass.storageLede}</p>
 
-      <Callout>
-        {HELP.secretVsStorageClass.storageCallout}
-      </Callout>
-
       {replicationOn && (
-        <>
-          <div className="tabs" style={{ marginTop: '0.75rem' }}>
-            <button
-              type="button"
-              className={`tab${site === 'primary' ? ' active' : ''}`}
-              onClick={() => setSite('primary')}
-            >
-              Primary site
-            </button>
-            <button
-              type="button"
-              className={`tab${site === 'secondary' ? ' active' : ''}`}
-              onClick={() => setSite('secondary')}
-            >
-              Secondary site
-            </button>
-          </div>
-
-          <Callout>{HELP.replicationPairArrayCallout}</Callout>
-        </>
+        <SiteSwitcher
+          site={site}
+          onSiteChange={setSite}
+          primaryReady={siteStorageSystemsReady(state, 'primary')}
+          secondaryReady={siteStorageSystemsReady(state, 'secondary')}
+        />
       )}
 
       {storageSystems.map((sys, idx) => {
@@ -145,7 +128,10 @@ export function StorageStep() {
                 }}
               />
               <div>
-                <strong>Use this array for Replication</strong>
+                <strong>
+                  Use this array for Replication
+                  <HelpTip text={HELP.replicationPairArrayCallout} />
+                </strong>
                 <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
                   Each site picks exactly one array that Replication will use. Extra arrays stay on this
                   site for local or stretched (GAD) StorageClasses.
@@ -204,6 +190,7 @@ export function StorageStep() {
             <Field
               label="REST URL"
               hint={storageRestUrlHint(sys.family)}
+              help={HELP.secretVsStorageClass.restUrlHelp}
             >
               <input
                 value={sys.url}
@@ -218,10 +205,9 @@ export function StorageStep() {
               <input value={sys.user} onChange={(e) => updateSys(sys.id, { user: e.target.value })} />
             </Field>
             <Field label="Password" hint="Encoded into the generated Kubernetes Secret.">
-              <input
-                type="password"
+              <PasswordInput
                 value={sys.password}
-                onChange={(e) => updateSys(sys.id, { password: e.target.value })}
+                onChange={(value) => updateSys(sys.id, { password: value })}
               />
             </Field>
             {replicationOn && sys.hrpcPair && !!sys.family && !isSdsBlockFamily(sys.family) && (
