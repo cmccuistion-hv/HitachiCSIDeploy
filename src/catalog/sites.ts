@@ -246,7 +246,82 @@ export function updateSiteStorage(
   return withSiteStorage(state, site, { ...current, ...patch })
 }
 
-/** StorageClasses used for package-wide PVC names (Grafana, DR, test volume). */
+function trimName(value: string | undefined): string {
+  return (value || '').trim()
+}
+
+/** Pick a StorageClass that exists in `classes` (saved name, else default, else first). */
+export function pickStorageClassName(
+  classes: StorageClassConfig[],
+  saved?: string,
+): string {
+  const names = classes.map((sc) => (sc.name || '').trim()).filter(Boolean)
+  const want = (saved || '').trim()
+  if (want && names.includes(want)) return want
+  const def = classes.find((sc) => sc.isDefault && (sc.name || '').trim())
+  if (def) return def.name.trim()
+  return names[0] || 'hitachi-csi'
+}
+
+/**
+ * CSI Secret metadata.name for a storage system. Follows StorageClass `secretName`
+ * (what the UI shows). Does not suffix `-${system.name}` for a single-array site —
+ * that collided with Replication secondary sites whose array is named "secondary".
+ */
+export function standardSecretNameForSystem(
+  sys: StorageSystemConfig,
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+): string {
+  const fallback = 'hitachi-csi-secret'
+  const standard = classes.filter((sc) => sc.kind !== 'stretched' && sc.kind !== 'stretched-adr')
+  const bySerial = standard.find(
+    (sc) =>
+      trimName(sc.serialNumber) &&
+      trimName(sc.serialNumber) === trimName(sys.serial) &&
+      trimName(sc.secretName),
+  )
+  if (bySerial) return trimName(bySerial.secretName)
+
+  const secretNames = [...new Set(standard.map((sc) => trimName(sc.secretName)).filter(Boolean))]
+  if (systems.length <= 1) {
+    return secretNames[0] || trimName(classes[0]?.secretName) || fallback
+  }
+
+  const primaryName = secretNames[0] || trimName(classes[0]?.secretName) || fallback
+  const first = systems[0]
+  const isFirst = sys.id === first?.id || trimName(sys.name) === 'primary'
+
+  if (secretNames.length === 1 && standard.length > 0) {
+    const owner =
+      systems.find((item) =>
+        standard.some((sc) => trimName(sc.serialNumber) === trimName(item.serial) && trimName(item.serial)),
+      ) || first
+    if (sys.id === owner.id) return secretNames[0]
+    return `${primaryName}-${sys.name || sys.id}`
+  }
+
+  if (secretNames.length > 1) {
+    const idx = systems.findIndex((item) => item.id === sys.id)
+    return (idx >= 0 && secretNames[idx]) || secretNames[0]
+  }
+
+  if (isFirst) return primaryName
+  return `${primaryName}-${sys.name || sys.id}`
+}
+
+export function standardSecretNamespaceForSystem(
+  sys: StorageSystemConfig,
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+  driverNamespace: string,
+): string {
+  const name = standardSecretNameForSystem(sys, systems, classes)
+  const match = classes.find((sc) => trimName(sc.secretName) === name && trimName(sc.secretNamespace))
+  return trimName(match?.secretNamespace) || trimName(classes[0]?.secretNamespace) || driverNamespace
+}
+
+/** StorageClasses used for wizard-wide UI names (Test volume step, primary site). */
 export function packageStorageClasses(state: WizardState): StorageClassConfig[] {
   if (!state.storageClassesEnabled) return []
   if (state.components.replication) return getSiteStorage(state, 'primary').storageClasses
@@ -254,16 +329,18 @@ export function packageStorageClasses(state: WizardState): StorageClassConfig[] 
 }
 
 /**
- * Live StorageClass name for Grafana/Prometheus PVCs, DR operator, and the test volume.
- * Ignores a saved name that no longer exists after a rename.
+ * Live StorageClass name for Grafana/Prometheus PVCs, DR operator, and the test volume
+ * in the wizard UI (Replication: primary site). Ignores a saved name that no longer exists.
  */
 export function resolvedStorageClassName(state: WizardState): string {
-  const classes = packageStorageClasses(state)
-  const names = classes.map((sc) => (sc.name || '').trim()).filter(Boolean)
-  const saved = (state.quickstart?.storageClassName || '').trim()
-  if (saved && names.includes(saved)) return saved
-  const def = classes.find((sc) => sc.isDefault && (sc.name || '').trim())
-  if (def) return def.name.trim()
-  return names[0] || 'hitachi-csi'
+  return pickStorageClassName(packageStorageClasses(state), state.quickstart?.storageClassName)
+}
+
+/**
+ * StorageClass name for the current `state.storageClasses` (site-scoped during dual-site export).
+ */
+export function resolvedCurrentStorageClassName(state: WizardState): string {
+  if (!state.storageClassesEnabled) return 'hitachi-csi'
+  return pickStorageClassName(state.storageClasses || [], state.quickstart?.storageClassName)
 }
 
