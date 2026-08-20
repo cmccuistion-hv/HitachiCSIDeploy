@@ -1372,6 +1372,11 @@ textarea {
   outline: none;
 }
 
+a.theme-menu-item {
+  text-decoration: none;
+  color: inherit;
+}
+
 .theme-menu-item.active {
   background: color-mix(in srgb, var(--hv-primary) 12%, transparent);
 }
@@ -1399,6 +1404,12 @@ textarea {
 
 .theme-swatch-blue {
   background: radial-gradient(circle at 30% 30%, #5a9fe0, #2064b4 55%, #0f2d52);
+}
+
+.header-more-menu {
+  position: relative;
+  display: none;
+  align-items: center;
 }
 
 .header-actions {
@@ -2297,12 +2308,38 @@ textarea {
     font-size: 0.88rem;
   }
 
+  .brand-product {
+    display: none;
+  }
+
+  .header-more-menu {
+    display: flex;
+  }
+
+  .header-action-desktop {
+    display: none !important;
+  }
+
+  .ui-mode-controls {
+    padding: 1px;
+  }
+
+  .ui-mode-btn {
+    padding: 0.22rem 0.48rem;
+    font-size: 0.72rem;
+  }
+
+  .theme-icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
   .header-actions {
     gap: 0.2rem;
   }
 
   .header-actions .btn-ghost {
-    width: 2rem;
-    height: 2rem;
+    width: 44px;
+    height: 44px;
   }
 }
