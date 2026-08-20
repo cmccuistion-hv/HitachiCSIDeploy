@@ -121,6 +121,40 @@ export function HelpTip({ text, diagram }: { text: string; diagram?: ReactNode }
   )
 }
 
+export function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+  autoComplete = 'off',
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  autoComplete?: string
+}) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="password-input">
+      <input
+        type={visible ? 'text' : 'password'}
+        value={value}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button
+        type="button"
+        className="password-toggle"
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-pressed={visible}
+        onClick={() => setVisible((v) => !v)}
+      >
+        {visible ? <EyeOffIcon /> : <EyeIcon />}
+      </button>
+    </div>
+  )
+}
+
 export function Field({
   label,
   hint,
@@ -362,6 +396,26 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
     >
       {label}
     </button>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.8 21.8 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.8 21.8 0 0 1-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 0 1-4.24-4.24" />
+      <path d="M1 1l22 22" />
+    </svg>
   )
 }
 
