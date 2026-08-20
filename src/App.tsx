@@ -162,7 +162,6 @@ export default function App() {
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
-  const sidebarRef = useRef<HTMLElement>(null)
   const noReplicationScRef = useRef<HTMLDialogElement>(null)
   const stepPickerDialogRef = useRef<HTMLDialogElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
@@ -357,7 +356,7 @@ export default function App() {
         </div>
       </header>
 
-      <aside className="app-sidebar" ref={sidebarRef} inert={sidebarInert || undefined}>
+      <aside className="app-sidebar" inert={sidebarInert || undefined}>
         <ol className="step-list">{renderSidebarNav(navEntries, visibleSteps, setStepIndex)}</ol>
       </aside>
 

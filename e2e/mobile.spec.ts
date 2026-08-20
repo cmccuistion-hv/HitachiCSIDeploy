@@ -59,20 +59,18 @@ test('step picker jumps to Storage systems', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Storage systems', exact: true })).toBeVisible()
 })
 
-test('Continue advances and ZIP download works on a short path', async ({ browser }) => {
-  const continuePage = await browser.newPage()
-  await openFresh(continuePage)
-  await dismissWelcome(continuePage)
+test('Continue advances on a short path', async ({ page }) => {
+  await openFresh(page)
+  await dismissWelcome(page)
 
-  await choice(continuePage, 'Kubernetes').click()
-  await continueTo(continuePage, 'Hitachi CSI components')
-  await continuePage.close()
+  await choice(page, 'Kubernetes').click()
+  await continueTo(page, 'Hitachi CSI components')
+})
 
-  const zipPage = await browser.newPage()
-  await seedWizardState(zipPage, filledState())
-  await jumpToStep(zipPage, /Review & export/)
+test('ZIP download works on a short path', async ({ page }) => {
+  await seedWizardState(page, filledState())
+  await jumpToStep(page, /Review & export/)
 
-  const zip = await downloadZip(zipPage)
+  const zip = await downloadZip(page)
   expect(Object.keys(zip.files)).toContain('install.sh')
-  await zipPage.close()
 })
