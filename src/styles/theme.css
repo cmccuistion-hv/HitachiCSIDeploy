@@ -2393,13 +2393,76 @@ a.theme-menu-item {
   .footer-bar {
     position: sticky;
     bottom: env(safe-area-inset-bottom);
+    flex-wrap: wrap;
+    gap: 0.65rem 0.75rem;
     padding-bottom: calc(0.9rem + env(safe-area-inset-bottom));
-    padding-left: calc(1.75rem + env(safe-area-inset-left));
-    padding-right: calc(1.75rem + env(safe-area-inset-right));
+    padding-left: calc(1rem + env(safe-area-inset-left));
+    padding-right: calc(1rem + env(safe-area-inset-right));
+  }
+
+  .footer-center {
+    flex: none;
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .footer-bar > .btn {
+    flex: 1;
+    min-height: 44px;
   }
 
   .main-scroll {
     overflow: visible;
+    padding: 1rem;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toggle-row-body {
+    margin-left: 1rem;
+  }
+
+  .toggle-row-collapse {
+    white-space: normal;
+  }
+
+  .help-tip-btn {
+    position: relative;
+  }
+
+  .help-tip-btn::after {
+    content: '';
+    position: absolute;
+    inset: -0.85rem;
+  }
+
+  .welcome-dialog,
+  .yaml-dialog {
+    max-width: calc(100vw - 1rem);
+  }
+
+  .welcome-dialog-body,
+  .yaml-dialog-body {
+    max-height: min(
+      85dvh,
+      calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)
+    );
+  }
+
+  .yaml-dialog-body {
+    max-height: min(
+      88dvh,
+      calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)
+    );
+  }
+
+  .step-picker-dialog-body {
+    max-height: min(
+      85dvh,
+      calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)
+    );
   }
 
   .field input,
