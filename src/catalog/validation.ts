@@ -58,11 +58,11 @@ export function hrpcResourceGroupIdReason(
   const { primary, secondary } = hrpcPairResourceGroupIds(state)
   if (!primary && !secondary) {
     return opts.requireBoth
-      ? 'Resource partitioning is on: set Resource group ID on both sites’ Replication arrays (Storage step, Advanced array options).'
+      ? 'Resource partitioning is on: set Resource group ID on both sites’ Replication arrays (Storage step).'
       : null
   }
   if (!primary || !secondary) {
-    return 'Resource partitioning must be configured on both sites. Set Resource group ID on both Replication arrays (Storage step, Advanced array options).'
+    return 'Resource partitioning must be configured on both sites. Set Resource group ID on both Replication arrays (Storage step).'
   }
   return null
 }
@@ -383,10 +383,17 @@ function validateHrpcReplicationArraysFix(state: WizardState): WizardFix | null 
   const dupSecondary = siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses)
   if (dupSecondary) return wizardFix(dupSecondary, 'storage', 'secondary')
 
-  return (
+  const missingFields =
     replicationArrayMissingFields(hrpcPairSystem(primary.storageSystems), 'primary') ||
     replicationArrayMissingFields(hrpcPairSystem(secondary.storageSystems), 'secondary')
-  )
+  if (missingFields) return missingFields
+
+  const rgReason = hrpcResourceGroupIdReason(ensured)
+  if (rgReason) {
+    const ids = hrpcPairResourceGroupIds(ensured)
+    return wizardFix(rgReason, 'storage', !ids.primary ? 'primary' : 'secondary')
+  }
+  return null
 }
 
 /** Arrays marked for Replication must be complete on both sites (Continue on Storage systems). */
@@ -434,7 +441,11 @@ export function siteStorageSystemsReady(state: WizardState, site: SiteId): boole
   if (hrpcPairCount(storage.storageSystems) !== 1) return false
   if (storage.storageSystems.some((s) => !s.family)) return false
   if (!siteSystemsHaveUniqueNamesAndSerials(storage.storageSystems)) return false
-  return replicationArrayMissingFields(hrpcPairSystem(storage.storageSystems), site) === null
+  if (replicationArrayMissingFields(hrpcPairSystem(storage.storageSystems), site)) return false
+  const rgReason = hrpcResourceGroupIdReason(ensured)
+  if (!rgReason) return true
+  const ids = hrpcPairResourceGroupIds(ensured)
+  return site === 'primary' ? !!ids.primary : !!ids.secondary
 }
 
 function siteClassesValid(storage: { storageSystems: StorageSystemConfig[]; storageClasses: StorageClassConfig[] }): boolean {
@@ -622,13 +633,6 @@ function validateHrpcFix(state: WizardState): WizardFix | null {
   const secondaryPairSys = hrpcPairSystem(secondary.storageSystems)
   const primaryPairSerial = t(primaryPairSys?.serial)
   const secondaryPairSerial = t(secondaryPairSys?.serial)
-
-  const rgReason = hrpcResourceGroupIdReason(ensured)
-  if (rgReason) {
-    const ids = hrpcPairResourceGroupIds(ensured)
-    const site: SiteId = !ids.primary ? 'primary' : 'secondary'
-    return wizardFix(rgReason, 'storage', site)
-  }
 
   const secrets = ensured.replication.storageSecrets || []
   if (secrets.length < 1) {
