@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { HeaderMoreMenu } from './components/HeaderMoreMenu'
 import { ThemeControls } from './components/ThemeControls'
 import { UiModeControls } from './components/UiModeControls'
 import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
@@ -215,6 +216,16 @@ export default function App() {
     ? './hitachi-vantara-logo.svg'
     : './hitachi-vantara-logo-white.svg'
 
+  const onSaveConfig = () => {
+    const blob = new Blob([exportConfig()], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'hitachi-csi-wizard-config.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -239,9 +250,15 @@ export default function App() {
             onPalette={setPalette}
             onMode={setMode}
           />
+          <HeaderMoreMenu
+            onAbout={() => setWelcomeOpen(true)}
+            onImport={() => importRef.current?.click()}
+            onSave={onSaveConfig}
+            issuesUrl={REPO_ISSUES_URL}
+          />
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost header-action-desktop"
             title="About this wizard"
             aria-label="About this wizard"
             onClick={() => setWelcomeOpen(true)}
@@ -254,7 +271,7 @@ export default function App() {
             <span className="header-action-label">About</span>
           </button>
           <a
-            className="btn btn-ghost"
+            className="btn btn-ghost header-action-desktop"
             href={REPO_ISSUES_URL}
             target="_blank"
             rel="noopener noreferrer"
@@ -280,7 +297,7 @@ export default function App() {
           />
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost header-action-desktop"
             title="Import config"
             aria-label="Import config"
             onClick={() => importRef.current?.click()}
@@ -294,18 +311,10 @@ export default function App() {
           </button>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost header-action-desktop"
             title="Save config"
             aria-label="Save config"
-            onClick={() => {
-              const blob = new Blob([exportConfig()], { type: 'application/json' })
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = 'hitachi-csi-wizard-config.json'
-              a.click()
-              URL.revokeObjectURL(url)
-            }}
+            onClick={onSaveConfig}
           >
             <HeaderIcon>
               <path d="M12 15V5" />
