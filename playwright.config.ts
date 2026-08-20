@@ -25,6 +25,7 @@ export default defineConfig({
       testMatch: 'mobile.spec.ts',
       use: {
         ...devices['iPhone 13'],
+        // CI/WSL install Chromium only (`playwright install --with-deps chromium`); iPhone 13 still supplies ~390px viewport and touch UA.
         defaultBrowserType: 'chromium',
       },
     },
