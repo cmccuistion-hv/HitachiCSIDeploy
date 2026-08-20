@@ -598,6 +598,118 @@ textarea {
   background: var(--hv-bg-container);
 }
 
+.footer-center {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.footer-label-desktop {
+  font-size: 0.85rem;
+  color: var(--hv-text-subtle);
+}
+
+.footer-step-picker {
+  display: none;
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--hv-border);
+  border-radius: var(--hv-radius);
+  background: var(--hv-bg-elevated);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--hv-text);
+  text-align: center;
+  cursor: pointer;
+}
+
+.footer-step-picker:hover {
+  border-color: var(--hv-primary);
+  color: var(--hv-primary);
+}
+
+.step-picker-dialog {
+  max-width: min(480px, calc(100vw - 1rem));
+}
+
+.step-picker-dialog-body {
+  max-height: min(85dvh, 720px);
+  overflow: auto;
+  padding-top: 1.1rem;
+}
+
+.step-picker-dialog-body h2 {
+  margin: 0 0 0.85rem;
+  font-size: 1.05rem;
+}
+
+.step-picker-dialog .step-list {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: auto;
+  min-width: 0;
+}
+
+.step-picker-dialog .step-item {
+  min-width: 0;
+  max-width: none;
+}
+
+.step-picker-dialog .step-item .step-label span {
+  display: block;
+}
+
+.step-picker-dialog .step-group-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.step-picker-dialog .step-item-parent {
+  display: flex;
+}
+
+.step-picker-dialog .step-sublist {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0.2rem;
+  padding: 0.15rem 0 0.1rem calc(0.75rem + 27px);
+  margin-left: calc(0.75rem + 13px);
+  border-left: 1px solid var(--hv-text-disabled);
+}
+
+.step-picker-dialog .step-item.nested {
+  min-width: 0;
+  max-width: none;
+  padding: 0.3rem 0.55rem;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.step-picker-dialog .step-item.nested .step-num {
+  display: inline;
+  min-width: 1.6rem;
+  height: auto;
+  padding: 0;
+  font-size: 0.7rem;
+  border-radius: 0;
+  background: transparent;
+  color: var(--hv-text-subtle);
+}
+
+.step-picker-dialog .step-item.nested.active .step-num {
+  background: transparent;
+  color: var(--hv-primary);
+}
+
+.step-picker-dialog .step-item.nested.done .step-num {
+  background: transparent;
+  color: var(--hv-positive);
+}
+
 .btn {
   appearance: none;
   display: inline-flex;
@@ -2341,5 +2453,25 @@ a.theme-menu-item {
   .header-actions .btn-ghost {
     width: 44px;
     height: 44px;
+  }
+
+  .app-sidebar {
+    display: none;
+  }
+
+  .footer-label-desktop {
+    display: none;
+  }
+
+  .footer-step-picker {
+    display: block;
+  }
+
+  .step-picker-dialog {
+    margin: auto 0 0;
+    width: 100%;
+    max-width: 100%;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 }

@@ -25,7 +25,7 @@ export function continueButton(page: Page) {
 }
 
 export function sidebar(page: Page) {
-  return page.locator('ol.step-list')
+  return page.locator('aside.app-sidebar ol.step-list')
 }
 
 export async function continueTo(page: Page, heading: string) {

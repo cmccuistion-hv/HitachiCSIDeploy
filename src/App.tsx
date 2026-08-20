@@ -162,9 +162,13 @@ export default function App() {
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const noReplicationScRef = useRef<HTMLDialogElement>(null)
+  const stepPickerDialogRef = useRef<HTMLDialogElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
   const [noReplicationScOpen, setNoReplicationScOpen] = useState(false)
-  const noReplicationScRef = useRef<HTMLDialogElement>(null)
+  const [stepPickerOpen, setStepPickerOpen] = useState(false)
+  const [sidebarInert, setSidebarInert] = useState(false)
 
   const navEntries = useMemo(
     () => buildNavEntries(visibleSteps, stepIndex),
@@ -189,6 +193,33 @@ export default function App() {
       el.close()
     }
   }, [noReplicationScOpen])
+
+  useEffect(() => {
+    const el = stepPickerDialogRef.current
+    if (!el) return
+    if (stepPickerOpen) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [stepPickerOpen])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)')
+    const syncSidebarInert = () => setSidebarInert(mq.matches)
+    syncSidebarInert()
+    mq.addEventListener('change', syncSidebarInert)
+    return () => mq.removeEventListener('change', syncSidebarInert)
+  }, [])
+
+  const onPickStep = (index: number) => {
+    setStepIndex(index)
+    setStepPickerOpen(false)
+  }
+
+  const footerStepText =
+    footerLabel ||
+    `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`
 
   useEffect(() => {
     const el = mainScrollRef.current
@@ -326,7 +357,7 @@ export default function App() {
         </div>
       </header>
 
-      <aside className="app-sidebar">
+      <aside className="app-sidebar" ref={sidebarRef} inert={sidebarInert || undefined}>
         <ol className="step-list">{renderSidebarNav(navEntries, visibleSteps, setStepIndex)}</ol>
       </aside>
 
@@ -343,14 +374,7 @@ export default function App() {
           >
             Back
           </button>
-          <span
-            style={{
-              fontSize: '0.85rem',
-              color: 'var(--hv-text-subtle)',
-              textAlign: 'center',
-              flex: 1,
-            }}
-          >
+          <div className="footer-center">
             {storageContinueFix ? (
               <button
                 type="button"
@@ -361,10 +385,18 @@ export default function App() {
                 <span className="footer-fix-cta">{wizardFixCta(storageContinueFix)}</span>
               </button>
             ) : (
-              footerLabel ||
-              `Step ${stepIndex + 1} of ${visibleSteps.length}${current ? ` — ${current.title}` : ''}`
+              <>
+                <span className="footer-label-desktop">{footerStepText}</span>
+                <button
+                  type="button"
+                  className="footer-step-picker"
+                  onClick={() => setStepPickerOpen(true)}
+                >
+                  {footerStepText}
+                </button>
+              </>
             )}
-          </span>
+          </div>
           <button
             type="button"
             className="btn btn-primary"
@@ -386,6 +418,27 @@ export default function App() {
       </main>
 
       <WelcomeModal open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
+
+      <dialog
+        ref={stepPickerDialogRef}
+        className="welcome-dialog step-picker-dialog"
+        aria-labelledby="step-picker-title"
+        onCancel={(e) => {
+          e.preventDefault()
+          setStepPickerOpen(false)
+        }}
+        onClick={(e) => {
+          if (e.target === stepPickerDialogRef.current) setStepPickerOpen(false)
+        }}
+        onClose={() => setStepPickerOpen(false)}
+      >
+        <div className="welcome-dialog-body step-picker-dialog-body">
+          <h2 id="step-picker-title">Choose a step</h2>
+          <ol className="step-list">
+            {renderSidebarNav(navEntries, visibleSteps, onPickStep)}
+          </ol>
+        </div>
+      </dialog>
 
       <dialog
         ref={noReplicationScRef}
