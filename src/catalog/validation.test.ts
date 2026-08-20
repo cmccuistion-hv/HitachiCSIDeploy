@@ -8,10 +8,12 @@ import {
 import { ensureSitesForReplication } from './sites'
 import { createDefaultState, type WizardState } from './types'
 import {
+  hrpcResourceGroupIdReason,
   siteStorageClassesReady,
   siteStorageSystemsReady,
   storageArtifactsValid,
   storageArtifactsValidForContinue,
+  storageSystemsContinueInvalidFix,
   storageSystemsValidForContinue,
   validateHrpc,
   validateStorageClass,
@@ -49,6 +51,20 @@ function validReplicationState(): WizardState {
       },
     },
   }
+}
+
+const RG_BOTH_SITES =
+  'Resource partitioning must be configured on both sites. Set Resource group ID on both Replication arrays (Storage step).'
+
+function withPairResourceGroup(
+  state: WizardState,
+  primary?: string,
+  secondary?: string,
+): WizardState {
+  const next = structuredClone(state)
+  if (primary !== undefined) next.sites!.primary.storageSystems[0].resourceGroupID = primary
+  if (secondary !== undefined) next.sites!.secondary.storageSystems[0].resourceGroupID = secondary
+  return next
 }
 
 describe('storage system Continue validation', () => {
@@ -96,6 +112,65 @@ describe('storage system Continue validation', () => {
       serial: '452339',
     })
     expect(storageSystemsValidForContinue(twoPrimaryPairs)).toBe(false)
+  })
+})
+
+describe('Replication resource group both-or-neither', () => {
+  it('allows Continue when both Replication arrays omit Resource group ID', () => {
+    const state = validReplicationState()
+    expect(hrpcResourceGroupIdReason(state)).toBeNull()
+    expect(storageSystemsValidForContinue(state)).toBe(true)
+  })
+
+  it('blocks Continue and Export when only the primary Replication array has an ID', () => {
+    const state = withPairResourceGroup(validReplicationState(), '10', '')
+    expect(hrpcResourceGroupIdReason(state)).toBe(RG_BOTH_SITES)
+    expect(storageSystemsValidForContinue(state)).toBe(false)
+    expect(storageSystemsContinueInvalidFix(state)).toEqual({
+      message: RG_BOTH_SITES,
+      stepId: 'storage',
+      site: 'secondary',
+    })
+    expect(validateHrpc(state)).toBe(RG_BOTH_SITES)
+    expect(siteStorageSystemsReady(state, 'primary')).toBe(true)
+    expect(siteStorageSystemsReady(state, 'secondary')).toBe(false)
+  })
+
+  it('blocks Continue when only the secondary Replication array has an ID', () => {
+    const state = withPairResourceGroup(validReplicationState(), '', '20')
+    expect(storageSystemsValidForContinue(state)).toBe(false)
+    expect(storageSystemsContinueInvalidFix(state)?.site).toBe('primary')
+    expect(siteStorageSystemsReady(state, 'primary')).toBe(false)
+    expect(siteStorageSystemsReady(state, 'secondary')).toBe(true)
+  })
+
+  it('allows Continue when both Replication arrays have different IDs', () => {
+    const state = withPairResourceGroup(validReplicationState(), '10', '20')
+    expect(hrpcResourceGroupIdReason(state)).toBeNull()
+    expect(storageSystemsValidForContinue(state)).toBe(true)
+    expect(siteStorageSystemsReady(state, 'primary')).toBe(true)
+    expect(siteStorageSystemsReady(state, 'secondary')).toBe(true)
+  })
+
+  it('treats whitespace-only Resource group ID as empty', () => {
+    const state = withPairResourceGroup(validReplicationState(), '  ', '7')
+    expect(hrpcResourceGroupIdReason(state)).toBe(RG_BOTH_SITES)
+    expect(storageSystemsValidForContinue(state)).toBe(false)
+    expect(storageSystemsContinueInvalidFix(state)?.site).toBe('primary')
+  })
+
+  it('does not require Replication-array IDs when only an extra array has a Resource group ID', () => {
+    const state = structuredClone(validReplicationState())
+    state.sites!.primary.storageSystems.push({
+      ...state.sites!.primary.storageSystems[0],
+      id: 'storage-extra',
+      name: 'local-extra',
+      serial: '400099',
+      hrpcPair: false,
+      resourceGroupID: '99',
+    })
+    expect(hrpcResourceGroupIdReason(state)).toBeNull()
+    expect(storageSystemsValidForContinue(state)).toBe(true)
   })
 })
 

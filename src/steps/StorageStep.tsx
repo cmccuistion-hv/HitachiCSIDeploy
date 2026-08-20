@@ -10,7 +10,12 @@ import {
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
-import { nextUniqueName, siteStorageSystemsReady, validateStorageSystem } from '../catalog/validation'
+import {
+  hrpcPairResourceGroupIds,
+  nextUniqueName,
+  siteStorageSystemsReady,
+  validateStorageSystem,
+} from '../catalog/validation'
 import { AlternativeCloneModeDiagram } from '../components/AlternativeCloneModeDiagram'
 import { SiteSwitcher } from '../components/SiteSwitcher'
 import { GadDataPathsDiagram } from '../components/GadDataPathsDiagram'
@@ -39,6 +44,15 @@ export function StorageStep() {
   const [site, setSite] = useSiteTab(replicationOn)
   const storage = replicationOn ? getSiteStorage(state, site) : null
   const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
+  const pairRgIds = replicationOn
+    ? hrpcPairResourceGroupIds(state)
+    : { primary: '', secondary: '' }
+  const partitioningOn = !!(pairRgIds.primary || pairRgIds.secondary)
+  const thisPairRgFilled = site === 'primary' ? !!pairRgIds.primary : !!pairRgIds.secondary
+  const rgFieldError =
+    partitioningOn && !thisPairRgFilled
+      ? 'Resource partitioning must be set on both sites. Enter a Resource group ID for this Replication array.'
+      : undefined
 
   const updateSys = (id: string, patch: Partial<StorageSystemConfig>) => {
     setState((s) => {
@@ -212,10 +226,11 @@ export function StorageStep() {
             </Field>
             {replicationOn && sys.hrpcPair && !!sys.family && !isSdsBlockFamily(sys.family) && (
               <Field
-                label="Resource group ID (optional)"
+                label={partitioningOn ? 'Resource group ID' : 'Resource group ID (optional)'}
                 hint="If you use resource partitioning, set this on both sites’ Replication arrays. IDs are per array and do not need to match. CSI Driver and Replication use the same ID on this array."
                 help={HELP.resourceGroupId}
                 helpDiagram={<ResourceGroupOverviewDiagram resourceGroupID={sys.resourceGroupID} />}
+                error={rgFieldError}
               >
                 <input
                   value={sys.resourceGroupID || ''}
