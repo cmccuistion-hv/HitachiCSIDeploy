@@ -29,8 +29,6 @@ import {
 } from '../catalog/validation'
 import {
   applyArrayBindingToClass,
-  arrayForStorageClass,
-  csiSecretRefForSystem,
   defaultGadArrayIds,
   defaultStorageSystemId,
   gadArraysForStorageClass,
@@ -541,11 +539,6 @@ export function StorageClassesStep() {
             siblings: storage.storageClasses,
           })
           const pairSys = hrpcPairSystem(storage.storageSystems)
-          const standardArray =
-            sc.kind === 'standard' || sc.kind === 'vsp-one-sds-block'
-              ? (usedForReplication && pairSys ? pairSys : arrayForStorageClass(sc, storage.storageSystems))
-              : undefined
-          const standardSecret = standardArray ? csiSecretRefForSystem(standardArray, state.driverNamespace) : undefined
           const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
           const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
           const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
@@ -713,39 +706,6 @@ export function StorageClassesStep() {
                   >
                     <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
                   </Field>
-                  {(sc.kind === 'standard' || sc.kind === 'vsp-one-sds-block') ? (
-                    <>
-                      <Field
-                        label="CSI Secret name"
-                        hint="Derived from the selected array on the Storage systems step."
-                      >
-                        <input value={standardSecret?.name || '—'} disabled readOnly />
-                      </Field>
-                      <Field
-                        label="CSI Secret namespace"
-                        hint="Derived from the selected array (or the CSI Driver namespace)."
-                      >
-                        <input value={standardSecret?.namespace || '—'} disabled readOnly />
-                      </Field>
-                      <Field
-                        label="Array serial"
-                        hint="Derived from the selected array on the Storage systems step."
-                        error={sc.kind === 'standard' ? errors.serialNumber : undefined}
-                      >
-                        <input value={(standardArray?.serial || '').trim() || '—'} disabled readOnly />
-                      </Field>
-                    </>
-                  ) : (
-                    <Field
-                      label="Secret namespace"
-                      hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
-                    >
-                      <input
-                        value={sc.secretNamespace}
-                        onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
-                      />
-                    </Field>
-                  )}
 
                   {sc.kind === 'standard' && (
                     <>
