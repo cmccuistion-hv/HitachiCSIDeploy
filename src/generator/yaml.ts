@@ -41,13 +41,12 @@ import {
 } from '../catalog/metrics'
 import { resolvedReplicationStorageSecrets } from '../catalog/replicationSecrets'
 import { effectiveSerialNumber } from '../catalog/validation'
+import { applyArrayBindingToClass, csiSecretRefForSystem, gadArraysForStorageClass } from '../catalog/arrayBinding'
 import {
   ensureSitesForReplication,
   getSiteStorage,
   resolvedCurrentStorageClassName,
   resolvedStorageClassName,
-  standardSecretNameForSystem,
-  standardSecretNamespaceForSystem,
 } from '../catalog/sites'
 import type { SiteId } from '../catalog/sites'
 
@@ -239,13 +238,28 @@ export function snapshotClassOpts(state: WizardState): {
   const sourceSc = snapshotSourceSc(state)
   const poolID =
     sourceSc?.kind === 'standard' ? sourceSc.poolID || '' : sourceSc?.primaryPoolID || ''
+  const bound = sourceSc ? applyArrayBindingToClass(sourceSc, state.storageSystems, state.driverNamespace) : undefined
+
   const secretName = sourceSc
     ? sourceSc.kind.startsWith('stretched')
-      ? sourceSc.stretchedSecretName || sourceSc.secretName
-      : sourceSc.secretName
+      ? sourceSc.stretchedSecretName || bound?.secretName || sourceSc.secretName
+      : bound?.secretName || sourceSc.secretName
     : state.storageClasses[0]?.secretName || 'hitachi-csi-secret'
+
+  const gadNs =
+    sourceSc && sourceSc.kind.startsWith('stretched')
+      ? (() => {
+          const pair = gadArraysForStorageClass(sourceSc, state.storageSystems)
+          if (!pair.primary) return ''
+          return csiSecretRefForSystem(pair.primary, state.driverNamespace).namespace
+        })()
+      : ''
+
   const secretNamespace =
-    sourceSc?.secretNamespace ||
+    gadNs ||
+    (sourceSc?.kind.startsWith('stretched')
+      ? sourceSc.secretNamespace || state.driverNamespace
+      : bound?.secretNamespace || sourceSc?.secretNamespace) ||
     state.storageClasses[0]?.secretNamespace ||
     state.driverNamespace
   return { poolID, secretName, secretNamespace }
@@ -1273,37 +1287,31 @@ multipath -ll
   // Secrets from storage systems
   for (const sys of state.storageSystems) {
     if (!sys.serial && !sys.url) continue
-    const name = standardSecretNameForSystem(sys, state.storageSystems, state.storageClasses)
-    const ns = standardSecretNamespaceForSystem(
-      sys,
-      state.storageSystems,
-      state.storageClasses,
-      state.driverNamespace,
-    )
+    const ref = csiSecretRefForSystem(sys, state.driverNamespace)
     files.push({
       path: `01-storage/secret-${sys.name || sys.id}.yaml`,
-      content: generateStandardSecret(sys, name, ns),
+      content: generateStandardSecret(sys, ref.name, ref.namespace),
       description: `Storage Secret for ${sys.name || sys.serial}`,
       group: 'storage',
     })
   }
 
-  const primary = state.storageSystems.find((s) => s.stretchedRole === 'primary') || state.storageSystems[0]
-  const secondary = state.storageSystems.find((s) => s.stretchedRole === 'secondary') || state.storageSystems[1]
-  if (state.storageClassesEnabled && primary && secondary) {
+  if (state.storageClassesEnabled) {
     const stretched = state.storageClasses.filter((s) => s.kind === 'stretched' || s.kind === 'stretched-adr')
     const seen = new Set<string>()
     for (const sc of stretched) {
+      const pair = gadArraysForStorageClass(sc, state.storageSystems)
+      if (!pair.primary || !pair.secondary) continue
       const name = (sc.stretchedSecretName || 'hitachi-csi-secret-stretched').trim()
-      const ns = sc.secretNamespace
+      const ns = csiSecretRefForSystem(pair.primary, state.driverNamespace).namespace
       const key = `${name}\0${ns}`
       if (seen.has(key)) continue
       seen.add(key)
       files.push({
         path: stretchedSecretPackagePath(name),
-        content: generateStretchedSecret(primary, secondary, name, ns, {
+        content: generateStretchedSecret(pair.primary, pair.secondary, name, ns, {
           virtualSerial: sc.virtualStorageSerialNumber,
-          alternativeCloneMode: !!(primary.alternativeCloneMode || secondary.alternativeCloneMode),
+          alternativeCloneMode: !!(pair.primary.alternativeCloneMode || pair.secondary.alternativeCloneMode),
         }),
         description: 'Stretched / GAD dual-array Secret',
         group: 'storage',
@@ -1313,15 +1321,16 @@ multipath -ll
 
   if (state.storageClassesEnabled) {
     for (const sc of state.storageClasses) {
+      const bound = applyArrayBindingToClass(sc, state.storageSystems, state.driverNamespace)
       const serial =
-        sc.kind === 'standard'
-          ? effectiveSerialNumber(sc, state.storageSystems) || sc.serialNumber
-          : sc.serialNumber
+        bound.kind === 'standard'
+          ? effectiveSerialNumber(bound, state.storageSystems) || bound.serialNumber
+          : bound.serialNumber
       files.push({
         path: `01-storage/storageclass-${sc.name}.yaml`,
         content: generateStorageClass({
-          ...sc,
-          connectionType: sc.connectionType || state.connectionType,
+          ...bound,
+          connectionType: bound.connectionType || state.connectionType,
           serialNumber: serial,
         }),
         description: `StorageClass ${sc.name} (${sc.kind})`,

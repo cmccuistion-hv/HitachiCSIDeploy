@@ -11,7 +11,8 @@ import {
 } from '../catalog/parameters'
 import { CONNECTION_TYPES, supportsCsiVolumeSnapshots } from '../catalog/platforms'
 import { resolvedReplicationStorageSecrets } from '../catalog/replicationSecrets'
-import { getSiteStorage, standardSecretNameForSystem } from '../catalog/sites'
+import { getSiteStorage } from '../catalog/sites'
+import { csiSecretRefForSystem, gadArraysForStorageClass } from '../catalog/arrayBinding'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 import { effectiveSerialNumber } from '../catalog/validation'
 import { snapshotClassOpts } from '../generator/yaml'
@@ -328,12 +329,8 @@ function selectionReason(sc: StorageClassConfig): string {
   return CONNECTION_TYPES.find((item) => item.id === sc.connectionType)?.label ?? sc.connectionType
 }
 
-function expectedStandardSecretName(
-  sys: StorageSystemConfig,
-  classes: StorageClassConfig[],
-  systems: StorageSystemConfig[],
-): string {
-  return standardSecretNameForSystem(sys, systems, classes)
+function expectedStandardSecretName(sys: StorageSystemConfig): string {
+  return csiSecretRefForSystem(sys, '').name
 }
 
 function inferStorageClassKind(
@@ -454,30 +451,38 @@ function assertSecretFile(
   const stretched = doc.stringData?.primarySerial !== undefined
   if (stretched) {
     assertSecretEmittedKeys(path, keys, 'stretched')
-    const primary = systems.find((sys) => sys.stretchedRole === 'primary') || systems[0]
-    const secondary = systems.find((sys) => sys.stretchedRole === 'secondary') || systems[1]
-    if (!primary || !secondary) {
-      throw new Error(`${path}: stretched Secret generated without a GAD pair in wizard state`)
+    const secretName = (doc.metadata?.name || '').trim()
+    const sc = classes.find((c) => {
+      if (c.kind !== 'stretched' && c.kind !== 'stretched-adr') return false
+      const expectedName = (c.stretchedSecretName || 'hitachi-csi-secret-stretched').trim()
+      return expectedName === secretName
+    })
+    if (!sc) {
+      throw new Error(`${path}: no stretched StorageClass in wizard state for Secret "${secretName}"`)
+    }
+    const pair = gadArraysForStorageClass(sc, systems)
+    if (!pair.primary || !pair.secondary) {
+      throw new Error(`${path}: stretched Secret generated without selected arrays in wizard state`)
     }
     const expected: Record<string, string> = {
-      primarySerial: primary.serial,
-      primaryURL: primary.url,
-      primaryUser: primary.user,
-      primaryPassword: primary.password,
-      secondarySerial: secondary.serial,
-      secondaryURL: secondary.url,
-      secondaryUser: secondary.user,
-      secondaryPassword: secondary.password,
+      primarySerial: pair.primary.serial,
+      primaryURL: pair.primary.url,
+      primaryUser: pair.primary.user,
+      primaryPassword: pair.primary.password,
+      secondarySerial: pair.secondary.serial,
+      secondaryURL: pair.secondary.url,
+      secondaryUser: pair.secondary.user,
+      secondaryPassword: pair.secondary.password,
     }
-    const vsm = classes.find((sc) => sc.kind === 'stretched' || sc.kind === 'stretched-adr')
-      ?.virtualStorageSerialNumber
-    if (vsm) expected.virtualStorageSerialNumber = vsm
+    if (sc.virtualStorageSerialNumber) {
+      expected.virtualStorageSerialNumber = sc.virtualStorageSerialNumber
+    }
     assertSecretCoherence(path, doc, expected)
     return
   }
   assertSecretEmittedKeys(path, keys, 'standard')
   const secretName = doc.metadata?.name || ''
-  const sys = systems.find((item) => expectedStandardSecretName(item, classes, systems) === secretName)
+  const sys = systems.find((item) => expectedStandardSecretName(item) === secretName)
   if (!sys) {
     throw new Error(`${path}: no storage system in wizard state for Secret "${secretName}"`)
   }

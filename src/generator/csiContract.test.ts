@@ -266,14 +266,21 @@ describe('assertCsiContract on generateAll', () => {
     const base = filledState()
     const state = filledState({
       storageSystems: [
-        { ...base.storageSystems[0], stretchedRole: 'primary' },
+        {
+          ...base.storageSystems[0],
+          id: 'storage-1',
+          name: 'array-1',
+          csiSecretName: 'hitachi-csi-secret-a',
+          stretchedRole: 'none',
+        },
         {
           ...base.storageSystems[0],
           id: 'storage-2',
-          name: 'secondary',
+          name: 'array-2',
           serial: '400002',
           url: 'https://192.0.2.11',
-          stretchedRole: 'secondary',
+          csiSecretName: 'hitachi-csi-secret-b',
+          stretchedRole: 'none',
         },
       ],
       storageClasses: [
@@ -290,6 +297,8 @@ describe('assertCsiContract on generateAll', () => {
           secondaryPoolID: '1',
           secondaryPortID: 'CL2-A',
           stretchedSecretName: 'hitachi-csi-secret-stretched',
+          primaryStorageSystemId: 'storage-1',
+          secondaryStorageSystemId: 'storage-2',
         },
       ],
     })

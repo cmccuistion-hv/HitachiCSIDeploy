@@ -785,22 +785,141 @@ describe('generateAll package matrix', () => {
     expect(paths(kubernetesFiles).some((path) => path.startsWith('05-console/'))).toBe(false)
   })
 
-  it('packages a GAD stretched Secret with both array serials', async () => {
+  it('emits one Secret per array and points each StorageClass at its picked array', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        storageSystems: [
+          { ...base.storageSystems[0], id: 'storage-1', csiSecretName: 'secret-a', serial: '400001' },
+          {
+            ...base.storageSystems[0],
+            id: 'storage-2',
+            name: 'array-2',
+            serial: '400002',
+            url: 'https://192.0.2.11',
+            csiSecretName: 'secret-b',
+          },
+        ],
+        storageClasses: [
+          {
+            ...base.storageClasses[0],
+            id: 'sc-1',
+            name: 'sc-a',
+            storageSystemId: 'storage-1',
+            poolID: '0',
+            portID: 'CL1-A',
+          },
+          {
+            ...base.storageClasses[0],
+            id: 'sc-2',
+            name: 'sc-b',
+            storageSystemId: 'storage-2',
+            poolID: '1',
+            portID: 'CL2-A',
+            isDefault: false,
+          },
+        ],
+      }),
+    )
+    const secretA = files.find((f) => f.path.includes('secret-') && f.content.includes('name: secret-a'))
+    const secretB = files.find((f) => f.path.includes('secret-') && f.content.includes('name: secret-b'))
+    expect(secretA).toBeTruthy()
+    expect(secretB).toBeTruthy()
+    expect(fileAt(files, '01-storage/storageclass-sc-a.yaml').content).toContain('serialNumber: "400001"')
+    expect(fileAt(files, '01-storage/storageclass-sc-a.yaml').content).toContain(
+      'csi.storage.k8s.io/provisioner-secret-name: "secret-a"',
+    )
+    expect(fileAt(files, '01-storage/storageclass-sc-b.yaml').content).toContain('serialNumber: "400002"')
+    expect(fileAt(files, '01-storage/storageclass-sc-b.yaml').content).toContain(
+      'csi.storage.k8s.io/provisioner-secret-name: "secret-b"',
+    )
+  })
+
+  it('emits one Secret when two classes share an array', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        storageSystems: [{ ...base.storageSystems[0], csiSecretName: 'hitachi-csi-secret' }],
+        storageClasses: [
+          { ...base.storageClasses[0], id: 'sc-1', name: 'sc-a', storageSystemId: 'storage-1' },
+          { ...base.storageClasses[0], id: 'sc-2', name: 'sc-b', storageSystemId: 'storage-1', isDefault: false },
+        ],
+      }),
+    )
+    const secrets = files.filter((f) => f.path.startsWith('01-storage/secret-') && !f.path.includes('stretched'))
+    expect(secrets).toHaveLength(1)
+  })
+
+  it('packages a Replication site-local StorageClass on the non-HRPC array with that array’s Secret', async () => {
+    const base = filledReplicationState()
+    const hrpc = base.sites!.primary.storageSystems[0]!
+    const extra = {
+      ...hrpc,
+      id: 'storage-extra',
+      name: 'extra',
+      serial: '400099',
+      url: 'https://192.0.2.99',
+      hrpcPair: false,
+      csiSecretName: 'secret-extra',
+    }
+    const siteLocalClass = {
+      ...base.sites!.primary.storageClasses[0]!,
+      id: 'sc-extra',
+      name: 'sc-extra',
+      hrpcPairId: '',
+      storageSystemId: extra.id,
+      serialNumber: '',
+      poolID: '0',
+      portID: 'CL1-A',
+      isDefault: false,
+    }
+    const files = await generateAll({
+      ...base,
+      sites: {
+        primary: {
+          ...base.sites!.primary,
+          storageSystems: [
+            { ...hrpc, name: 'primary', hrpcPair: true, csiSecretName: 'secret-hrpc' },
+            extra,
+          ],
+          storageClasses: [...base.sites!.primary.storageClasses, siteLocalClass],
+        },
+        secondary: base.sites!.secondary,
+      },
+    })
+    expect(fileAt(files, 'primary/01-storage/secret-extra.yaml').content).toContain('name: secret-extra')
+    expect(fileAt(files, 'primary/01-storage/storageclass-sc-extra.yaml').content).toContain(
+      'csi.storage.k8s.io/provisioner-secret-name: "secret-extra"',
+    )
+  })
+
+  it('packages a GAD stretched Secret from class picker arrays only (unused third array omitted)', async () => {
     const base = filledState()
     const files = await generateAll(
       filledState({
         storageSystems: [
           {
             ...base.storageSystems[0],
+            id: 'storage-1',
+            name: 'array-1',
+            serial: '400001',
+            url: 'https://192.0.2.10',
             stretchedRole: 'primary',
           },
           {
             ...base.storageSystems[0],
             id: 'storage-2',
-            name: 'secondary',
+            name: 'array-2',
             serial: '400002',
             url: 'https://192.0.2.11',
             stretchedRole: 'secondary',
+          },
+          {
+            ...base.storageSystems[0],
+            id: 'storage-3',
+            name: 'array-3',
+            serial: '400003',
+            url: 'https://192.0.2.12',
           },
         ],
         storageClasses: [
@@ -817,13 +936,16 @@ describe('generateAll package matrix', () => {
             secondaryPoolID: '1',
             secondaryPortID: 'CL2-A',
             stretchedSecretName: 'hitachi-csi-secret-stretched',
+            primaryStorageSystemId: 'storage-2',
+            secondaryStorageSystemId: 'storage-3',
           },
         ],
       }),
     )
     const stretchedSecret = fileAt(files, '01-storage/secret-stretched.yaml').content
 
-    expect(stretchedSecret).toContain('primarySerial: "400001"')
-    expect(stretchedSecret).toContain('secondarySerial: "400002"')
+    expect(stretchedSecret).toContain('primarySerial: "400002"')
+    expect(stretchedSecret).toContain('secondarySerial: "400003"')
+    expect(stretchedSecret).not.toContain('400001')
   })
 })
