@@ -5,6 +5,7 @@ import {
   csiSecretRefForSystem,
   defaultGadArrayIds,
   defaultStorageSystemId,
+  gadArraysForStorageClass,
   migrateArrayBinding,
   nextCsiSecretName,
 } from './arrayBinding'
@@ -93,6 +94,12 @@ describe('arrayForStorageClass', () => {
     expect(arrayForStorageClass(sc1, [sys({ id: 'a', name: 'primary' })])).toBeUndefined()
   })
 
+  it('returns undefined when storageSystemId is empty, even when multiple arrays exist', () => {
+    const sc1 = sc({ id: 'sc-1', name: 'hitachi-csi', storageSystemId: '' })
+    const systems = [sys({ id: 'a', name: 'one' }), sys({ id: 'b', name: 'two' })]
+    expect(arrayForStorageClass(sc1, systems)).toBeUndefined()
+  })
+
   it('does not fall back to the first array when storageSystemId is set', () => {
     const sc1 = sc({ id: 'sc-1', name: 'hitachi-csi', storageSystemId: 'b' })
     const systems = [
@@ -100,6 +107,23 @@ describe('arrayForStorageClass', () => {
       sys({ id: 'b', name: 'two', serial: '2' }),
     ]
     expect(arrayForStorageClass(sc1, systems)?.id).toBe('b')
+  })
+})
+
+describe('gadArraysForStorageClass', () => {
+  it('looks up primary/secondary by id with no fallback', () => {
+    const systems = [sys({ id: 'a', name: 'one' }), sys({ id: 'b', name: 'two' })]
+    const stretched = sc({
+      id: 'sc-1',
+      name: 'hitachi-csi-stretched',
+      kind: 'stretched',
+      primaryStorageSystemId: 'a',
+      secondaryStorageSystemId: 'missing',
+    })
+    expect(gadArraysForStorageClass(stretched, systems)).toEqual({
+      primary: systems[0],
+      secondary: undefined,
+    })
   })
 })
 
@@ -146,6 +170,44 @@ describe('migrateArrayBinding', () => {
     expect(migrated.storageClasses[0].storageSystemId).toBe('storage-2')
     expect(migrated.storageSystems.find((s) => s.id === 'storage-2')?.csiSecretName).toBe(
       'hitachi-csi-secret',
+    )
+  })
+
+  it('keeps the first migrated secretName for a serial (first-class-wins)', () => {
+    const state = createDefaultState()
+    const migrated = migrateArrayBinding({
+      ...state,
+      storageSystems: [sys({ id: 'storage-1', name: 'primary', serial: '400002', csiSecretName: '' })],
+      storageClasses: [
+        sc({ id: 'sc-1', name: 'hitachi-csi-1', serialNumber: '400002', secretName: 'keep-me' }),
+        sc({ id: 'sc-2', name: 'hitachi-csi-2', serialNumber: '400002', secretName: 'overwrite-me' }),
+      ],
+    } as WizardState)
+    expect(migrated.storageSystems.find((s) => s.id === 'storage-1')?.csiSecretName).toBe('keep-me')
+  })
+
+  it('copies secretNamespace onto the array only once (first-class-wins)', () => {
+    const state = createDefaultState()
+    const migrated = migrateArrayBinding({
+      ...state,
+      storageSystems: [sys({ id: 'storage-1', name: 'primary', serial: '400002', csiSecretNamespace: '' })],
+      storageClasses: [
+        sc({
+          id: 'sc-1',
+          name: 'hitachi-csi-1',
+          serialNumber: '400002',
+          secretNamespace: 'keep-ns',
+        }),
+        sc({
+          id: 'sc-2',
+          name: 'hitachi-csi-2',
+          serialNumber: '400002',
+          secretNamespace: 'overwrite-ns',
+        }),
+      ],
+    } as WizardState)
+    expect(migrated.storageSystems.find((s) => s.id === 'storage-1')?.csiSecretNamespace).toBe(
+      'keep-ns',
     )
   })
 

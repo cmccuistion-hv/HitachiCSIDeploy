@@ -2,7 +2,7 @@ import { supportsStretchedGad } from './platforms'
 import { nextUniqueName } from './validation'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 
-const DEFAULT_CSI_SECRET_NAME = 'hitachi-csi-secret'
+export const DEFAULT_CSI_SECRET_NAME = 'hitachi-csi-secret'
 
 function t(v: string | undefined | null): string {
   return (v || '').trim()
@@ -48,10 +48,20 @@ export function arrayForStorageClass(
   systems: StorageSystemConfig[],
 ): StorageSystemConfig | undefined {
   const id = t(sc.storageSystemId)
-  if (id) return systems.find((s) => s.id === id)
-  if (systems.length === 1) return systems[0]
-  const pair = systems.find((s) => !!s.hrpcPair)
-  return pair || systems[0]
+  if (!id) return undefined
+  return systems.find((s) => s.id === id)
+}
+
+export function gadArraysForStorageClass(
+  sc: StorageClassConfig,
+  systems: StorageSystemConfig[],
+): { primary?: StorageSystemConfig; secondary?: StorageSystemConfig } {
+  const primaryId = t(sc.primaryStorageSystemId)
+  const secondaryId = t(sc.secondaryStorageSystemId)
+  return {
+    primary: primaryId ? systems.find((s) => s.id === primaryId) : undefined,
+    secondary: secondaryId ? systems.find((s) => s.id === secondaryId) : undefined,
+  }
 }
 
 export function applyArrayBindingToClass(
@@ -86,27 +96,38 @@ function migrateSiteArrayBinding(site: {
     csiSecretNamespace: (sys as StorageSystemConfig).csiSecretNamespace ?? '',
   }))
 
-  const bySerial = new Map<string, StorageSystemConfig>()
+  const bySerial = new Map<string, string>()
   for (const sys of migratedSystems) {
     const serial = t(sys.serial)
-    if (serial) bySerial.set(serial, sys)
+    if (serial) bySerial.set(serial, sys.id)
   }
 
   const migratedClasses = classes.map((sc) => {
     // Standard / SDS: bind by storageSystemId; migrate from serialNumber when missing.
     if (sc.kind !== 'stretched' && sc.kind !== 'stretched-adr') {
       if (t(sc.storageSystemId)) return sc
-      const match = bySerial.get(t(sc.serialNumber)) || migratedSystems[0]
-      if (!match) return sc
+      const matchId = bySerial.get(t(sc.serialNumber)) || migratedSystems[0]?.id || ''
+      if (!matchId) return sc
+
+      const current = migratedSystems.find((s) => s.id === matchId)
+      if (!current) return sc
 
       const secretName = t(sc.secretName) || DEFAULT_CSI_SECRET_NAME
-      if (!t(match.csiSecretName)) {
-        migratedSystems = migratedSystems.map((sys) =>
-          sys.id === match.id ? { ...sys, csiSecretName: secretName } : sys,
-        )
+      const secretNamespace = t(sc.secretNamespace)
+
+      if (!t(current.csiSecretName) || (!t(current.csiSecretNamespace) && secretNamespace)) {
+        migratedSystems = migratedSystems.map((sys) => {
+          if (sys.id !== matchId) return sys
+          return {
+            ...sys,
+            csiSecretName: t(sys.csiSecretName) ? sys.csiSecretName : secretName,
+            csiSecretNamespace:
+              t(sys.csiSecretNamespace) || !secretNamespace ? sys.csiSecretNamespace : secretNamespace,
+          }
+        })
       }
 
-      return { ...sc, storageSystemId: match.id }
+      return { ...sc, storageSystemId: matchId }
     }
 
     // Stretched / GAD: migrate pickers from stretchedRole when missing.
