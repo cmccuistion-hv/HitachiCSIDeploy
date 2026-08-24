@@ -34,7 +34,7 @@ import { GadStretchedPvcDiagram } from '../components/GadStretchedPvcDiagram'
 import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
 import { useSiteTab } from '../state/useSiteTab'
-import { Callout, CodeBlock, Field, Section } from '../components/ui'
+import { Callout, CodeBlock, Field, HelpTip, Section } from '../components/ui'
 
 /** Count comma-separated Port ID values (empty segments ignored). */
 function portIdCount(value: string | undefined): number {
@@ -513,10 +513,6 @@ export function StorageClassesStep() {
         </Callout>
       )}
 
-      {state.storageClassesEnabled && replicationOn && (
-        <Callout>{HELP.replicationPairedStorageClassesCallout}</Callout>
-      )}
-
       {state.storageClassesEnabled &&
         storage.storageClasses.map((sc) => {
 
@@ -827,7 +823,10 @@ export function StorageClassesStep() {
                     onChange={(e) => toggleUseForReplication(sc.id, e.target.checked)}
                   />
                   <div>
-                    <strong>Use this StorageClass for Replication</strong>
+                    <strong>
+                      Use this StorageClass for Replication
+                      <HelpTip text={HELP.replicationPairedStorageClassesCallout} />
+                    </strong>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
                       Creates a matching StorageClass on the other site with the same name and filesystem
                       type. Fill pool, ports, and other fields on both the Primary and Secondary site tabs.

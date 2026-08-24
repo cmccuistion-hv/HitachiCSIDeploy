@@ -3,7 +3,12 @@ import JSZip from 'jszip'
 import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
-import { storageArtifactsInvalidFix, storageArtifactsValid, wizardFixCta } from '../catalog/validation'
+import {
+  consolePluginPrometheusWiringInvalidFix,
+  storageArtifactsInvalidFix,
+  storageArtifactsValid,
+  wizardFixCta,
+} from '../catalog/validation'
 import { wizardVersion } from '../wizardVersion'
 import { buildNextSteps, nextStepsToMarkdown } from '../generator/nextSteps'
 import { generateAll, type GeneratedFile } from '../generator/yaml'
@@ -37,6 +42,9 @@ export function ExportStep() {
 
   const storageExportBlocked = !storageArtifactsValid(state)
   const storageExportFix = storageExportBlocked ? storageArtifactsInvalidFix(state) : null
+  const consolePromFix = consolePluginPrometheusWiringInvalidFix(state)
+  const exportBlocked = storageExportBlocked || consolePromFix !== null
+  const exportFix = storageExportFix ?? consolePromFix
   const nextSteps = buildNextSteps(state)
 
   const downloadZip = async () => {
@@ -87,7 +95,7 @@ export function ExportStep() {
             <button
               type="button"
               className="btn btn-success"
-              disabled={storageExportBlocked || downloading || generating}
+              disabled={exportBlocked || downloading || generating}
               onClick={() => void downloadZip()}
             >
               {downloading ? 'Building ZIP…' : 'Download ZIP'}
@@ -113,15 +121,15 @@ export function ExportStep() {
           </div>
         }
       >
-        {storageExportFix ? (
+        {exportFix ? (
           <Callout variant="warn">
             <button
               type="button"
               className="callout-go"
-              onClick={() => goToFix(storageExportFix)}
+              onClick={() => goToFix(exportFix)}
             >
-              <span>{storageExportFix.message}</span>
-              <span className="callout-go-cta">{wizardFixCta(storageExportFix)}</span>
+              <span>{exportFix.message}</span>
+              <span className="callout-go-cta">{wizardFixCta(exportFix)}</span>
             </button>
           </Callout>
         ) : (

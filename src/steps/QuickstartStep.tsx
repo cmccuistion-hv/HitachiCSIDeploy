@@ -2,7 +2,7 @@ import { PLATFORMS } from '../catalog/platforms'
 import { packageStorageClasses, resolvedStorageClassName } from '../catalog/sites'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
-import { Callout, Field, Section } from '../components/ui'
+import { Field, Section } from '../components/ui'
 
 export function QuickstartStep() {
   const { state, setState } = useWizard()
@@ -25,11 +25,6 @@ export function QuickstartStep() {
           </>
         ) : null}
       </p>
-
-      <Callout>
-        <code>install.sh</code> applies <code>06-quickstart/</code> automatically and waits for the PVC to
-        become Bound and the Pod to become Running.
-      </Callout>
 
       <Section title="Test workload">
         <AdvancedSection

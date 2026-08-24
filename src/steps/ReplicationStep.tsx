@@ -4,6 +4,10 @@ import { ResourcePartitioningDiagram } from '../components/ResourcePartitioningD
 import { Callout, CodeBlock, DownloadButton, Field, HelpTip, PasswordInput, Section } from '../components/ui'
 import { PLATFORMS } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
+import {
+  applyReplicationSecretPatch,
+  resolvedReplicationStorageSecrets,
+} from '../catalog/replicationSecrets'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../catalog/sites'
 import { hrpcPairResourceGroupIds, hrpcResourceGroupIdReason } from '../catalog/validation'
 import { useUiMode } from '../state/UiModeContext'
@@ -58,17 +62,7 @@ export function ReplicationStep() {
   const primaryPair = hrpcPairSystem(primarySite.storageSystems) ?? primarySite.storageSystems[0]
   const secondaryPair = hrpcPairSystem(secondarySite.storageSystems) ?? secondarySite.storageSystems[0]
 
-  const seededSecrets = [primaryPair, secondaryPair]
-    .filter(Boolean)
-    .map((sys, i) => ({
-      serial: sys.serial,
-      url: sys.url,
-      user: sys.user,
-      password: sys.password,
-      journal: String(i + 1),
-    }))
-
-  const secrets = state.replication.storageSecrets.length ? state.replication.storageSecrets : seededSecrets
+  const secrets = resolvedReplicationStorageSecrets(state)
 
   const secretName =
     state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME
@@ -142,12 +136,7 @@ export function ReplicationStep() {
   }
 
   const updateSecret = (idx: number, patch: Partial<(typeof secrets)[number]>) => {
-    const next = [...secrets]
-    next[idx] = { ...next[idx], ...patch }
-    setState((s) => ({
-      ...s,
-      replication: { ...s.replication, storageSecrets: next },
-    }))
+    setState((s) => applyReplicationSecretPatch(s, idx, patch))
   }
 
   const readFile = (file: File, which: 'primary' | 'secondary') => {
@@ -397,9 +386,8 @@ export function ReplicationStep() {
 
           <Section title="Storage secrets (journals)" help={HELP.journalsVsRemote}>
             <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
-              Primary and secondary site arrays with journal IDs used by the Replication operator. These become{' '}
-              <code>storage-secrets.yaml</code> in the export. Journals are the storage side; remote kubeconfig
-              is the cluster side.
+              Array serial, URL, user, and password stay in sync with each site’s Replication array on Storage
+              systems. Set journal IDs here — they become <code>storage-secrets.yaml</code> in the export.
             </p>
             {secrets.map((sec, idx) => (
               <div key={idx} className="field-grid" style={{ marginBottom: '0.75rem' }}>
@@ -423,20 +411,6 @@ export function ReplicationStep() {
                 </Field>
               </div>
             ))}
-            {!state.replication.storageSecrets.length && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() =>
-                  setState((s) => ({
-                    ...s,
-                    replication: { ...s.replication, storageSecrets: seededSecrets },
-                  }))
-                }
-              >
-                Use each site’s Replication array as secrets
-              </button>
-            )}
           </Section>
 
           <Section title="Remote kubeconfig (both sites)" help={HELP.remoteKubeconfig}>

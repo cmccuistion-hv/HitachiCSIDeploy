@@ -1,12 +1,26 @@
-import { useWizard } from '../state/WizardContext'
+import {
+  metricsForSite,
+  metricsInstalledForSite,
+  prometheusTargetForSite,
+  withSiteMetrics,
+} from '../catalog/metrics'
+import { siteStorageSystemsReady } from '../catalog/validation'
 import { AdvancedSection } from '../components/AdvancedSection'
+import { SiteSwitcher } from '../components/SiteSwitcher'
+import { useWizard } from '../state/WizardContext'
+import { useSiteTab } from '../state/useSiteTab'
 import { useUiMode } from '../state/UiModeContext'
 import { Callout, Field, Section } from '../components/ui'
 
 export function ConsolePluginStep() {
   const { state, setState } = useWizard()
   const { isAdvanced } = useUiMode()
-  const needsPromWiring = !state.metrics.deployPrometheus
+  const replicationOn = state.components.replication
+  const [site, setSite] = useSiteTab(replicationOn)
+  const metrics = metricsForSite(state, site)
+  const installed = metricsInstalledForSite(state, site)
+  const needsPromWiring = !installed || !metrics.deployPrometheus
+  const target = prometheusTargetForSite(state, site)
 
   return (
     <div className="step-panel">
@@ -17,17 +31,22 @@ export function ConsolePluginStep() {
           : 'Deploys the Hitachi dashboard tab in the OpenShift web console. Prometheus settings should match where metrics are scraped. If you set them on Performance Metrics (Grafana with an existing Prometheus), those values appear here.'}
       </p>
 
-      {!isAdvanced && !needsPromWiring && (
-        <Callout variant="ok">
-          <strong>Included in this package:</strong> the Console Plugin and Prometheus (so no additional wiring
-          is required on this page).
-        </Callout>
+      {replicationOn && (
+        <SiteSwitcher
+          site={site}
+          onSiteChange={setSite}
+          primaryReady={siteStorageSystemsReady(state, 'primary')}
+          secondaryReady={siteStorageSystemsReady(state, 'secondary')}
+        />
       )}
 
-      <Callout>
-        Manifest version tracks the CSI Driver release (<strong>{state.versions.driver}</strong>). After
-        apply, a Job patches the cluster Console operator to enable the plugin.
-      </Callout>
+      {!isAdvanced && !needsPromWiring && installed && (
+        <Callout variant="ok">
+          <strong>Included in this package:</strong> the Console Plugin and Prometheus (so no additional wiring
+          is required on this page
+          {replicationOn ? ' for this site' : ''}).
+        </Callout>
+      )}
 
       <Section title="Plugin settings">
         {needsPromWiring && (
@@ -37,43 +56,38 @@ export function ConsolePluginStep() {
               hint="Namespace of the Prometheus service the plugin queries (often the metrics exporter NS)."
             >
               <input
-                value={state.consolePlugin.prometheusNamespace}
+                value={target.namespace}
                 onChange={(e) =>
-                  setState((s) => ({
-                    ...s,
-                    consolePlugin: { ...s.consolePlugin, prometheusNamespace: e.target.value },
-                  }))
+                  setState((s) =>
+                    withSiteMetrics(s, site, { existingPrometheusNamespace: e.target.value }),
+                  )
                 }
               />
             </Field>
             <Field label="Prometheus service" hint="Kubernetes Service name for Prometheus.">
               <input
-                value={state.consolePlugin.prometheusService}
+                value={target.service}
                 onChange={(e) =>
-                  setState((s) => ({
-                    ...s,
-                    consolePlugin: { ...s.consolePlugin, prometheusService: e.target.value },
-                  }))
+                  setState((s) =>
+                    withSiteMetrics(s, site, { existingPrometheusService: e.target.value }),
+                  )
                 }
               />
             </Field>
             <Field label="Prometheus port" hint="Service port Prometheus listens on.">
               <input
-                value={state.consolePlugin.prometheusPort}
+                value={target.port}
                 onChange={(e) =>
-                  setState((s) => ({
-                    ...s,
-                    consolePlugin: { ...s.consolePlugin, prometheusPort: e.target.value },
-                  }))
+                  setState((s) =>
+                    withSiteMetrics(s, site, { existingPrometheusPort: e.target.value }),
+                  )
                 }
               />
             </Field>
           </div>
         )}
 
-        <AdvancedSection
-          title="Advanced plugin settings"
-        >
+        <AdvancedSection title="Advanced plugin settings">
           <div className="field-grid">
             <Field label="Plugin namespace" hint="Namespace where the console plugin pods run.">
               <input
@@ -86,46 +100,6 @@ export function ConsolePluginStep() {
                 }
               />
             </Field>
-            {!needsPromWiring && (
-              <>
-                <Field
-                  label="Prometheus namespace"
-                  hint="Namespace of the Prometheus service the plugin queries (often the metrics exporter NS)."
-                >
-                  <input
-                    value={state.consolePlugin.prometheusNamespace}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        consolePlugin: { ...s.consolePlugin, prometheusNamespace: e.target.value },
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Prometheus service" hint="Kubernetes Service name for Prometheus.">
-                  <input
-                    value={state.consolePlugin.prometheusService}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        consolePlugin: { ...s.consolePlugin, prometheusService: e.target.value },
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Prometheus port" hint="Service port Prometheus listens on.">
-                  <input
-                    value={state.consolePlugin.prometheusPort}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        consolePlugin: { ...s.consolePlugin, prometheusPort: e.target.value },
-                      }))
-                    }
-                  />
-                </Field>
-              </>
-            )}
           </div>
         </AdvancedSection>
       </Section>

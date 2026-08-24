@@ -9,7 +9,7 @@ import { useWizard } from '../state/WizardContext'
 import { Callout, Field, HelpTip, Section, ToggleRow } from '../components/ui'
 
 export function ComponentsStep() {
-  const { state, setState, versions, versionsLoading } = useWizard()
+  const { state, setState, versions } = useWizard()
   const plat = PLATFORMS[state.platform]
 
   return (
@@ -158,14 +158,6 @@ export function ComponentsStep() {
         title="Install defaults"
       >
         <Section title="Versions">
-          {versionsLoading && <p>Detecting latest versions from GitHub…</p>}
-          {versions && (
-            <Callout variant="ok">
-              Latest detected ({versions.source}): CSI Driver <strong>{versions.latest.hspc}</strong>,
-              Replication <strong>{versions.latest.hrpc}</strong>, Performance Metrics{' '}
-              <strong>{versions.latest.hspp}</strong>
-            </Callout>
-          )}
           <div className="field-grid">
             <Field
               label="CSI Driver version"
