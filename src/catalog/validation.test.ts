@@ -18,6 +18,7 @@ import {
   storageArtifactsValidForContinue,
   storageSystemsContinueInvalidFix,
   storageSystemsValidForContinue,
+  validateStorageSystem,
   validateHrpc,
   validateStorageClass,
 } from './validation'
@@ -115,6 +116,67 @@ describe('storage system Continue validation', () => {
       serial: '452339',
     })
     expect(storageSystemsValidForContinue(twoPrimaryPairs)).toBe(false)
+  })
+})
+
+describe('CSI Secret name uniqueness', () => {
+  it('does not block Continue when standard StorageClasses have stale duplicate secretName values', () => {
+    const state = filledState({
+      driverNamespace: 'kube-system',
+      storageSystems: [
+        {
+          ...filledState().storageSystems[0],
+          id: 'storage-1',
+          name: 'array-1',
+          serial: '400001',
+          csiSecretName: 'hitachi-csi-secret',
+          csiSecretNamespace: '',
+        },
+        {
+          ...filledState().storageSystems[0],
+          id: 'storage-2',
+          name: 'array-2',
+          serial: '400002',
+          csiSecretName: 'hitachi-csi-secret-2',
+          csiSecretNamespace: '',
+        },
+      ],
+      storageClasses: [
+        {
+          ...filledState().storageClasses[0],
+          id: 'sc-1',
+          name: 'hitachi-csi-1',
+          storageSystemId: 'storage-1',
+          // stale/duplicated secretName should not block storage-system Continue
+          secretName: 'hitachi-csi-secret',
+          secretNamespace: '',
+        },
+        {
+          ...filledState().storageClasses[0],
+          id: 'sc-2',
+          name: 'hitachi-csi-2',
+          storageSystemId: 'storage-2',
+          // stale/duplicated secretName should not block storage-system Continue
+          secretName: 'hitachi-csi-secret',
+          secretNamespace: '',
+        },
+      ],
+    })
+
+    expect(storageSystemsContinueInvalidFix(state)).toBeNull()
+    expect(storageSystemsValidForContinue(state)).toBe(true)
+  })
+
+  it('rejects two arrays with the same resolved CSI Secret name+namespace', () => {
+    const driverNamespace = 'kube-system'
+    const systems = [
+      { ...filledState().storageSystems[0], id: 'a', name: 'array-a', csiSecretName: 'shared', csiSecretNamespace: '' },
+      { ...filledState().storageSystems[0], id: 'b', name: 'array-b', serial: '400002', csiSecretName: 'shared', csiSecretNamespace: '' },
+    ]
+
+    expect(validateStorageSystem(systems[1], systems, driverNamespace)).toEqual(
+      expect.objectContaining({ csiSecretName: expect.any(String) }),
+    )
   })
 })
 
@@ -365,6 +427,50 @@ describe('GAD and stretched StorageClass constraints', () => {
     expect(validateStorageClass(stretched, { storageSystems: systems })).toEqual(
       expect.objectContaining({ secondaryStorageSystemId: expect.any(String) }),
     )
+  })
+
+  it('keeps stretchedSecretName unique from standard Secret names on this site', () => {
+    const systems = [
+      { ...filledState().storageSystems[0], id: 'storage-1', serial: '400001', family: 'vsp-5000-g-e-f' },
+      {
+        ...filledState().storageSystems[0],
+        id: 'storage-2',
+        name: 'array-2',
+        serial: '400002',
+        family: 'vsp-one-block-20',
+        csiSecretName: 'hitachi-csi-secret-2',
+      },
+    ]
+    const standard = {
+      ...filledState().storageClasses[0],
+      id: 'sc-std',
+      name: 'hitachi-csi',
+      kind: 'standard' as const,
+      storageSystemId: 'storage-1',
+      secretName: 'hitachi-csi-secret',
+      secretNamespace: 'kube-system',
+    }
+    const stretched = {
+      ...filledState().storageClasses[0],
+      id: 'sc-gad',
+      name: 'hitachi-csi-stretched',
+      kind: 'stretched' as const,
+      quorumID: '1',
+      copyGroupName: 'spc-cpg1',
+      consistencyGroupId: '1',
+      primaryPoolID: '0',
+      primaryPortID: 'CL1-A',
+      secondaryPoolID: '1',
+      secondaryPortID: 'CL2-A',
+      stretchedSecretName: 'hitachi-csi-secret',
+      secretNamespace: 'kube-system',
+      primaryStorageSystemId: 'storage-1',
+      secondaryStorageSystemId: 'storage-2',
+    }
+
+    expect(
+      validateStorageClass(stretched, { storageSystems: systems, siblings: [standard, stretched] }),
+    ).toEqual(expect.objectContaining({ stretchedSecretName: expect.any(String) }))
   })
 
   it('reports required stretched StorageClass fields', () => {

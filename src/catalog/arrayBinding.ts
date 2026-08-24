@@ -1,5 +1,5 @@
 import { supportsStretchedGad } from './platforms'
-import { nextUniqueName } from './validation'
+import { nextUniqueName } from './uniqueName'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 
 export const DEFAULT_CSI_SECRET_NAME = 'hitachi-csi-secret'

@@ -4,6 +4,7 @@ import type { StorageClassConfig, StorageSystemConfig, WizardState } from './typ
 import { arrayForStorageClass, csiSecretRefForSystem, gadArraysForStorageClass } from './arrayBinding'
 import { resolvedReplicationStorageSecrets } from './replicationSecrets'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
+import { nextUniqueName } from './uniqueName'
 
 /** Blocking issue plus where the wizard should take the user to fix it. */
 export type WizardFix = {
@@ -85,14 +86,7 @@ export function effectiveSerialNumber(
   return t(primary?.serial)
 }
 
-export function nextUniqueName(base: string, taken: string[]): string {
-  const used = new Set(taken.map((n) => n.trim()).filter(Boolean))
-  const stem = (base || '').trim() || 'item'
-  if (!used.has(stem)) return stem
-  let n = 2
-  while (used.has(`${stem}-${n}`)) n += 1
-  return `${stem}-${n}`
-}
+export { nextUniqueName }
 
 function spcPrefixedNameError(
   value: string,
@@ -291,20 +285,6 @@ function siteHasDuplicateNames(
   }
   if ([...scNames.values()].some((n) => n > 1)) {
     return 'Each StorageClass on this site must have a unique name.'
-  }
-
-  const secretOwners = new Map<string, string>()
-  for (const sc of classes) {
-    const name = t(sc.secretName)
-    if (!name) continue
-    const key = `${t(sc.secretNamespace)}/${name}`
-    const serial = t(effectiveSerialNumber(sc, systems))
-    const prev = secretOwners.get(key)
-    if (prev && serial && prev !== serial) {
-      return 'Each Secret name on this site can only be used for one array.'
-    }
-    if (serial) secretOwners.set(key, serial)
-    else if (!secretOwners.has(key)) secretOwners.set(key, serial)
   }
 
   for (const sc of classes) {
