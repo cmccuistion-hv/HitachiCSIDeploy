@@ -1,6 +1,7 @@
 import { metricsInstalledForSite, prometheusTargetForSite } from './metrics'
 import { CONNECTION_TYPES } from './platforms'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
+import { arrayForStorageClass, csiSecretRefForSystem, gadArraysForStorageClass } from './arrayBinding'
 import { resolvedReplicationStorageSecrets } from './replicationSecrets'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
 
@@ -73,10 +74,15 @@ export function effectiveSerialNumber(
   sc: StorageClassConfig,
   storageSystems: StorageSystemConfig[],
 ): string {
-  const trimmed = (sc.serialNumber || '').trim()
+  const id = t(sc.storageSystemId)
+  if (id) {
+    const bound = storageSystems.find((s) => s.id === id)
+    return t(bound?.serial)
+  }
+  const trimmed = t(sc.serialNumber)
   if (trimmed) return trimmed
   const primary = storageSystems.find((s) => s.stretchedRole === 'primary') || storageSystems[0]
-  return (primary?.serial || '').trim()
+  return t(primary?.serial)
 }
 
 export function nextUniqueName(base: string, taken: string[]): string {
@@ -114,27 +120,9 @@ export function validateStorageClass(
     errors.name = 'This StorageClass name is already used on this site.'
   }
 
-  const secretNs = t(sc.secretNamespace)
-  if (t(sc.secretName) && ctx.siblings) {
-    const secretClash = ctx.siblings.some(
-      (o) =>
-        o.id !== sc.id &&
-        t(o.secretName) === t(sc.secretName) &&
-        t(o.secretNamespace) === secretNs &&
-        t(effectiveSerialNumber(o, ctx.storageSystems)) !== t(effectiveSerialNumber(sc, ctx.storageSystems)),
-    )
-    if (secretClash) {
-      errors.secretName = 'This Secret name is already used on this site for a different array.'
-    }
-    const stretchedClash = ctx.siblings.some(
-      (o) =>
-        o.id !== sc.id &&
-        (o.kind === 'stretched' || o.kind === 'stretched-adr') &&
-        t(o.stretchedSecretName || o.secretName) === t(sc.secretName) &&
-        t(o.secretNamespace) === secretNs,
-    )
-    if (stretchedClash) {
-      errors.secretName = 'This Secret name is already used by a stretched StorageClass on this site.'
+  if (sc.kind !== 'stretched' && sc.kind !== 'stretched-adr') {
+    if (ctx.storageSystems.length >= 2 && !arrayForStorageClass(sc, ctx.storageSystems)) {
+      errors.storageSystemId = 'Select an array.'
     }
   }
 
@@ -143,6 +131,14 @@ export function validateStorageClass(
   }
 
   if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
+    const gad = gadArraysForStorageClass(sc, ctx.storageSystems)
+    if (!gad.primary) errors.primaryStorageSystemId = 'Primary array is required.'
+    if (!gad.secondary) errors.secondaryStorageSystemId = 'Secondary array is required.'
+    if (gad.primary && gad.secondary && gad.primary.id === gad.secondary.id) {
+      errors.secondaryStorageSystemId = 'Primary and secondary arrays must be different.'
+    }
+
+    const secretNs = t(sc.secretNamespace)
     if (!(sc.quorumID || '').trim()) errors.quorumID = 'Quorum ID is required.'
     const copyGroupErr = spcPrefixedNameError(sc.copyGroupName || '', 'Copy group name', 29, true)
     if (copyGroupErr) errors.copyGroupName = copyGroupErr
@@ -222,6 +218,7 @@ export function validateStorageClass(
 export function validateStorageSystem(
   sys: StorageSystemConfig,
   siblings: StorageSystemConfig[],
+  driverNamespace: string,
 ): Record<string, string> {
   const errors: Record<string, string> = {}
   if (!t(sys.name)) errors.name = 'Display name is required.'
@@ -232,6 +229,17 @@ export function validateStorageSystem(
   if (t(sys.serial) && siblings.some((o) => o.id !== sys.id && t(o.serial) === t(sys.serial))) {
     errors.serial = 'This serial number is already used on this site.'
   }
+
+  const ref = csiSecretRefForSystem(sys, driverNamespace)
+  const secretClash = siblings.some((o) => {
+    if (o.id === sys.id) return false
+    const other = csiSecretRefForSystem(o, driverNamespace)
+    return other.name === ref.name && other.namespace === ref.namespace
+  })
+  if (secretClash) {
+    errors.csiSecretName = 'This CSI Secret name is already used on this site.'
+  }
+
   return errors
 }
 
@@ -250,21 +258,32 @@ function siteMissingFamily(
   return wizardFix('Select a storage family for each array.', 'storage', site)
 }
 
-function siteHasDuplicateNames(systems: StorageSystemConfig[], classes: StorageClassConfig[]): string | null {
+function siteHasDuplicateNames(
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+  driverNamespace: string,
+): string | null {
   if (systems.some((sys) => !t(sys.name))) {
     return 'Each array on this site must have a display name.'
   }
   const sysNames = new Map<string, number>()
   const sysSerials = new Map<string, number>()
+  const sysSecrets = new Map<string, number>()
   for (const sys of systems) {
     if (t(sys.name)) sysNames.set(t(sys.name), (sysNames.get(t(sys.name)) || 0) + 1)
     if (t(sys.serial)) sysSerials.set(t(sys.serial), (sysSerials.get(t(sys.serial)) || 0) + 1)
+    const ref = csiSecretRefForSystem(sys, driverNamespace)
+    const key = `${ref.namespace}/${ref.name}`
+    sysSecrets.set(key, (sysSecrets.get(key) || 0) + 1)
   }
   if ([...sysNames.values()].some((n) => n > 1)) {
     return 'Each array on this site must have a unique display name.'
   }
   if ([...sysSerials.values()].some((n) => n > 1)) {
     return 'Each array on this site must have a unique serial number.'
+  }
+  if ([...sysSecrets.values()].some((n) => n > 1)) {
+    return 'Each array on this site must have a unique CSI Secret name and namespace.'
   }
   const scNames = new Map<string, number>()
   for (const sc of classes) {
@@ -380,9 +399,9 @@ function validateHrpcReplicationArraysFix(state: WizardState): WizardFix | null 
   const missSecondary = siteMissingFamily(secondary.storageSystems, 'secondary')
   if (missSecondary) return missSecondary
 
-  const dupPrimary = siteHasDuplicateNames(primary.storageSystems, primary.storageClasses)
+  const dupPrimary = siteHasDuplicateNames(primary.storageSystems, primary.storageClasses, state.driverNamespace)
   if (dupPrimary) return wizardFix(dupPrimary, 'storage', 'primary')
-  const dupSecondary = siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses)
+  const dupSecondary = siteHasDuplicateNames(secondary.storageSystems, secondary.storageClasses, state.driverNamespace)
   if (dupSecondary) return wizardFix(dupSecondary, 'storage', 'secondary')
 
   const missingFields =
@@ -413,7 +432,7 @@ export function storageSystemsContinueInvalidFix(state: WizardState): WizardFix 
   }
   const missingFamily = siteMissingFamily(state.storageSystems || [])
   if (missingFamily) return missingFamily
-  const dup = siteHasDuplicateNames(state.storageSystems || [], state.storageClasses || [])
+  const dup = siteHasDuplicateNames(state.storageSystems || [], state.storageClasses || [], state.driverNamespace)
   return dup ? wizardFix(dup, 'storage') : null
 }
 

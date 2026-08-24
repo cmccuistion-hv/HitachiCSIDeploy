@@ -10,6 +10,7 @@ import { createDefaultState, type WizardState } from './types'
 import { withSiteMetrics } from './metrics'
 import {
   consolePluginPrometheusWiringInvalidFix,
+  effectiveSerialNumber,
   hrpcResourceGroupIdReason,
   siteStorageClassesReady,
   siteStorageSystemsReady,
@@ -168,6 +169,7 @@ describe('Replication resource group both-or-neither', () => {
       id: 'storage-extra',
       name: 'local-extra',
       serial: '400099',
+      csiSecretName: 'hitachi-csi-secret-2',
       hrpcPair: false,
       resourceGroupID: '99',
     })
@@ -214,6 +216,26 @@ describe('per-site readiness for the site switcher', () => {
 })
 
 describe('storage artifact validation', () => {
+  it('blocks Continue when two arrays exist and a standard class has no storageSystemId', () => {
+    const state = filledState({
+      storageSystems: [
+        { ...filledState().storageSystems[0], id: 'storage-1' },
+        {
+          ...filledState().storageSystems[0],
+          id: 'storage-2',
+          name: 'array-2',
+          serial: '400002',
+          csiSecretName: 'hitachi-csi-secret-2',
+        },
+      ],
+      storageClasses: [{ ...filledState().storageClasses[0], storageSystemId: '' }],
+    })
+
+    expect(validateStorageClass(state.storageClasses[0], { storageSystems: state.storageSystems })).toEqual(
+      expect.objectContaining({ storageSystemId: expect.any(String) }),
+    )
+  })
+
   it('allows Continue without journals but requires both journals for Export', () => {
     const state = validReplicationState()
 
@@ -296,23 +318,53 @@ describe('storage artifact validation', () => {
 
 describe('GAD and stretched StorageClass constraints', () => {
   const gadSystems = [
-    { family: 'vsp-5000-g-e-f' as const, stretchedRole: 'primary' as const },
-    { family: 'vsp-one-block-20' as const, stretchedRole: 'secondary' as const },
+    { family: 'vsp-5000-g-e-f' as const },
+    { family: 'vsp-one-block-20' as const },
   ]
 
-  it('recognizes exactly one VSP primary and secondary as a GAD pair', () => {
+  it('recognizes two VSP arrays as a GAD pair even without roles', () => {
     expect(hasGadPair(gadSystems)).toBe(true)
     expect(hasGadPair(gadSystems.slice(0, 1))).toBe(false)
     expect(
       hasGadPair([
-        { family: 'vsp-one-sds-block', stretchedRole: 'primary' },
-        { family: 'vsp-one-sds-block', stretchedRole: 'secondary' },
+        { family: 'vsp-one-sds-block' },
+        { family: 'vsp-one-sds-block' },
       ]),
     ).toBe(false)
   })
 
   it('offers stretched StorageClasses for a GAD pair', () => {
     expect(storageClassKindsForSystems(gadSystems)).toContain('stretched')
+  })
+
+  it('blocks GAD when primary and secondary pickers are the same array', () => {
+    const systems = filledState().storageSystems.concat([
+      {
+        ...filledState().storageSystems[0],
+        id: 'storage-2',
+        name: 'array-2',
+        serial: '400002',
+        family: 'vsp-5000-g-e-f',
+        csiSecretName: 'hitachi-csi-secret-2',
+      },
+    ])
+    const stretched = {
+      ...filledState().storageClasses[0],
+      kind: 'stretched' as const,
+      quorumID: '1',
+      copyGroupName: 'spc-cpg1',
+      consistencyGroupId: '1',
+      primaryPoolID: '0',
+      primaryPortID: 'CL1-A',
+      secondaryPoolID: '1',
+      secondaryPortID: 'CL2-A',
+      stretchedSecretName: 'hitachi-csi-secret-stretched',
+      primaryStorageSystemId: 'storage-1',
+      secondaryStorageSystemId: 'storage-1',
+    }
+    expect(validateStorageClass(stretched, { storageSystems: systems })).toEqual(
+      expect.objectContaining({ secondaryStorageSystemId: expect.any(String) }),
+    )
   })
 
   it('reports required stretched StorageClass fields', () => {
@@ -345,6 +397,27 @@ describe('GAD and stretched StorageClass constraints', () => {
       '01-storage/secret-stretched.yaml',
     )
     expect(stretchedSecretPackagePath('custom-gad')).toBe('01-storage/secret-custom-gad.yaml')
+  })
+})
+
+describe('effectiveSerialNumber', () => {
+  it('uses the linked array serial and does not fall back after storageSystemId is set', () => {
+    const systems = [
+      { ...filledState().storageSystems[0], id: 'a', serial: '111' },
+      { ...filledState().storageSystems[0], id: 'b', serial: '222', name: 'two' },
+    ]
+    expect(
+      effectiveSerialNumber(
+        { ...filledState().storageClasses[0], storageSystemId: 'b', serialNumber: '' },
+        systems,
+      ),
+    ).toBe('222')
+    expect(
+      effectiveSerialNumber(
+        { ...filledState().storageClasses[0], storageSystemId: 'missing', serialNumber: 'stale' },
+        systems,
+      ),
+    ).toBe('')
   })
 })
 

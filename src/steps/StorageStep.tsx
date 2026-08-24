@@ -113,7 +113,7 @@ export function StorageStep() {
       )}
 
       {storageSystems.map((sys, idx) => {
-        const sysErrors = validateStorageSystem(sys, storageSystems)
+        const sysErrors = validateStorageSystem(sys, storageSystems, state.driverNamespace)
         return (
         <Section
           key={sys.id}

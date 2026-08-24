@@ -99,12 +99,21 @@ function poolIdsOnArray(
   systems: StorageSystemConfig[],
 ): string[] {
   if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
-    if (sys.stretchedRole === 'secondary') return t(sc.secondaryPoolID) ? [t(sc.secondaryPoolID)] : ['']
-    if (sys.stretchedRole === 'primary' || systems[0]?.id === sys.id) {
+    if (t(sc.secondaryStorageSystemId) && t(sc.secondaryStorageSystemId) === sys.id) {
+      return t(sc.secondaryPoolID) ? [t(sc.secondaryPoolID)] : ['']
+    }
+    if (t(sc.primaryStorageSystemId) && t(sc.primaryStorageSystemId) === sys.id) {
       return t(sc.primaryPoolID) ? [t(sc.primaryPoolID)] : ['']
     }
     return []
   }
+
+  if (t(sc.storageSystemId)) {
+    if (t(sc.storageSystemId) !== sys.id) return []
+    if (sc.kind === 'vsp-one-sds-block') return t(sc.poolID) ? [t(sc.poolID)] : ['']
+    return [t(sc.poolID)]
+  }
+
   const serial = effectiveSerialNumber(sc, systems)
   if (t(sys.serial) && serial && serial !== t(sys.serial)) return []
   if (sc.kind === 'vsp-one-sds-block') return t(sc.poolID) ? [t(sc.poolID)] : ['']
@@ -113,7 +122,7 @@ function poolIdsOnArray(
 
 function detailedArray(systems: StorageSystemConfig[], replicationOn: boolean): StorageSystemConfig | undefined {
   if (replicationOn) return hrpcPairSystem(systems) ?? systems[0]
-  return systems.find((s) => s.stretchedRole === 'primary') ?? systems[0]
+  return systems[0]
 }
 
 function arrayTitle(sys: StorageSystemConfig | undefined): string {
@@ -352,7 +361,12 @@ function buildSite(
         if (!cur.scNames.includes(t(sc.name) || 'unnamed')) cur.scNames.push(t(sc.name) || 'unnamed')
         if (t(sc.name) === testScName && siteId === 'primary') cur.test = true
         if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
-          cur.gad = detailed.stretchedRole === 'secondary' ? 'secondary' : 'primary'
+          cur.gad =
+            detailed.id === t(sc.secondaryStorageSystemId)
+              ? 'secondary'
+              : detailed.id === t(sc.primaryStorageSystemId)
+                ? 'primary'
+                : undefined
         }
         buckets.set(key, cur)
       }

@@ -55,23 +55,20 @@ type GadRoleSystem = {
   stretchedRole?: 'primary' | 'secondary' | 'none'
 }
 
-/** True when this site has exactly one GAD primary and one GAD secondary VSP array. */
+/** True when this site has at least two GAD-capable VSP arrays. */
 export function hasGadPair(systems: GadRoleSystem[]): boolean {
-  const gad = systems.filter((s) => supportsStretchedGad(s.family))
-  const primaries = gad.filter((s) => s.stretchedRole === 'primary')
-  const secondaries = gad.filter((s) => s.stretchedRole === 'secondary')
-  return primaries.length === 1 && secondaries.length === 1
+  return systems.filter((s) => supportsStretchedGad(s.family)).length >= 2
 }
 
-/** Primary and secondary VSP arrays for a GAD pair, or null if hasGadPair is false. */
+/** First two GAD-capable VSP arrays for a GAD pair, or null if hasGadPair is false. */
 export function gadPairSystems<T extends GadRoleSystem>(
   systems: T[],
 ): { primary: T; secondary: T } | null {
   if (!hasGadPair(systems)) return null
   const gad = systems.filter((s) => supportsStretchedGad(s.family))
   return {
-    primary: gad.find((s) => s.stretchedRole === 'primary')!,
-    secondary: gad.find((s) => s.stretchedRole === 'secondary')!,
+    primary: gad[0]!,
+    secondary: gad[1]!,
   }
 }
 
