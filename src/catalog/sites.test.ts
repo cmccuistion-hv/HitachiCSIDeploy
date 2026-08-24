@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   pickStorageClassName,
+  setHrpcPairOnSite,
   standardSecretNameForSystem,
 } from './sites'
-import type { StorageClassConfig, StorageSystemConfig } from './types'
+import type { SiteStorageConfig, StorageClassConfig, StorageSystemConfig } from './types'
 
 function sys(partial: Partial<StorageSystemConfig> & Pick<StorageSystemConfig, 'id' | 'name'>): StorageSystemConfig {
   return {
@@ -104,5 +105,36 @@ describe('standardSecretNameForSystem', () => {
     ]
     expect(standardSecretNameForSystem(systems[0], systems, classes)).toBe('hitachi-csi-secret')
     expect(standardSecretNameForSystem(systems[1], systems, classes)).toBe('hitachi-csi-secret-2')
+  })
+})
+
+describe('setHrpcPairOnSite', () => {
+  it('retargets paired StorageClasses to the selected Replication array', () => {
+    const site: SiteStorageConfig = {
+      storageSystems: [
+        sys({ id: 'a', name: 'array-a', serial: '400001', hrpcPair: true }),
+        sys({ id: 'b', name: 'array-b', serial: '400002', hrpcPair: false }),
+      ],
+      storageClasses: [
+        sc({
+          id: 'sc-hrpc',
+          name: 'hitachi-csi-dr',
+          hrpcPairId: 'hrpc-sc-1',
+          storageSystemId: 'a',
+        }),
+        sc({
+          id: 'sc-local',
+          name: 'hitachi-csi-b85',
+          hrpcPairId: '',
+          storageSystemId: 'a',
+        }),
+      ],
+    }
+
+    const next = setHrpcPairOnSite(site, 'b')
+    expect(next.storageSystems.find((s) => s.id === 'b')?.hrpcPair).toBe(true)
+    expect(next.storageSystems.find((s) => s.id === 'a')?.hrpcPair).not.toBe(true)
+    expect(next.storageClasses.find((s) => s.id === 'sc-hrpc')?.storageSystemId).toBe('b')
+    expect(next.storageClasses.find((s) => s.id === 'sc-local')?.storageSystemId).toBe('a')
   })
 })

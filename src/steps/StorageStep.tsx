@@ -9,7 +9,7 @@ import {
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
 import { DEFAULT_CSI_SECRET_NAME, nextCsiSecretName } from '../catalog/arrayBinding'
-import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
+import { getSiteStorage, setHrpcPairOnSite, withSiteStorage } from '../catalog/sites'
 import {
   hrpcPairResourceGroupIds,
   nextUniqueName,
@@ -136,8 +136,7 @@ export function StorageStep() {
                   const id = sys.id
                   setState((s) => {
                     const current = getSiteStorage(s, site)
-                    const nextSystems = setHrpcPair(current.storageSystems, id)
-                    return withSiteStorage(s, site, { ...current, storageSystems: nextSystems })
+                    return withSiteStorage(s, site, setHrpcPairOnSite(current, id))
                   })
                 }}
               />
@@ -247,6 +246,7 @@ export function StorageStep() {
               <Field
                 label="CSI Secret name"
                 hint="StorageClasses on this cluster select this array’s Secret by this name."
+                error={sysErrors.csiSecretName}
               >
                 <input
                   value={sys.csiSecretName || DEFAULT_CSI_SECRET_NAME}

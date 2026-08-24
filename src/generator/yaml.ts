@@ -246,19 +246,9 @@ export function snapshotClassOpts(state: WizardState): {
       : bound?.secretName || sourceSc.secretName
     : state.storageClasses[0]?.secretName || 'hitachi-csi-secret'
 
-  const gadNs =
-    sourceSc && sourceSc.kind.startsWith('stretched')
-      ? (() => {
-          const pair = gadArraysForStorageClass(sourceSc, state.storageSystems)
-          if (!pair.primary) return ''
-          return csiSecretRefForSystem(pair.primary, state.driverNamespace).namespace
-        })()
-      : ''
-
   const secretNamespace =
-    gadNs ||
     (sourceSc?.kind.startsWith('stretched')
-      ? sourceSc.secretNamespace || state.driverNamespace
+      ? (sourceSc.secretNamespace || '').trim() || state.driverNamespace
       : bound?.secretNamespace || sourceSc?.secretNamespace) ||
     state.storageClasses[0]?.secretNamespace ||
     state.driverNamespace
@@ -1303,7 +1293,7 @@ multipath -ll
       const pair = gadArraysForStorageClass(sc, state.storageSystems)
       if (!pair.primary || !pair.secondary) continue
       const name = (sc.stretchedSecretName || 'hitachi-csi-secret-stretched').trim()
-      const ns = csiSecretRefForSystem(pair.primary, state.driverNamespace).namespace
+      const ns = (sc.secretNamespace || '').trim() || state.driverNamespace
       const key = `${name}\0${ns}`
       if (seen.has(key)) continue
       seen.add(key)

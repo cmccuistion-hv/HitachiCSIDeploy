@@ -50,6 +50,20 @@ export function setHrpcPair(
   )
 }
 
+export function setHrpcPairOnSite(
+  site: SiteStorageConfig,
+  id: string,
+): SiteStorageConfig {
+  const nextSystems = setHrpcPair(site.storageSystems, id)
+  const nextClasses = site.storageClasses.map((sc) => {
+    const pairId = (sc.hrpcPairId || '').trim()
+    if (!pairId) return sc
+    if (sc.storageSystemId === id) return sc
+    return { ...sc, storageSystemId: id }
+  })
+  return { ...site, storageSystems: nextSystems, storageClasses: nextClasses }
+}
+
 function primaryHrpcStorageClass(
   primary: SiteStorageConfig,
 ): StorageClassConfig | undefined {
@@ -278,9 +292,10 @@ export function pickStorageClassName(
 }
 
 /**
- * CSI Secret metadata.name for a storage system. Follows StorageClass `secretName`
- * (what the UI shows). Does not suffix `-${system.name}` for a single-array site —
- * that collided with Replication secondary sites whose array is named "secondary".
+ * CSI Secret metadata.name for a storage system. Prefers the array’s `csiSecretName`,
+ * and may fall back to StorageClass `secretName` for older states/migrations.
+ * Does not suffix `-${system.name}` for a single-array site — that collided with
+ * Replication secondary sites whose array is named "secondary".
  */
 export function standardSecretNameForSystem(
   sys: StorageSystemConfig,

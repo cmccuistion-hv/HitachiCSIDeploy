@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withSiteMetrics } from '../catalog/metrics'
-import { getSiteStorage, withSiteStorage } from '../catalog/sites'
+import { getSiteStorage, setHrpcPairOnSite, withSiteStorage } from '../catalog/sites'
 import type { MultipathConfig, WizardState } from '../catalog/types'
 import { exportConfigJson } from '../state/exportConfig'
 import { filledReplicationState, filledState } from '../test/fixtures'
 import { fetchFirstAvailable } from '../services/versions'
-import { generateAll, type GeneratedFile } from './yaml'
+import { generateAll, snapshotClassOpts, type GeneratedFile } from './yaml'
 
 vi.mock('../services/versions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/versions')>()
@@ -893,10 +893,40 @@ describe('generateAll package matrix', () => {
     )
   })
 
+  it('keeps Replication paired StorageClasses bound to the selected array when switching pairs', async () => {
+    const base = filledReplicationState()
+    const a = { ...base.sites!.primary.storageSystems[0], id: 'a', name: 'array-a', hrpcPair: true, csiSecretName: 'secret-a' }
+    const b = { ...base.sites!.primary.storageSystems[0], id: 'b', name: 'array-b', hrpcPair: false, csiSecretName: 'secret-b', serial: '400002' }
+    const pairedSc = {
+      ...base.sites!.primary.storageClasses[0],
+      id: 'sc-hrpc',
+      name: 'hitachi-csi-dr',
+      hrpcPairId: 'hrpc-sc-1',
+      storageSystemId: a.id,
+      serialNumber: '',
+      poolID: '0',
+      portID: 'CL1-A',
+      isDefault: false,
+    }
+
+    const switched = setHrpcPairOnSite(
+      { ...base.sites!.primary, storageSystems: [a, b], storageClasses: [pairedSc] },
+      b.id,
+    )
+    const files = await generateAll({
+      ...base,
+      sites: { ...base.sites!, primary: switched },
+    })
+
+    const scYaml = fileAt(files, 'primary/01-storage/storageclass-hitachi-csi-dr.yaml').content
+    expect(scYaml).toContain('csi.storage.k8s.io/provisioner-secret-name: "secret-b"')
+  })
+
   it('packages a GAD stretched Secret from class picker arrays only (unused third array omitted)', async () => {
     const base = filledState()
     const files = await generateAll(
       filledState({
+        driverNamespace: 'driver-ns',
         storageSystems: [
           {
             ...base.storageSystems[0],
@@ -913,6 +943,7 @@ describe('generateAll package matrix', () => {
             serial: '400002',
             url: 'https://192.0.2.11',
             stretchedRole: 'secondary',
+            csiSecretNamespace: 'array-ns',
           },
           {
             ...base.storageSystems[0],
@@ -936,6 +967,7 @@ describe('generateAll package matrix', () => {
             secondaryPoolID: '1',
             secondaryPortID: 'CL2-A',
             stretchedSecretName: 'hitachi-csi-secret-stretched',
+            secretNamespace: '  hspc-operator-system  ',
             primaryStorageSystemId: 'storage-2',
             secondaryStorageSystemId: 'storage-3',
           },
@@ -947,5 +979,73 @@ describe('generateAll package matrix', () => {
     expect(stretchedSecret).toContain('primarySerial: "400002"')
     expect(stretchedSecret).toContain('secondarySerial: "400003"')
     expect(stretchedSecret).not.toContain('400001')
+    expect(stretchedSecret).toContain('namespace: hspc-operator-system')
+    expect(stretchedSecret).not.toContain('namespace: array-ns')
+  })
+
+  it('falls back to driverNamespace when stretched StorageClass secretNamespace is empty', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        driverNamespace: 'driver-ns',
+        storageSystems: [
+          { ...base.storageSystems[0], id: 'storage-1', name: 'array-1', serial: '400001', url: 'https://192.0.2.10' },
+          { ...base.storageSystems[0], id: 'storage-2', name: 'array-2', serial: '400002', url: 'https://192.0.2.11' },
+        ],
+        storageClasses: [
+          {
+            ...base.storageClasses[0],
+            kind: 'stretched',
+            serialNumber: '',
+            quorumID: '1',
+            copyGroupName: 'spc-test-cg',
+            copyPairName: 'spc-test-pair',
+            consistencyGroupId: '10',
+            primaryPoolID: '0',
+            primaryPortID: 'CL1-A',
+            secondaryPoolID: '1',
+            secondaryPortID: 'CL2-A',
+            stretchedSecretName: 'hitachi-csi-secret-stretched',
+            secretNamespace: '   ',
+            primaryStorageSystemId: 'storage-1',
+            secondaryStorageSystemId: 'storage-2',
+          },
+        ],
+      }),
+    )
+    const stretchedSecret = fileAt(files, '01-storage/secret-stretched.yaml').content
+    expect(stretchedSecret).toContain('namespace: driver-ns')
+  })
+
+  it('uses StorageClass/driver namespace for stretched snapshotClassOpts', () => {
+    const base = filledState()
+    const state = filledState({
+      ...base,
+      driverNamespace: 'driver-ns',
+      storageSystems: [
+        { ...base.storageSystems[0], id: 'storage-1', name: 'array-1', serial: '400001', csiSecretNamespace: 'array-ns' },
+        { ...base.storageSystems[0], id: 'storage-2', name: 'array-2', serial: '400002', csiSecretNamespace: 'array-ns' },
+      ],
+      storageClasses: [
+        {
+          ...base.storageClasses[0],
+          kind: 'stretched',
+          serialNumber: '',
+          quorumID: '1',
+          copyGroupName: 'spc-test-cg',
+          copyPairName: 'spc-test-pair',
+          consistencyGroupId: '10',
+          primaryPoolID: '0',
+          primaryPortID: 'CL1-A',
+          secondaryPoolID: '1',
+          secondaryPortID: 'CL2-A',
+          stretchedSecretName: 'hitachi-csi-secret-stretched',
+          secretNamespace: '  hspc-operator-system  ',
+          primaryStorageSystemId: 'storage-1',
+          secondaryStorageSystemId: 'storage-2',
+        },
+      ],
+    })
+    expect(snapshotClassOpts(state).secretNamespace).toBe('hspc-operator-system')
   })
 })
