@@ -8,6 +8,7 @@ import {
   isStretchedKind,
   isVspOneBlock20,
   storageClassKindsForSystems,
+  supportsStretchedGad,
   supportsCsiVolumeSnapshots,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
@@ -18,6 +19,7 @@ import type {
   SiteStorageConfig,
   StorageClassConfig,
   StorageClassKind,
+  StorageSystemConfig,
 } from '../catalog/types'
 import {
   nextUniqueName,
@@ -25,6 +27,14 @@ import {
   siteStorageSystemsReady,
   validateStorageClass,
 } from '../catalog/validation'
+import {
+  applyArrayBindingToClass,
+  arrayForStorageClass,
+  csiSecretRefForSystem,
+  defaultGadArrayIds,
+  defaultStorageSystemId,
+  gadArraysForStorageClass,
+} from '../catalog/arrayBinding'
 import type { SiteId } from '../catalog/sites'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
@@ -44,11 +54,18 @@ function portIdCount(value: string | undefined): number {
     .filter(Boolean).length
 }
 
+function arrayOptionLabel(sys: StorageSystemConfig): string {
+  const name = (sys.name || '').trim() || 'Unnamed array'
+  const serial = (sys.serial || '').trim()
+  return serial ? `${name} (${serial})` : name
+}
+
 function defaultSc(
   kind: StorageClassKind,
   connectionType: ConnectionType,
   nodeEnvironment: NodeEnvironment,
   secretNamespace: string,
+  systems: StorageSystemConfig[],
 ): StorageClassConfig {
   const allowed = connectionsForStorageClassKind(kind, nodeEnvironment)
   const base: StorageClassConfig = {
@@ -71,7 +88,13 @@ function defaultSc(
     fstype: 'ext4',
     storageEfficiency: 'Disabled',
   }
+  if (kind === 'standard' || kind === 'vsp-one-sds-block') {
+    base.storageSystemId = defaultStorageSystemId(systems)
+  }
   if (kind === 'stretched' || kind === 'stretched-adr') {
+    const gad = defaultGadArrayIds(systems)
+    base.primaryStorageSystemId = gad.primaryStorageSystemId
+    base.secondaryStorageSystemId = gad.secondaryStorageSystemId
     base.stretchedSecretName = 'hitachi-csi-secret-stretched'
     base.copyGroupName = 'spc-cpg1'
     base.consistencyGroupId = '1'
@@ -93,9 +116,10 @@ function coerceScToAllowedKind(
   connectionType: ConnectionType,
   nodeEnvironment: NodeEnvironment,
   secretNamespace: string,
+  systems: StorageSystemConfig[],
 ): StorageClassConfig {
   if (allowed.includes(sc.kind)) return sc
-  const next = defaultSc(allowed[0] ?? 'standard', connectionType, nodeEnvironment, secretNamespace)
+  const next = defaultSc(allowed[0] ?? 'standard', connectionType, nodeEnvironment, secretNamespace, systems)
   next.id = sc.id
   next.name = sc.name
   next.secretName = sc.secretName
@@ -121,40 +145,6 @@ export function StorageClassesStep() {
   const snapshotsSupported = supportsCsiVolumeSnapshots(storage.storageClasses)
 
   useEffect(() => {
-    if (state.components.replication) return
-    if (!state.storageClassesEnabled) return
-    const serial = primary?.serial?.trim()
-    if (!serial) return
-    // Only fill blank SC serials. With a single array the SC field is hidden and generation
-    // uses the storage-system serial; do not keep a stale duplicate in state.
-    const singleArray = state.storageSystems.length === 1
-    const needsUpdate = state.storageClasses.some((sc) => {
-      if (sc.kind !== 'standard') return false
-      if (singleArray && sc.serialNumber?.trim()) return true // clear duplicate
-      if (!sc.serialNumber?.trim()) return true
-      return false
-    })
-    if (!needsUpdate) return
-    setState((s) => ({
-      ...s,
-      storageClasses: s.storageClasses.map((sc) => {
-        if (sc.kind !== 'standard') return sc
-        if (s.storageSystems.length === 1) {
-          return sc.serialNumber ? { ...sc, serialNumber: '' } : sc
-        }
-        if (!sc.serialNumber?.trim()) return { ...sc, serialNumber: serial }
-        return sc
-      }),
-    }))
-  }, [
-    state.storageClassesEnabled,
-    primary?.serial,
-    state.storageSystems.length,
-    state.storageClasses,
-    setState,
-  ])
-
-  useEffect(() => {
     if (!state.storageClassesEnabled) return
     setState((s) => {
       const coerceList = (
@@ -170,6 +160,7 @@ export function StorageClassesStep() {
             s.connectionType,
             s.nodeEnvironment,
             s.driverNamespace,
+            systems,
           )
           if (coerced === sc) return sc
           changed = true
@@ -346,10 +337,19 @@ export function StorageClassesStep() {
       if (on) {
         if (sc.kind !== 'standard') return s
         const pairId = (sc.hrpcPairId || '').trim() || `hrpc-sc-${Date.now()}`
+        const currentPair = hrpcPairSystem(current.storageSystems)
+        const otherPair = hrpcPairSystem(other.storageSystems)
         const nextCurrent: SiteStorageConfig = {
           ...current,
           storageClasses: current.storageClasses.map((x) =>
-            x.id === id ? { ...x, hrpcPairId: pairId } : x,
+            x.id === id
+              ? {
+                  ...x,
+                  hrpcPairId: pairId,
+                  storageSystemId: currentPair?.id || x.storageSystemId,
+                  serialNumber: '',
+                }
+              : x,
           ),
         }
         const already = other.storageClasses.some((x) => (x.hrpcPairId || '').trim() === pairId)
@@ -364,7 +364,13 @@ export function StorageClassesStep() {
                 ...other,
                 storageClasses: other.storageClasses.map((x) =>
                   x.id === reuse.id
-                    ? { ...x, hrpcPairId: pairId, fstype: sc.fstype || x.fstype }
+                    ? {
+                        ...x,
+                        hrpcPairId: pairId,
+                        fstype: sc.fstype || x.fstype,
+                        storageSystemId: otherPair?.id || x.storageSystemId,
+                        serialNumber: '',
+                      }
                     : x,
                 ),
               }
@@ -378,6 +384,7 @@ export function StorageClassesStep() {
                       ...sc,
                       id: `${sc.id}-${otherSite}`,
                       hrpcPairId: pairId,
+                      storageSystemId: otherPair?.id || '',
                       serialNumber: '',
                       poolID: '',
                       portID: '',
@@ -419,7 +426,7 @@ export function StorageClassesStep() {
     setState((s) => {
       if (!s.components.replication) {
         const kind = storageClassKindsForSystems(s.storageSystems)[0] ?? 'standard'
-        const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace)
+        const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace, s.storageSystems)
         nextSc.name = nextUniqueName(
           nextSc.name,
           s.storageClasses.map((sc) => sc.name),
@@ -429,7 +436,7 @@ export function StorageClassesStep() {
       const ensured = ensureSitesForReplication(s)
       const current = getSiteStorage(ensured, site)
       const kind = storageClassKindsForSystems(current.storageSystems)[0] ?? 'standard'
-      const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace)
+      const nextSc = defaultSc(kind, s.connectionType, s.nodeEnvironment, s.driverNamespace, current.storageSystems)
       nextSc.name = nextUniqueName(
         nextSc.name,
         current.storageClasses.map((sc) => sc.name),
@@ -491,6 +498,7 @@ export function StorageClassesStep() {
                             s.connectionType,
                             s.nodeEnvironment,
                             s.driverNamespace,
+                            s.storageSystems,
                           ),
                         ],
                 }
@@ -519,7 +527,11 @@ export function StorageClassesStep() {
           const usedForReplication = !!(sc.hrpcPairId || '').trim()
           const allowedKinds = allowedKindsForSc(storage.storageSystems, usedForReplication)
           const stretchedOffered = allowedKinds.some(isStretchedKind)
-          const gadPair = stretchedOffered ? gadPairSystems(storage.storageSystems) : null
+          const gadPicked = gadArraysForStorageClass(sc, storage.storageSystems)
+          const gadPickersEmpty = !((sc.primaryStorageSystemId || '').trim() || (sc.secondaryStorageSystemId || '').trim())
+          const gadFallback = stretchedOffered && gadPickersEmpty ? gadPairSystems(storage.storageSystems) : null
+          const diagramPrimary = gadPicked.primary || gadFallback?.primary
+          const diagramSecondary = gadPicked.secondary || gadFallback?.secondary
           const ctxSystems =
             replicationOn && usedForReplication
               ? systemsWithHrpcFirst(storage.storageSystems)
@@ -529,14 +541,11 @@ export function StorageClassesStep() {
             siblings: storage.storageClasses,
           })
           const pairSys = hrpcPairSystem(storage.storageSystems)
-          const serialReadOnly =
-            sc.kind === 'standard' &&
-            (usedForReplication
-              ? !!pairSys
-              : storage.storageSystems.length === 1)
-          const serialDisplay = usedForReplication
-            ? pairSys?.serial || storage.storageSystems[0]?.serial || ''
-            : storage.storageSystems[0]?.serial || ''
+          const standardArray =
+            sc.kind === 'standard' || sc.kind === 'vsp-one-sds-block'
+              ? (usedForReplication && pairSys ? pairSys : arrayForStorageClass(sc, storage.storageSystems))
+              : undefined
+          const standardSecret = standardArray ? csiSecretRefForSystem(standardArray, state.driverNamespace) : undefined
           const allowedConns = connectionsForStorageClassKind(sc.kind, state.nodeEnvironment)
           const effectiveConn = coerceConnectionType(sc.connectionType, allowedConns)
           const conn = CONNECTION_TYPES.find((c) => c.id === effectiveConn)!
@@ -549,7 +558,6 @@ export function StorageClassesStep() {
           const portIdPlaceholder = multipathOff ? 'CL1-A' : 'CL1-A,CL2-A'
           const advancedError =
             errors.name ||
-            errors.secretName ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.stretchedSecretName : undefined) ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyGroupName : undefined) ||
             (sc.kind === 'stretched' || sc.kind === 'stretched-adr' ? errors.copyPairName : undefined) ||
@@ -582,18 +590,18 @@ export function StorageClassesStep() {
                         : HELP.storageClassType
                   }
                   helpDiagram={
-                    stretchedOffered && gadPair ? (
+                    stretchedOffered ? (
                       <GadStretchedPvcDiagram
                         clusterLabel={clusterLabel}
                         primary={{
-                          family: gadPair.primary.family,
-                          serial: gadPair.primary.serial,
-                          url: gadPair.primary.url,
+                          family: diagramPrimary?.family,
+                          serial: diagramPrimary?.serial || '',
+                          url: diagramPrimary?.url || '',
                         }}
                         secondary={{
-                          family: gadPair.secondary.family,
-                          serial: gadPair.secondary.serial,
-                          url: gadPair.secondary.url,
+                          family: diagramSecondary?.family,
+                          serial: diagramSecondary?.serial || '',
+                          url: diagramSecondary?.url || '',
                         }}
                       />
                     ) : undefined
@@ -606,7 +614,13 @@ export function StorageClassesStep() {
                       if (usedForReplication && kind !== 'standard') {
                         toggleUseForReplication(sc.id, false)
                       }
-                      const next = defaultSc(kind, sc.connectionType, state.nodeEnvironment, state.driverNamespace)
+                      const next = defaultSc(
+                        kind,
+                        sc.connectionType,
+                        state.nodeEnvironment,
+                        state.driverNamespace,
+                        storage.storageSystems,
+                      )
                       next.id = sc.id
                       next.secretName = sc.secretName
                       next.secretNamespace = sc.secretNamespace
@@ -656,6 +670,31 @@ export function StorageClassesStep() {
                     ))}
                   </select>
                 </Field>
+                {(sc.kind === 'standard' || sc.kind === 'vsp-one-sds-block') &&
+                  storage.storageSystems.length >= 2 && (
+                    <Field
+                      label="Array"
+                      hint={
+                        usedForReplication
+                          ? "Uses this site's Replication array."
+                          : 'Select which array this StorageClass provisions from.'
+                      }
+                      error={errors.storageSystemId || (sc.kind === 'standard' ? errors.serialNumber : undefined)}
+                    >
+                      <select
+                        value={usedForReplication && pairSys ? pairSys.id : sc.storageSystemId || ''}
+                        disabled={usedForReplication && !!pairSys}
+                        onChange={(e) => updateSc(sc.id, { storageSystemId: e.target.value })}
+                      >
+                        <option value="">Select an array…</option>
+                        {storage.storageSystems.map((sys) => (
+                          <option key={sys.id} value={sys.id}>
+                            {arrayOptionLabel(sys)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
               </div>
 
               <AdvancedSection
@@ -674,25 +713,39 @@ export function StorageClassesStep() {
                   >
                     <input value={sc.name} onChange={(e) => updateSc(sc.id, { name: e.target.value })} />
                   </Field>
-                  <Field
-                    label="Secret name"
-                    hint="Must match the Secret generated from the Storage systems step. Multiple StorageClasses may share one Secret when they use the same array."
-                    error={errors.secretName}
-                  >
-                    <input
-                      value={sc.secretName}
-                      onChange={(e) => updateSc(sc.id, { secretName: e.target.value })}
-                    />
-                  </Field>
-                  <Field
-                    label="Secret namespace"
-                    hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
-                  >
-                    <input
-                      value={sc.secretNamespace}
-                      onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
-                    />
-                  </Field>
+                  {(sc.kind === 'standard' || sc.kind === 'vsp-one-sds-block') ? (
+                    <>
+                      <Field
+                        label="CSI Secret name"
+                        hint="Derived from the selected array on the Storage systems step."
+                      >
+                        <input value={standardSecret?.name || '—'} disabled readOnly />
+                      </Field>
+                      <Field
+                        label="CSI Secret namespace"
+                        hint="Derived from the selected array (or the CSI Driver namespace)."
+                      >
+                        <input value={standardSecret?.namespace || '—'} disabled readOnly />
+                      </Field>
+                      <Field
+                        label="Array serial"
+                        hint="Derived from the selected array on the Storage systems step."
+                        error={sc.kind === 'standard' ? errors.serialNumber : undefined}
+                      >
+                        <input value={(standardArray?.serial || '').trim() || '—'} disabled readOnly />
+                      </Field>
+                    </>
+                  ) : (
+                    <Field
+                      label="Secret namespace"
+                      hint="Defaults to the CSI Driver install namespace; change only if your secrets live elsewhere."
+                    >
+                      <input
+                        value={sc.secretNamespace}
+                        onChange={(e) => updateSc(sc.id, { secretNamespace: e.target.value })}
+                      />
+                    </Field>
+                  )}
 
                   {sc.kind === 'standard' && (
                     <>
@@ -880,22 +933,6 @@ export function StorageClassesStep() {
 
               {sc.kind === 'standard' && (
                 <div className="field-grid" style={{ marginTop: '1rem' }}>
-                  {serialReadOnly ? (
-                    <Field
-                      label="Serial number"
-                      hint="Taken from the Storage systems step for this site (or the array used for Replication)."
-                    >
-                      <input value={serialDisplay} disabled readOnly />
-                    </Field>
-                  ) : (
-                    <Field label="Serial number" hint={HELP.storageClassSerial} error={errors.serialNumber}>
-                      <input
-                        value={sc.serialNumber || ''}
-                        onChange={(e) => updateSc(sc.id, { serialNumber: e.target.value })}
-                        placeholder={storage.storageSystems[0]?.serial || '54321'}
-                      />
-                    </Field>
-                  )}
                   <Field label="Pool ID" hint="HDP pool ID used for dynamic provisioning." error={errors.poolID}>
                     <input value={sc.poolID || ''} onChange={(e) => updateSc(sc.id, { poolID: e.target.value })} placeholder="1" />
                   </Field>
@@ -931,6 +968,44 @@ export function StorageClassesStep() {
                     </Callout>
                   )}
                   <div className="field-grid" style={{ marginTop: '1rem' }}>
+                    <Field
+                      label="Primary array"
+                      hint="GAD-capable VSP / VSP One Block array used as the primary."
+                      error={errors.primaryStorageSystemId}
+                    >
+                      <select
+                        value={sc.primaryStorageSystemId || ''}
+                        onChange={(e) => updateSc(sc.id, { primaryStorageSystemId: e.target.value })}
+                      >
+                        <option value="">Select a primary array…</option>
+                        {storage.storageSystems
+                          .filter((sys) => supportsStretchedGad(sys.family))
+                          .map((sys) => (
+                            <option key={sys.id} value={sys.id}>
+                              {arrayOptionLabel(sys)}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                    <Field
+                      label="Secondary array"
+                      hint="GAD-capable VSP / VSP One Block array used as the secondary."
+                      error={errors.secondaryStorageSystemId}
+                    >
+                      <select
+                        value={sc.secondaryStorageSystemId || ''}
+                        onChange={(e) => updateSc(sc.id, { secondaryStorageSystemId: e.target.value })}
+                      >
+                        <option value="">Select a secondary array…</option>
+                        {storage.storageSystems
+                          .filter((sys) => supportsStretchedGad(sys.family))
+                          .map((sys) => (
+                            <option key={sys.id} value={sys.id}>
+                              {arrayOptionLabel(sys)}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
                     <Field label="Quorum ID" hint="Quorum disk ID for GAD." error={errors.quorumID}>
                       <input value={sc.quorumID || ''} onChange={(e) => updateSc(sc.id, { quorumID: e.target.value })} />
                     </Field>
@@ -1131,7 +1206,11 @@ export function StorageClassesStep() {
 
       {isAdvanced && state.storageClassesEnabled && previewSc && (
         <Section title="Live YAML preview">
-          <CodeBlock className="yaml-preview">{generateStorageClass(previewSc)}</CodeBlock>
+          <CodeBlock className="yaml-preview">
+            {generateStorageClass(
+              applyArrayBindingToClass(previewSc, storage.storageSystems, state.driverNamespace),
+            )}
+          </CodeBlock>
           {state.snapshotClass.enabled && snapshotsSupported && (
             <CodeBlock className="yaml-preview" style={{ marginTop: '0.75rem' }}>
               {generateSnapshotClass(state.snapshotClass, snapshotClassOpts(state))}
