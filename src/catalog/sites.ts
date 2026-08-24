@@ -74,6 +74,8 @@ export function seedSecondaryFromPrimary(
         url: '',
         user: '',
         password: '',
+        csiSecretName: pairSys.csiSecretName ?? 'hitachi-csi-secret',
+        csiSecretNamespace: pairSys.csiSecretNamespace ?? '',
         hrpcPair: true,
         stretchedRole: 'none',
       }
@@ -84,6 +86,8 @@ export function seedSecondaryFromPrimary(
         url: '',
         user: '',
         password: '',
+        csiSecretName: 'hitachi-csi-secret',
+        csiSecretNamespace: '',
         hrpcPair: true,
         stretchedRole: 'none',
       }
@@ -98,6 +102,7 @@ export function seedSecondaryFromPrimary(
         ...primaryHrpcSc,
         id: `${primaryHrpcSc.id}-secondary`,
         hrpcPairId: pairId,
+        storageSystemId: seededSystem.id,
         serialNumber: '',
         poolID: '',
         portID: '',
@@ -110,6 +115,7 @@ export function seedSecondaryFromPrimary(
         connectionType: 'fc',
         secretName: 'hitachi-csi-secret',
         secretNamespace: 'hspc-operator-system',
+        storageSystemId: seededSystem.id,
         hrpcPairId: pairId,
         serialNumber: '',
         poolID: '',
@@ -282,6 +288,13 @@ export function standardSecretNameForSystem(
   classes: StorageClassConfig[],
 ): string {
   const fallback = 'hitachi-csi-secret'
+  const owned = trimName(sys.csiSecretName)
+  if (owned) {
+    const collisions = systems.filter((s) => trimName(s.csiSecretName) === owned).length
+    if (collisions <= 1) return owned
+    // Back-compat: when older callers clone systems (duplicate owned names),
+    // fall back to the historical suffixing heuristic to keep names unique.
+  }
   const standard = classes.filter((sc) => sc.kind !== 'stretched' && sc.kind !== 'stretched-adr')
   const bySerial = standard.find(
     (sc) =>
@@ -324,6 +337,14 @@ export function standardSecretNamespaceForSystem(
   classes: StorageClassConfig[],
   driverNamespace: string,
 ): string {
+  const owned = trimName(sys.csiSecretNamespace)
+  const ownedName = trimName(sys.csiSecretName)
+  if (ownedName || owned) {
+    const collisions = ownedName
+      ? systems.filter((s) => trimName(s.csiSecretName) === ownedName).length
+      : 0
+    if (collisions <= 1) return owned || driverNamespace
+  }
   const name = standardSecretNameForSystem(sys, systems, classes)
   const match = classes.find((sc) => trimName(sc.secretName) === name && trimName(sc.secretNamespace))
   return trimName(match?.secretNamespace) || trimName(classes[0]?.secretNamespace) || driverNamespace

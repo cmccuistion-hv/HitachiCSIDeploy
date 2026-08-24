@@ -30,6 +30,10 @@ export interface StorageSystemConfig {
   url: string
   user: string
   password: string
+  /** CSI Secret metadata.name for this array. Default hitachi-csi-secret. */
+  csiSecretName?: string
+  /** CSI Secret metadata.namespace. Empty = CSI Driver namespace. */
+  csiSecretNamespace?: string
   hostModeOptions?: string
   resourceGroupID?: string
   alternativeCloneMode?: boolean
@@ -48,6 +52,12 @@ export interface StorageClassConfig {
   connectionType: ConnectionType
   secretName: string
   secretNamespace: string
+  /** StorageSystemConfig.id this class provisions from (standard / SDS). */
+  storageSystemId?: string
+  /** StorageSystemConfig.id for the primary array on this site (stretched / GAD). */
+  primaryStorageSystemId?: string
+  /** StorageSystemConfig.id for the secondary array on this site (stretched / GAD). */
+  secondaryStorageSystemId?: string
   /** Cluster default StorageClass (at most one in the package) */
   isDefault?: boolean
   /** Replication: links the same StorageClass name/fstype across primary and secondary sites */
@@ -301,6 +311,8 @@ export function createDefaultState(): WizardState {
         url: '',
         user: '',
         password: '',
+        csiSecretName: 'hitachi-csi-secret',
+        csiSecretNamespace: '',
         stretchedRole: 'none',
       },
     ],
@@ -312,6 +324,7 @@ export function createDefaultState(): WizardState {
         connectionType: 'fc',
         secretName: 'hitachi-csi-secret',
         secretNamespace: 'hspc-operator-system',
+        storageSystemId: 'storage-1',
         serialNumber: '',
         poolID: '',
         portID: '',

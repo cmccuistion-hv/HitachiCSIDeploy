@@ -27,6 +27,7 @@ export function filledState(overrides: FilledStateOverrides = {}): WizardState {
         url: 'https://192.0.2.10',
         user: 'maintenance',
         password: 'fixture-password',
+        csiSecretName: 'hitachi-csi-secret',
       },
     ],
     storageClasses: [
@@ -37,6 +38,7 @@ export function filledState(overrides: FilledStateOverrides = {}): WizardState {
         poolID: '0',
         portID: 'CL1-A',
         serialNumber: '400001',
+        storageSystemId: base.storageSystems[0].id,
       },
     ],
   }

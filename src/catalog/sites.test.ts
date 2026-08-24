@@ -64,10 +64,34 @@ describe('standardSecretNameForSystem', () => {
     expect(standardSecretNameForSystem(systems[0], systems, classes)).toBe('hitachi-csi-secret')
   })
 
+  it('uses csiSecretName on a single array even when the system is named secondary', () => {
+    const systems = [
+      sys({
+        id: 'storage-1-secondary',
+        name: 'secondary',
+        serial: '810138',
+        csiSecretName: 'hitachi-csi-secret',
+      }),
+    ]
+    expect(standardSecretNameForSystem(systems[0], systems, [])).toBe('hitachi-csi-secret')
+  })
+
   it('keeps unique Secret names for a second GAD array with no standard StorageClass', () => {
     const systems = [
-      sys({ id: 'storage-1', name: 'primary', serial: '400001', stretchedRole: 'primary' }),
-      sys({ id: 'storage-2', name: 'secondary', serial: '400002', stretchedRole: 'secondary' }),
+      sys({
+        id: 'storage-1',
+        name: 'primary',
+        serial: '400001',
+        stretchedRole: 'primary',
+        csiSecretName: 'hitachi-csi-secret',
+      }),
+      sys({
+        id: 'storage-2',
+        name: 'secondary',
+        serial: '400002',
+        stretchedRole: 'secondary',
+        csiSecretName: 'hitachi-csi-secret-2',
+      }),
     ]
     const classes = [
       sc({
@@ -79,6 +103,6 @@ describe('standardSecretNameForSystem', () => {
       }),
     ]
     expect(standardSecretNameForSystem(systems[0], systems, classes)).toBe('hitachi-csi-secret')
-    expect(standardSecretNameForSystem(systems[1], systems, classes)).toBe('hitachi-csi-secret-secondary')
+    expect(standardSecretNameForSystem(systems[1], systems, classes)).toBe('hitachi-csi-secret-2')
   })
 })

@@ -27,6 +27,7 @@ import {
   migrateStorageSystemFamily,
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
+import { migrateArrayBinding } from '../catalog/arrayBinding'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
 import { migrateMetricsConfig } from './migrateMetrics'
@@ -167,6 +168,7 @@ function loadState(): WizardState {
     if (merged.components.replication) {
       merged = ensureSitesForReplication(merged)
     }
+    merged = migrateArrayBinding(merged)
     merged.quickstart = {
       ...merged.quickstart,
       storageClassName: resolvedStorageClassName(merged),
@@ -366,7 +368,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         },
       }
     }
-    setState(next)
+    const ensured = next.components.replication ? ensureSitesForReplication(next) : next
+    setState(migrateArrayBinding(ensured))
   }, [])
 
   const clearSiteTabFocus = useCallback(() => setSiteTabFocus(null), [])
