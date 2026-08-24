@@ -1779,6 +1779,11 @@ a.theme-menu-item {
   font-family: var(--hv-mono);
 }
 
+.rp-diagram-link-label-bg {
+  fill: var(--hv-bg-elevated);
+  stroke: none;
+}
+
 .rp-diagram-cluster {
   fill: color-mix(in srgb, var(--hv-info) 8%, var(--hv-bg-elevated));
   stroke: color-mix(in srgb, var(--hv-info) 42%, var(--hv-border));

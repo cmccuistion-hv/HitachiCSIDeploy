@@ -3,13 +3,15 @@
  * mapped to generated manifest paths (no READMEs).
  */
 
+import { arrayForStorageClass, gadArraysForStorageClass } from './arrayBinding'
 import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath, supportsCsiVolumeSnapshots } from './platforms'
-import { getSiteStorage, hrpcPairSystem, resolvedStorageClassName, type SiteId } from './sites'
+import { getSiteStorage, hrpcPairSystem, pickStorageClassName, type SiteId } from './sites'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { effectiveSerialNumber } from './validation'
 
 export const REVIEW_MAX_POOLS = 3
 export const REVIEW_MAX_STORAGECLASSES = 4
+export const REVIEW_MAX_ARRAYS = 3
 
 export type ReviewTone = 'ctrl' | 'dr' | 'node' | 'pill' | 'card'
 
@@ -34,6 +36,21 @@ export type ReviewPoolView = {
   extra?: string
 }
 
+export type ReviewArrayView = {
+  id: string
+  systemId: string
+  title: string
+  sub: string
+  pools: ReviewPoolView[]
+  morePools?: { id: string; label: string }
+}
+
+export type ReviewGadLink = {
+  id: string
+  fromSystemId: string
+  toSystemId: string
+}
+
 export type ReviewSiteView = {
   id: SiteId | 'single'
   title: string
@@ -43,14 +60,12 @@ export type ReviewSiteView = {
   moreStorageClasses?: { id: string; label: string }
   snapshot?: ReviewChip
   testVolume?: ReviewChip
-  array: {
-    id: string
-    title: string
-    sub: string
-    pools: ReviewPoolView[]
-    morePools?: { id: string; label: string }
-  }
-  ghosts: { label: string }[]
+  /** StorageSystemConfig.id values the test PVC data path uses (both arrays when GAD). */
+  testVolumeArrayIds: string[]
+  testVolumeProtocolLabel?: string
+  arrays: ReviewArrayView[]
+  moreArrays?: { id: string; label: string }
+  gadLinks: ReviewGadLink[]
 }
 
 export type ReviewTopologyModel = {
@@ -120,11 +135,6 @@ function poolIdsOnArray(
   return [t(sc.poolID)]
 }
 
-function detailedArray(systems: StorageSystemConfig[], replicationOn: boolean): StorageSystemConfig | undefined {
-  if (replicationOn) return hrpcPairSystem(systems) ?? systems[0]
-  return systems[0]
-}
-
 function arrayTitle(sys: StorageSystemConfig | undefined): string {
   if (!sys) return 'Storage array'
   const serial = t(sys.serial)
@@ -134,11 +144,46 @@ function arrayTitle(sys: StorageSystemConfig | undefined): string {
   return 'Storage array'
 }
 
-function ghostLabel(sys: StorageSystemConfig): string {
-  const serial = t(sys.serial)
-  if (serial) return `Array ${serial}`
-  const name = t(sys.name)
-  return name ? `Array (${name})` : 'Another array'
+function testVolumeArrayIdsForClass(
+  sc: StorageClassConfig | undefined,
+  systems: StorageSystemConfig[],
+): string[] {
+  if (!sc) return []
+  if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
+    const gad = gadArraysForStorageClass(sc, systems)
+    return [gad.primary?.id, gad.secondary?.id].filter((id): id is string => !!id)
+  }
+  const bound = arrayForStorageClass(sc, systems)
+  if (bound) return [bound.id]
+  const serial = effectiveSerialNumber(sc, systems)
+  if (serial) {
+    const hit = systems.find((s) => t(s.serial) === serial)
+    if (hit) return [hit.id]
+  }
+  return []
+}
+
+function orderSystemsForReview(
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+  replicationOn: boolean,
+): StorageSystemConfig[] {
+  const byId = new Map(systems.map((s) => [s.id, s]))
+  const seen = new Set<string>()
+  const out: StorageSystemConfig[] = []
+  const push = (sys: StorageSystemConfig | undefined) => {
+    if (!sys || seen.has(sys.id)) return
+    seen.add(sys.id)
+    out.push(sys)
+  }
+  if (replicationOn) push(hrpcPairSystem(systems) ?? undefined)
+  for (const sc of classes) {
+    if (sc.kind !== 'stretched' && sc.kind !== 'stretched-adr') continue
+    push(byId.get(t(sc.primaryStorageSystemId)))
+    push(byId.get(t(sc.secondaryStorageSystemId)))
+  }
+  for (const sys of systems) push(sys)
+  return out
 }
 
 function multipathChip(state: WizardState, id: string): ReviewChip {
@@ -318,12 +363,16 @@ function buildSite(
   }
 
   let testVolume: ReviewChip | undefined
+  const testScName = state.storageClassesEnabled ? pickStorageClassName(classes, state.quickstart?.storageClassName) : ''
+  const testSc = classes.find((sc) => t(sc.name) === t(testScName))
+  const testVolumeArrayIds = state.storageClassesEnabled ? testVolumeArrayIdsForClass(testSc, systems) : []
+  const testVolumeProtocolLabel = CONNECTION_TYPES.find((c) => c.id === (testSc?.connectionType || state.connectionType))?.label
   if (state.storageClassesEnabled) {
     const id = `${site}:testvol`
     addHit({
       id,
       title: 'Test volume',
-      why: `PersistentVolumeClaim ${state.quickstart.pvcName || 'test-pvc'} binds to StorageClass ${resolvedStorageClassName(state)}; the Pod mounts it.`,
+      why: `PersistentVolumeClaim ${state.quickstart.pvcName || 'test-pvc'} binds to StorageClass ${testScName || 'hitachi-csi'}; the Pod mounts it.`,
       files: pick(files, ['06-quickstart/pvc.yaml', '06-quickstart/pod.yaml'], prefix),
     })
     testVolume = {
@@ -333,38 +382,113 @@ function buildSite(
       tone: 'card',
     }
   }
+  const ordered = orderSystemsForReview(systems, classes, dual)
+  const shownSystems = ordered.slice(0, REVIEW_MAX_ARRAYS)
+  const hiddenSystems = ordered.slice(REVIEW_MAX_ARRAYS)
+  const arrays: ReviewArrayView[] = (shownSystems.length ? shownSystems : [undefined]).map((sys) =>
+    buildArrayView(state, files, site, prefix, dual, sys, systems, classes, testScName, hits),
+  )
 
-  const detailed = detailedArray(systems, dual)
-  const ghosts = systems.filter((s) => s.id !== detailed?.id).map((s) => ({ label: ghostLabel(s) }))
-  const arrayId = `${site}:array`
-  const secretFiles = detailed
-    ? pick(files, [`01-storage/secret-${detailed.name || detailed.id}.yaml`], prefix)
-    : []
-  const rg = t(detailed?.resourceGroupID)
-  const journal = detailed ? journalForSerial(state, detailed.serial) : ''
+  let moreArrays: { id: string; label: string } | undefined
+  if (hiddenSystems.length) {
+    const id = `${site}:arrays-more`
+    addHit({
+      id,
+      title: 'More arrays',
+      why: 'Additional storage arrays on this cluster.',
+      files: [
+        ...new Set(
+          hiddenSystems.flatMap((sys) => pick(files, [`01-storage/secret-${sys.name || sys.id}.yaml`], prefix)),
+        ),
+      ],
+    })
+    moreArrays = {
+      id,
+      label: `+${hiddenSystems.length} more array${hiddenSystems.length === 1 ? '' : 's'}`,
+    }
+  }
+
+  const gadLinks: ReviewGadLink[] = []
+  const seenLinks = new Set<string>()
+  for (const sc of classes) {
+    if (sc.kind !== 'stretched' && sc.kind !== 'stretched-adr') continue
+    const from = t(sc.primaryStorageSystemId)
+    const to = t(sc.secondaryStorageSystemId)
+    if (!from || !to || from === to) continue
+    const key = `${from}->${to}`
+    if (seenLinks.has(key)) continue
+    seenLinks.add(key)
+    const id = `${site}:gad:${from}:${to}`
+    addHit({
+      id,
+      title: 'GAD pair',
+      why: 'This stretched StorageClass uses pools on both arrays in this cluster.',
+      files: [
+        ...pick(files, [`01-storage/storageclass-${sc.name}.yaml`], prefix),
+        ...pick(files, [stretchedSecretPackagePath(sc.stretchedSecretName || 'hitachi-csi-secret-stretched')], prefix),
+      ],
+    })
+    gadLinks.push({ id, fromSystemId: from, toSystemId: to })
+  }
+
+  return {
+    id: site,
+    title,
+    clusterLabel: dual ? clusterLabel : '',
+    chips: chipRows,
+    storageClasses: shownSc,
+    moreStorageClasses,
+    snapshot,
+    testVolume,
+    testVolumeArrayIds,
+    testVolumeProtocolLabel,
+    arrays,
+    moreArrays,
+    gadLinks,
+  }
+}
+
+function buildArrayView(
+  state: WizardState,
+  files: FileRef[],
+  site: SiteId | 'single',
+  prefix: string,
+  dual: boolean,
+  sys: StorageSystemConfig | undefined,
+  systems: StorageSystemConfig[],
+  classes: StorageClassConfig[],
+  testScName: string,
+  hits: Record<string, ReviewHit>,
+): ReviewArrayView {
+  const addHit = (hit: ReviewHit) => {
+    hits[hit.id] = hit
+  }
+  const arrayId = `${site}:array:${sys?.id || 'none'}`
+  const secretFiles = sys ? pick(files, [`01-storage/secret-${sys.name || sys.id}.yaml`], prefix) : []
+  const rg = t(sys?.resourceGroupID)
+  const journal = sys ? journalForSerial(state, sys.serial) : ''
   addHit({
     id: arrayId,
-    title: arrayTitle(detailed),
+    title: arrayTitle(sys),
     why: 'CSI Driver Secret for this array’s REST API.',
     files: secretFiles,
   })
 
-  const testScName = t(resolvedStorageClassName(state))
   type Bucket = { key: string; poolId: string; scNames: string[]; test: boolean; gad?: 'primary' | 'secondary' }
   const buckets = new Map<string, Bucket>()
-  if (detailed) {
+  if (sys) {
     for (const sc of classes) {
-      const ids = poolIdsOnArray(sc, detailed, systems)
+      const ids = poolIdsOnArray(sc, sys, systems)
       for (const poolId of ids) {
         const key = poolId || `unset-${sc.id}`
         const cur = buckets.get(key) || { key, poolId, scNames: [], test: false }
         if (!cur.scNames.includes(t(sc.name) || 'unnamed')) cur.scNames.push(t(sc.name) || 'unnamed')
-        if (t(sc.name) === testScName && siteId === 'primary') cur.test = true
+        if (t(sc.name) === testScName) cur.test = true
         if (sc.kind === 'stretched' || sc.kind === 'stretched-adr') {
           cur.gad =
-            detailed.id === t(sc.secondaryStorageSystemId)
+            sys.id === t(sc.secondaryStorageSystemId)
               ? 'secondary'
-              : detailed.id === t(sc.primaryStorageSystemId)
+              : sys.id === t(sc.primaryStorageSystemId)
                 ? 'primary'
                 : undefined
         }
@@ -376,7 +500,7 @@ function buildSite(
   const shown = allPools.slice(0, REVIEW_MAX_POOLS)
   const hidden = allPools.slice(REVIEW_MAX_POOLS)
   const pools: ReviewPoolView[] = shown.map((b) => {
-    const id = `${site}:pool:${b.key}`
+    const id = `${arrayId}:pool:${b.key}`
     const scFiles = b.scNames.flatMap((name) => pick(files, [`01-storage/storageclass-${name}.yaml`], prefix))
     addHit({
       id,
@@ -384,17 +508,18 @@ function buildSite(
       why: 'A pool is a field on the StorageClass, not its own YAML.',
       files: [...new Set(scFiles)],
     })
+    const extra = [b.test ? 'volume for test PVC' : '', b.gad ? `GAD ${b.gad}` : ''].filter(Boolean).join(' · ')
     return {
       id,
       title: t(b.poolId) ? `Pool ${b.poolId}` : 'Pool not set yet',
       sub: b.scNames.join(', ') || 'No StorageClass yet',
-      extra: b.test ? 'volume for test PVC' : b.gad ? `GAD ${b.gad}` : undefined,
+      extra: extra || undefined,
     }
   })
 
   let morePools: { id: string; label: string } | undefined
   if (hidden.length) {
-    const id = `${site}:pools-more`
+    const id = `${arrayId}:pools-more`
     const scFiles = hidden.flatMap((b) =>
       b.scNames.flatMap((name) => pick(files, [`01-storage/storageclass-${name}.yaml`], prefix)),
     )
@@ -409,26 +534,16 @@ function buildSite(
 
   const subParts = [
     rg ? `Resource group ID ${rg}` : '',
-    journal ? `journal ${journal}` : dual && detailed?.hrpcPair ? 'journal not set yet' : '',
+    journal ? `journal ${journal}` : dual && sys?.hrpcPair ? 'journal not set yet' : '',
   ].filter(Boolean)
 
   return {
-    id: site,
-    title,
-    clusterLabel: dual ? clusterLabel : '',
-    chips: chipRows,
-    storageClasses: shownSc,
-    moreStorageClasses,
-    snapshot,
-    testVolume,
-    array: {
-      id: arrayId,
-      title: arrayTitle(detailed),
-      sub: subParts.join(' · ') || 'Array credentials Secret',
-      pools,
-      morePools,
-    },
-    ghosts,
+    id: arrayId,
+    systemId: sys?.id || '',
+    title: arrayTitle(sys),
+    sub: subParts.join(' · ') || 'Array credentials Secret',
+    pools,
+    morePools,
   }
 }
 
