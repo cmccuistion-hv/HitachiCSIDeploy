@@ -1,6 +1,5 @@
 import { type StorageFamily, type StorageSystemConfig } from '../catalog/types'
 import {
-  PLATFORMS,
   STORAGE_FAMILIES,
   isSdsBlockFamily,
   storageFamilyHint,
@@ -9,6 +8,7 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { HELP } from '../catalog/help'
+import { DEFAULT_CSI_SECRET_NAME, nextCsiSecretName } from '../catalog/arrayBinding'
 import { getSiteStorage, setHrpcPair, withSiteStorage } from '../catalog/sites'
 import {
   hrpcPairResourceGroupIds,
@@ -18,14 +18,13 @@ import {
 } from '../catalog/validation'
 import { AlternativeCloneModeDiagram } from '../components/AlternativeCloneModeDiagram'
 import { SiteSwitcher } from '../components/SiteSwitcher'
-import { GadDataPathsDiagram } from '../components/GadDataPathsDiagram'
 import { ResourceGroupOverviewDiagram } from '../components/ResourceGroupOverviewDiagram'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { useSiteTab } from '../state/useSiteTab'
 import { Callout, Field, HelpTip, PasswordInput, Section } from '../components/ui'
 
-function newSystem(n: number): StorageSystemConfig {
+function newSystem(n: number, existing: StorageSystemConfig[]): StorageSystemConfig {
   return {
     id: `storage-${n}`,
     name: n === 1 ? 'primary' : `array-${n}`,
@@ -33,14 +32,15 @@ function newSystem(n: number): StorageSystemConfig {
     url: '',
     user: '',
     password: '',
-    stretchedRole: n === 1 ? 'primary' : n === 2 ? 'secondary' : 'none',
+    stretchedRole: 'none',
+    csiSecretName: n === 1 ? DEFAULT_CSI_SECRET_NAME : nextCsiSecretName(existing),
+    csiSecretNamespace: '',
   }
 }
 
 export function StorageStep() {
   const { state, setState } = useWizard()
   const replicationOn = state.components.replication
-  const clusterLabel = PLATFORMS[state.platform].useOc ? 'OpenShift cluster' : 'Kubernetes cluster'
   const [site, setSite] = useSiteTab(replicationOn)
   const storage = replicationOn ? getSiteStorage(state, site) : null
   const storageSystems = replicationOn ? storage!.storageSystems : state.storageSystems
@@ -177,8 +177,8 @@ export function StorageStep() {
                       ? sys.alternativeCloneMode
                       : false,
                     serial: isSdsBlockFamily(family) ? '' : sys.serial,
-                    stretchedRole: isSdsBlockFamily(family) ? 'none' : sys.stretchedRole,
                     resourceGroupID: isSdsBlockFamily(family) ? '' : sys.resourceGroupID,
+                    ...(isSdsBlockFamily(family) ? { stretchedRole: 'none' } : {}),
                   })
                 }}
               >
@@ -238,32 +238,32 @@ export function StorageStep() {
                 />
               </Field>
             )}
-            {!(replicationOn && sys.hrpcPair) && !!sys.family && !isSdsBlockFamily(sys.family) && (
-              <Field
-                label="Stretched / GAD role"
-                help={HELP.gad.role}
-                helpDiagram={<GadDataPathsDiagram clusterLabel={clusterLabel} />}
-              >
-                <select
-                  value={sys.stretchedRole || 'none'}
-                  onChange={(e) =>
-                    updateSys(sys.id, {
-                      stretchedRole: e.target.value as StorageSystemConfig['stretchedRole'],
-                    })
-                  }
-                >
-                  <option value="none">None</option>
-                  <option value="primary">Primary</option>
-                  <option value="secondary">Secondary</option>
-                </select>
-              </Field>
-            )}
           </div>
 
           <AdvancedSection
             title="Advanced array options"
           >
             <div className="field-grid">
+              <Field
+                label="CSI Secret name"
+                hint="StorageClasses on this cluster select this array’s Secret by this name."
+              >
+                <input
+                  value={sys.csiSecretName || DEFAULT_CSI_SECRET_NAME}
+                  onChange={(e) => updateSys(sys.id, { csiSecretName: e.target.value })}
+                  placeholder={DEFAULT_CSI_SECRET_NAME}
+                />
+              </Field>
+              <Field
+                label="CSI Secret namespace"
+                hint="Leave empty to use the CSI Driver namespace. StorageClasses on this cluster select this array’s Secret."
+              >
+                <input
+                  value={sys.csiSecretNamespace || ''}
+                  onChange={(e) => updateSys(sys.id, { csiSecretNamespace: e.target.value })}
+                  placeholder={state.driverNamespace}
+                />
+              </Field>
               <Field
                 label="Host mode options (optional)"
                 hint="Comma-separated. Driver defaults include 2,22,25,68,91 — specify only additional options."
@@ -348,7 +348,7 @@ export function StorageStep() {
             const currentSystems = s.components.replication
               ? getSiteStorage(s, site).storageSystems
               : s.storageSystems
-            const next = newSystem(currentSystems.length + 1)
+            const next = newSystem(currentSystems.length + 1, currentSystems)
             next.id = `storage-${Date.now()}`
             next.name = nextUniqueName(
               currentSystems.length === 0 ? 'primary' : 'array',
