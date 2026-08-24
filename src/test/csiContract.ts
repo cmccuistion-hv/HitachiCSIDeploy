@@ -10,6 +10,7 @@ import {
   SECRET_FIELDS_STRETCHED,
 } from '../catalog/parameters'
 import { CONNECTION_TYPES, supportsCsiVolumeSnapshots } from '../catalog/platforms'
+import { resolvedReplicationStorageSecrets } from '../catalog/replicationSecrets'
 import { getSiteStorage, standardSecretNameForSystem } from '../catalog/sites'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 import { effectiveSerialNumber } from '../catalog/validation'
@@ -572,7 +573,7 @@ function assertHrpcStorageSecrets(path: string, content: string, state: WizardSt
         throw new Error(`${path}: HRPC storage-secrets requires ${key}`)
       }
     }
-    const expected = state.replication.storageSecrets.find(
+    const expected = resolvedReplicationStorageSecrets(state).find(
       (secret) => String(secret.serial) === String(item.serial),
     )
     if (!expected) {

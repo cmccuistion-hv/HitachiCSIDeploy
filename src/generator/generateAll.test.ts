@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { withSiteMetrics } from '../catalog/metrics'
+import { getSiteStorage, withSiteStorage } from '../catalog/sites'
 import type { MultipathConfig, WizardState } from '../catalog/types'
 import { exportConfigJson } from '../state/exportConfig'
 import { filledReplicationState, filledState } from '../test/fixtures'
+import { fetchFirstAvailable } from '../services/versions'
 import { generateAll, type GeneratedFile } from './yaml'
 
 vi.mock('../services/versions', async (importOriginal) => {
@@ -33,6 +36,47 @@ function fileAt(files: GeneratedFile[], path: string): GeneratedFile {
   const file = files.find((candidate) => candidate.path === path)
   expect(file, `missing generated file ${path}`).toBeDefined()
   return file!
+}
+
+const MONITORING_STACK_MOCK = [
+  'apiVersion: v1',
+  'kind: PersistentVolumeClaim',
+  'metadata:',
+  '  name: prometheus',
+  'spec:',
+  '  storageClassName: sc-sample',
+  '---',
+  'apiVersion: v1',
+  'kind: ConfigMap',
+  'metadata:',
+  '  name: grafana',
+].join('\n')
+
+function mockMonitoringStackFetch() {
+  vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
+    const joined = urls.join('')
+    if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
+    return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+  })
+}
+
+const CONSOLE_PLUGIN_MOCK = [
+  'apiVersion: v1',
+  'kind: ConfigMap',
+  'metadata:',
+  '  name: mocked-upstream',
+  'data:',
+  '  config.json: |',
+  '    "hsppPrometheus": { "namespace": "hspc-monitoring-system", "service": "prometheus", "port": "9090" }',
+].join('\n')
+
+function mockConsolePluginFetch() {
+  vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
+    const joined = urls.join('')
+    if (joined.includes('consoleplugin')) return CONSOLE_PLUGIN_MOCK
+    if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
+    return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+  })
 }
 
 const confMultipath: MultipathConfig = {
@@ -268,6 +312,236 @@ describe('generateAll package matrix', () => {
     expect(fileAt(files, 'install.sh').content).toMatch(/04-metrics/)
   })
 
+  it('fills the Performance Metrics exporter secret from storage systems when metrics.storages is empty', async () => {
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: { enabled: true, storages: [] },
+      }),
+    )
+    const secret = fileAt(files, '04-metrics/metrics-secret.yaml').content
+
+    expect(secret).toContain('serial: 400001')
+    expect(secret).toContain('https://192.0.2.10')
+    expect(secret).toContain('user: maintenance')
+  })
+
+  it('includes every storage array in the Performance Metrics exporter secret', async () => {
+    const base = filledState()
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: { enabled: true, storages: [] },
+        storageSystems: [
+          base.storageSystems[0],
+          {
+            ...base.storageSystems[0],
+            id: 'storage-2',
+            name: 'array-2',
+            serial: '400099',
+            url: 'https://192.0.2.99',
+          },
+        ],
+      }),
+    )
+    const secret = fileAt(files, '04-metrics/metrics-secret.yaml').content
+
+    expect(secret).toContain('serial: 400001')
+    expect(secret).toContain('serial: 400099')
+  })
+
+  it('packages different Performance Metrics settings per Replication site', async () => {
+    mockMonitoringStackFetch()
+    let state = filledReplicationState({ components: { metrics: true, consolePlugin: true } })
+    state = withSiteMetrics(state, 'primary', {
+      namespace: 'mon-primary',
+      secretName: 'exp-primary',
+      deployGrafana: true,
+      deployPrometheus: true,
+    })
+    state = withSiteMetrics(state, 'secondary', {
+      namespace: 'mon-secondary',
+      secretName: 'exp-secondary',
+      deployGrafana: false,
+      deployPrometheus: true,
+      maxWorkerCount: '3',
+    })
+    const files = await generateAll(state)
+    const primaryNs = fileAt(files, 'primary/04-metrics/namespace.yaml').content
+    const secondaryNs = fileAt(files, 'secondary/04-metrics/namespace.yaml').content
+    expect(primaryNs).toContain('name: mon-primary')
+    expect(secondaryNs).toContain('name: mon-secondary')
+    expect(fileAt(files, 'primary/04-metrics/metrics-secret.yaml').content).toContain(
+      'name: exp-primary',
+    )
+    expect(fileAt(files, 'secondary/04-metrics/metrics-secret.yaml').content).toContain(
+      'name: exp-secondary',
+    )
+    expect(paths(files).some((p) => p === 'primary/04-metrics/grafana-stack.yaml')).toBe(true)
+    expect(paths(files).some((p) => p === 'secondary/04-metrics/grafana-stack.yaml')).toBe(false)
+  })
+
+  it('wires each site’s Console Plugin to that site’s Prometheus namespace', async () => {
+    mockConsolePluginFetch()
+    let state = filledReplicationState({
+      components: { metrics: true, consolePlugin: true },
+    })
+    state = withSiteMetrics(state, 'primary', { namespace: 'mon-primary', deployPrometheus: true })
+    state = withSiteMetrics(state, 'secondary', { namespace: 'mon-secondary', deployPrometheus: true })
+    const files = await generateAll(state)
+    expect(fileAt(files, 'primary/05-console/consoleplugin-ocp-ui.yaml').content).toContain('mon-primary')
+    expect(fileAt(files, 'secondary/05-console/consoleplugin-ocp-ui.yaml').content).toContain(
+      'mon-secondary',
+    )
+  })
+
+  it('omits secondary 04-metrics when that site skips Performance Metrics and still wires Console Plugin to existing Prometheus', async () => {
+    mockConsolePluginFetch()
+    let state = filledReplicationState({
+      components: { metrics: true, consolePlugin: true },
+    })
+    state = withSiteMetrics(state, 'primary', {
+      namespace: 'mon-primary',
+      deployPrometheus: true,
+    })
+    state = withSiteMetrics(state, 'secondary', {
+      install: false,
+      namespace: 'mon-secondary',
+      deployPrometheus: true,
+      existingPrometheusNamespace: 'ext-ns',
+      existingPrometheusService: 'ext-svc',
+      existingPrometheusPort: '9091',
+    })
+    const files = await generateAll(state)
+    const generated = paths(files)
+    expect(generated.some((p) => p.startsWith('primary/04-metrics/'))).toBe(true)
+    expect(generated.some((p) => p.startsWith('secondary/04-metrics/'))).toBe(false)
+    expect(generated.some((p) => p.startsWith('secondary/05-console/'))).toBe(true)
+    expect(fileAt(files, 'primary/install.sh').content).toMatch(/04-metrics/)
+    expect(fileAt(files, 'secondary/install.sh').content).not.toMatch(/04-metrics/)
+    const plugin = fileAt(files, 'secondary/05-console/consoleplugin-ocp-ui.yaml').content
+    expect(plugin).toContain('ext-ns')
+    expect(plugin).toContain('ext-svc')
+    expect(plugin).toContain('9091')
+    expect(plugin).not.toContain('mon-secondary')
+  })
+
+  it('omits primary 04-metrics when primary skips Performance Metrics', async () => {
+    mockConsolePluginFetch()
+    let state = filledReplicationState({
+      components: { metrics: true, consolePlugin: true },
+    })
+    state = withSiteMetrics(state, 'primary', {
+      install: false,
+      existingPrometheusNamespace: 'pri-ext',
+      existingPrometheusService: 'pri-svc',
+      existingPrometheusPort: '9090',
+    })
+    state = withSiteMetrics(state, 'secondary', {
+      namespace: 'mon-secondary',
+      deployPrometheus: true,
+    })
+    const files = await generateAll(state)
+    const generated = paths(files)
+    expect(generated.some((p) => p.startsWith('primary/04-metrics/'))).toBe(false)
+    expect(generated.some((p) => p.startsWith('secondary/04-metrics/'))).toBe(true)
+    expect(fileAt(files, 'primary/05-console/consoleplugin-ocp-ui.yaml').content).toContain('pri-ext')
+  })
+
+  it('omits 04-metrics on both sites when both skip Performance Metrics', async () => {
+    mockConsolePluginFetch()
+    let state = filledReplicationState({
+      components: { metrics: true, consolePlugin: true },
+    })
+    state = withSiteMetrics(state, 'primary', {
+      install: false,
+      existingPrometheusNamespace: 'p-ext',
+      existingPrometheusService: 'p-svc',
+      existingPrometheusPort: '9090',
+    })
+    state = withSiteMetrics(state, 'secondary', {
+      install: false,
+      existingPrometheusNamespace: 's-ext',
+      existingPrometheusService: 's-svc',
+      existingPrometheusPort: '9091',
+    })
+    const files = await generateAll(state)
+    const generated = paths(files)
+    expect(generated.some((p) => p.includes('04-metrics/'))).toBe(false)
+    expect(fileAt(files, 'primary/05-console/consoleplugin-ocp-ui.yaml').content).toContain('p-ext')
+    expect(fileAt(files, 'secondary/05-console/consoleplugin-ocp-ui.yaml').content).toContain('s-ext')
+  })
+
+  it('still packages 04-metrics for a single-site export', async () => {
+    const files = await generateAll(filledState({ components: { metrics: true } }))
+    expect(paths(files).some((p) => p.startsWith('04-metrics/'))).toBe(true)
+  })
+
+  it('uses each site’s metrics PVC StorageClass pin for Prometheus PVCs', async () => {
+    mockMonitoringStackFetch()
+    let state = filledReplicationState({
+      components: { metrics: true },
+      quickstart: { storageClassName: 'hitachi-csi' },
+    })
+    const secondarySite = getSiteStorage(state, 'secondary')
+    const defaultClass = secondarySite.storageClasses[0]!
+    state = withSiteStorage(state, 'secondary', {
+      ...secondarySite,
+      storageClasses: [
+        defaultClass,
+        {
+          ...defaultClass,
+          id: 'sc-secondary-extra',
+          name: 'hitachi-csi-secondary',
+        },
+      ],
+    })
+    state = withSiteMetrics(state, 'secondary', { pvcStorageClassName: 'hitachi-csi-secondary' })
+    const files = await generateAll(state)
+    const prom = fileAt(files, 'secondary/04-metrics/prometheus-stack.yaml').content
+    expect(prom).toContain('storageClassName: hitachi-csi-secondary')
+    expect(prom).not.toMatch(/storageClassName:\s*hitachi-csi\s*$/)
+  })
+
+  it('packages each Replication site with that cluster’s arrays in the exporter secret', async () => {
+    const files = await generateAll(
+      filledReplicationState({
+        components: { metrics: true },
+        metrics: { enabled: true, storages: [] },
+      }),
+    )
+    const primary = fileAt(files, 'primary/04-metrics/metrics-secret.yaml').content
+    const secondary = fileAt(files, 'secondary/04-metrics/metrics-secret.yaml').content
+
+    expect(primary).toContain('serial: 400001')
+    expect(primary).not.toContain('serial: 400002')
+    expect(secondary).toContain('serial: 400002')
+    expect(secondary).not.toContain('serial: 400001')
+  })
+
+  it('does not copy primary exporter credentials into the secondary cluster package', async () => {
+    const files = await generateAll(
+      filledReplicationState({
+        components: { metrics: true },
+        metrics: {
+          enabled: true,
+          storages: [
+            {
+              serial: '400001',
+              url: 'https://192.0.2.10',
+              user: 'maintenance',
+              password: 'fixture-password',
+            },
+          ],
+        },
+      }),
+    )
+    const secondary = fileAt(files, 'secondary/04-metrics/metrics-secret.yaml').content
+
+    expect(secondary).toContain('serial: 400002')
+    expect(secondary).not.toContain('serial: 400001')
+  })
+
   it('packages Performance Metrics and the OpenShift Console Plugin together', async () => {
     const base = filledState()
     const files = await generateAll(
@@ -352,6 +626,39 @@ describe('generateAll package matrix', () => {
     expect(generatedPaths).not.toContain('VERSION')
     expect(generatedPaths).not.toContain('primary/VERSION')
     expect(generatedPaths).not.toContain('secondary/VERSION')
+  })
+
+  it('refreshes Replication storage-secrets from each site’s array when stored secrets are stale', async () => {
+    const files = await generateAll(
+      filledReplicationState({
+        replication: {
+          storageSecrets: [
+            {
+              serial: '400001',
+              url: 'https://192.0.2.10',
+              user: 'primary-user',
+              password: 'primary-password',
+              journal: '10',
+            },
+            {
+              serial: '400001',
+              url: 'https://192.0.2.10',
+              user: 'primary-user',
+              password: 'primary-password',
+              journal: '20',
+            },
+          ],
+        },
+      }),
+    )
+    const secret = fileAt(files, 'primary/03-replication/storage-secrets.yaml').content
+
+    expect(secret).toContain('serial: 400001')
+    expect(secret).toContain('serial: 400002')
+    expect(secret).toContain('https://192.0.2.11')
+    expect(secret).toContain('journal: 20')
+    expect(secret).not.toContain('primary-user')
+    expect(secret).not.toContain('primary-password')
   })
 
   it('uses each site’s StorageClasses and StorageClass secretName in the dual-site package', async () => {

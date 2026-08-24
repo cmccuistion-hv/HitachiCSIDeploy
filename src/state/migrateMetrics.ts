@@ -13,5 +13,9 @@ export function migrateMetricsConfig(raw: unknown, defaults: MetricsConfig): Met
     ...rest,
     deployPrometheus: typeof inProm === 'boolean' ? inProm : both,
     deployGrafana: typeof inGraf === 'boolean' ? inGraf : both,
+    pvcStorageClassName:
+      typeof (rest as { pvcStorageClassName?: unknown }).pvcStorageClassName === 'string'
+        ? (rest as { pvcStorageClassName: string }).pvcStorageClassName
+        : defaults.pvcStorageClassName,
   }
 }

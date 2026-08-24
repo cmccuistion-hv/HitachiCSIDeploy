@@ -1,11 +1,13 @@
+import { metricsInstalledForSite, prometheusTargetForSite } from './metrics'
 import { CONNECTION_TYPES } from './platforms'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
+import { resolvedReplicationStorageSecrets } from './replicationSecrets'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
 
 /** Blocking issue plus where the wizard should take the user to fix it. */
 export type WizardFix = {
   message: string
-  stepId: 'storage' | 'storageclasses' | 'replication'
+  stepId: 'storage' | 'storageclasses' | 'replication' | 'console'
   site?: SiteId
 }
 
@@ -634,7 +636,7 @@ function validateHrpcFix(state: WizardState): WizardFix | null {
   const primaryPairSerial = t(primaryPairSys?.serial)
   const secondaryPairSerial = t(secondaryPairSys?.serial)
 
-  const secrets = ensured.replication.storageSecrets || []
+  const secrets = resolvedReplicationStorageSecrets(ensured)
   if (secrets.length < 1) {
     return wizardFix('Set journals on the Replication step (storage secrets).', 'replication')
   }
@@ -779,7 +781,25 @@ export function storageArtifactsContinueInvalidReason(state: WizardState): strin
   return storageArtifactsContinueInvalidFix(state)?.message ?? null
 }
 
+export function consolePluginPrometheusWiringInvalidFix(state: WizardState): WizardFix | null {
+  if (!state.components.consolePlugin) return null
+  if (!state.components.replication) return null
+  for (const site of ['primary', 'secondary'] as const) {
+    if (metricsInstalledForSite(state, site)) continue
+    const target = prometheusTargetForSite(state, site)
+    if (!target.namespace.trim() || !target.service.trim() || !target.port.trim()) {
+      return wizardFix(
+        `${site === 'primary' ? 'Primary' : 'Secondary'} site: set Prometheus namespace, service, and port for the Console Plugin (Performance Metrics is not installed on this cluster).`,
+        'console',
+        site,
+      )
+    }
+  }
+  return null
+}
+
 export function wizardFixCta(fix: WizardFix): string {
+  if (fix.stepId === 'console') return 'Open Console Plugin'
   if (fix.site === 'secondary') return 'Open Secondary site'
   if (fix.site === 'primary') return 'Open Primary site'
   if (fix.stepId === 'replication') return 'Open Replication'

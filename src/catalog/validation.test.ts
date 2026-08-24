@@ -7,7 +7,9 @@ import {
 } from './platforms'
 import { ensureSitesForReplication } from './sites'
 import { createDefaultState, type WizardState } from './types'
+import { withSiteMetrics } from './metrics'
 import {
+  consolePluginPrometheusWiringInvalidFix,
   hrpcResourceGroupIdReason,
   siteStorageClassesReady,
   siteStorageSystemsReady,
@@ -343,5 +345,40 @@ describe('GAD and stretched StorageClass constraints', () => {
       '01-storage/secret-stretched.yaml',
     )
     expect(stretchedSecretPackagePath('custom-gad')).toBe('01-storage/secret-custom-gad.yaml')
+  })
+})
+
+describe('Console Plugin Prometheus wiring export validation', () => {
+  it('blocks export when Console Plugin is on and a skipped-metrics site has empty Prometheus fields', () => {
+    let state = validReplicationState()
+    state = {
+      ...state,
+      components: { ...state.components, metrics: true, consolePlugin: true },
+    }
+    state = withSiteMetrics(state, 'secondary', {
+      install: false,
+      existingPrometheusNamespace: '',
+      existingPrometheusService: '',
+      existingPrometheusPort: '',
+    })
+    const fix = consolePluginPrometheusWiringInvalidFix(state)
+    expect(fix).not.toBeNull()
+    expect(fix?.stepId).toBe('console')
+    expect(fix?.site).toBe('secondary')
+  })
+
+  it('does not block export when a skipped-metrics site has Prometheus namespace, service, and port', () => {
+    let state = validReplicationState()
+    state = {
+      ...state,
+      components: { ...state.components, metrics: true, consolePlugin: true },
+    }
+    state = withSiteMetrics(state, 'secondary', {
+      install: false,
+      existingPrometheusNamespace: 'ext-ns',
+      existingPrometheusService: 'ext-svc',
+      existingPrometheusPort: '9090',
+    })
+    expect(consolePluginPrometheusWiringInvalidFix(state)).toBeNull()
   })
 })

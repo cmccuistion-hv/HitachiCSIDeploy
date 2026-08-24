@@ -34,6 +34,12 @@ import {
 import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, splitMonitoringStack } from './monitoringStack'
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
+import {
+  applySiteMetricsToState,
+  resolvedFlattenedMetricsPvcStorageClassName,
+  resolvedMetricsStorages,
+} from '../catalog/metrics'
+import { resolvedReplicationStorageSecrets } from '../catalog/replicationSecrets'
 import { effectiveSerialNumber } from '../catalog/validation'
 import {
   ensureSitesForReplication,
@@ -1089,11 +1095,14 @@ export function generateInstallScript(
 
 function stateForSite(state: WizardState, site: SiteId): WizardState {
   const s = getSiteStorage(state, site)
-  return {
-    ...state,
-    storageSystems: s.storageSystems,
-    storageClasses: s.storageClasses,
-  }
+  return applySiteMetricsToState(
+    {
+      ...state,
+      storageSystems: s.storageSystems,
+      storageClasses: s.storageClasses,
+    },
+    site,
+  )
 }
 
 function prefixFiles(files: GeneratedFile[], prefix: string): GeneratedFile[] {
@@ -1492,10 +1501,16 @@ ${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream Replication/
       description: 'Replication and DR Operator install notes',
       group: 'replication',
     })
-    if (state.replication.storageSecrets.length) {
+    const replicationSecrets = resolvedReplicationStorageSecrets(state)
+    if (replicationSecrets.length) {
       files.push({
         path: '03-replication/storage-secrets.yaml',
-        content: generateReplicationSecrets({ ...state.replication, enabled: true, disasterRecovery: true }),
+        content: generateReplicationSecrets({
+          ...state.replication,
+          enabled: true,
+          disasterRecovery: true,
+          storageSecrets: replicationSecrets,
+        }),
         description: 'Replication storage secrets',
         group: 'replication',
       })
@@ -1586,7 +1601,7 @@ You do not create these Secrets by hand.
   if (state.components.metrics) {
     const cmd = plat.useOc ? 'oc' : 'kubectl'
     const metricsNs = state.metrics.namespace || 'hspc-monitoring-system'
-    const stackSc = resolvedCurrentStorageClassName(state)
+    const stackSc = resolvedFlattenedMetricsPvcStorageClassName(state)
     const hsppPaths = templatePaths('hspp', state.versions.metrics)
     const stackLines: string[] = []
     let fetchFailed = false
@@ -1619,10 +1634,11 @@ metadata:
       }
     }
 
-    if (state.metrics.storages.length) {
+    const metricsStorages = resolvedMetricsStorages(state)
+    if (metricsStorages.length) {
       files.push({
         path: '04-metrics/metrics-secret.yaml',
-        content: generateMetricsSecret(state.metrics),
+        content: generateMetricsSecret({ ...state.metrics, storages: metricsStorages }),
         description: 'Performance Metrics exporter secret',
         group: 'metrics',
       })

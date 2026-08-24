@@ -5,6 +5,7 @@ import type {
   StorageSystemConfig,
   WizardState,
 } from './types'
+import { siteMetricsFromGlobal } from './siteMetrics'
 
 export type { SiteId }
 
@@ -28,6 +29,7 @@ export function createEmptySiteStorage(
   return {
     storageSystems: partial?.storageSystems ?? [],
     storageClasses: partial?.storageClasses ?? [],
+    ...(partial?.metrics ? { metrics: partial.metrics } : {}),
   }
 }
 
@@ -173,16 +175,22 @@ export function ensureSitesForReplication(state: WizardState): WizardState {
     state.sites?.secondary ?? seedSecondaryFromPrimary(primary),
   )
 
+  const seeded = siteMetricsFromGlobal(state.metrics, state.consolePlugin)
+  const primaryWithMetrics = primary.metrics ? primary : { ...primary, metrics: seeded }
+  const secondaryWithMetrics = secondary.metrics
+    ? secondary
+    : { ...secondary, metrics: { ...(primaryWithMetrics.metrics ?? seeded) } }
+
   if (
-    state.sites?.primary === primary &&
-    state.sites?.secondary === secondary
+    state.sites?.primary === primaryWithMetrics &&
+    state.sites?.secondary === secondaryWithMetrics
   ) {
     return state
   }
 
   return {
     ...state,
-    sites: { primary, secondary },
+    sites: { primary: primaryWithMetrics, secondary: secondaryWithMetrics },
   }
 }
 

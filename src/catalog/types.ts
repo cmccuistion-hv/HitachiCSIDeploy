@@ -79,9 +79,27 @@ export interface StorageClassConfig {
 
 export type SiteId = 'primary' | 'secondary'
 
+export interface SiteMetricsConfig {
+  /** When false, this cluster's package omits 04-metrics/. Default true. */
+  install: boolean
+  namespace: string
+  secretName: string
+  deployPrometheus: boolean
+  deployGrafana: boolean
+  enableDebugLog: boolean
+  maxBatchSize: string
+  maxWorkerCount: string
+  /** Empty = auto-resolve from this site's StorageClasses. */
+  pvcStorageClassName: string
+  existingPrometheusNamespace: string
+  existingPrometheusService: string
+  existingPrometheusPort: string
+}
+
 export interface SiteStorageConfig {
   storageSystems: StorageSystemConfig[]
   storageClasses: StorageClassConfig[]
+  metrics?: SiteMetricsConfig
 }
 
 export interface SnapshotClassConfig {
@@ -136,6 +154,8 @@ export interface MetricsConfig {
   enableDebugLog: boolean
   maxBatchSize: string
   maxWorkerCount: string
+  /** Empty = auto-resolve from this site's StorageClasses. */
+  pvcStorageClassName: string
   storages: { serial: string; url: string; user: string; password: string }[]
 }
 
@@ -327,6 +347,7 @@ export function createDefaultState(): WizardState {
       enableDebugLog: true,
       maxBatchSize: '10',
       maxWorkerCount: '10',
+      pvcStorageClassName: '',
       storages: [],
     },
     consolePlugin: {

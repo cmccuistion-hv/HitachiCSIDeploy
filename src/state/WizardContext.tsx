@@ -14,6 +14,7 @@ import {
   WIZARD_STATE_VERSION,
   type WizardState,
 } from '../catalog/types'
+import { copyPrimarySiteMetricsToTopLevel } from '../catalog/metrics'
 import { ensureSitesForReplication, resolvedStorageClassName, type SiteId } from '../catalog/sites'
 import type { WizardFix } from '../catalog/validation'
 import {
@@ -252,6 +253,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     state.components.metrics,
     state.components.replication,
   ])
+
+  const prevReplicationRef = useRef(state.components.replication)
+  useEffect(() => {
+    const wasReplication = prevReplicationRef.current
+    const isReplication = state.components.replication
+    prevReplicationRef.current = isReplication
+    if (wasReplication && !isReplication) {
+      setState((s) => copyPrimarySiteMetricsToTopLevel(s))
+    }
+  }, [state.components.replication])
 
   // Keep the saved PVC StorageClass name in the live class list (rename / delete / site switch).
   useEffect(() => {
