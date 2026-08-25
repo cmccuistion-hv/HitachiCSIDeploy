@@ -165,7 +165,6 @@ export function ReplicationStep() {
           <input
             ref={primaryFileRef}
             type="file"
-            accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
             onChange={(e) => {
               const f = e.target.files?.[0]
               if (f) readFile(f, 'primary')
@@ -205,7 +204,6 @@ export function ReplicationStep() {
           <input
             ref={secondaryFileRef}
             type="file"
-            accept=".yaml,.yml,.conf,.kubeconfig,text/plain,*/*"
             onChange={(e) => {
               const f = e.target.files?.[0]
               if (f) readFile(f, 'secondary')
