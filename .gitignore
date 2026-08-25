@@ -27,9 +27,11 @@ playwright-report/
 *.njsproj
 *.sln
 *.sw?
+.gitignore
 
 # Local docs / PDFs / agent plans (not published)
 docs/
+hitachi-csi-deployment/
 
 # Visual brainstorm companion (local session files)
 .superpowers/
