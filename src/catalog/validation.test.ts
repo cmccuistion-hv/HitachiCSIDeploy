@@ -432,8 +432,7 @@ describe('GAD and stretched StorageClass constraints', () => {
   })
 
   it('keeps stretchedSecretName unique from standard Secret names on this site', () => {
-    const systems = [
-      { ...filledState().storageSystems[0], id: 'storage-1', serial: '400001', family: 'vsp-5000-g-e-f' },
+    const systems = filledState().storageSystems.concat([
       {
         ...filledState().storageSystems[0],
         id: 'storage-2',
@@ -442,7 +441,7 @@ describe('GAD and stretched StorageClass constraints', () => {
         family: 'vsp-one-block-20',
         csiSecretName: 'hitachi-csi-secret-2',
       },
-    ]
+    ])
     const standard = {
       ...filledState().storageClasses[0],
       id: 'sc-std',
