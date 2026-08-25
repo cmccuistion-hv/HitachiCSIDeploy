@@ -303,7 +303,9 @@ describe('storage artifact validation', () => {
 
     expect(storageArtifactsValidForContinue(state)).toBe(true)
     expect(storageArtifactsValid(state)).toBe(false)
-    expect(validateHrpc(state)).not.toBeNull()
+    expect(validateHrpc(state)).toBe(
+      'Set a Journal ID for array serial 400001 (on the Replication step).',
+    )
 
     const withJournals: WizardState = {
       ...state,

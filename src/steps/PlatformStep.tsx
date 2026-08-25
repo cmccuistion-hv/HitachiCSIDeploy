@@ -52,7 +52,6 @@ export function PlatformStep() {
       <p className="lede">
         Choose your orchestrator and how worker nodes reach the storage array. This drives install steps,
         multipath guidance, and which Hitachi Vantara CSI software package components are available.
-        (herein called Hitachi CSI)
       </p>
 
       <Section title="Container platform">
