@@ -59,7 +59,7 @@ test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) 
 
   await choice(page, 'Red Hat OpenShift').click()
   await choice(page, 'Fibre Channel (FC)').click()
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await expect(page.getByRole('checkbox', { name: /Replication \+ DR Operator/ })).toBeChecked({
     checked: false,
   })

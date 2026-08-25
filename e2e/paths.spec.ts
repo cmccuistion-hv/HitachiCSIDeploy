@@ -29,7 +29,7 @@ test('exports classic OpenShift Fibre Channel with MachineConfig and telemetry o
   await startWizard(page)
   await choice(page, 'Red Hat OpenShift').click()
   await choice(page, 'Fibre Channel (FC)').click()
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await page.getByRole('checkbox', { name: /Hitachi Telemetry/ }).uncheck()
 
   await continueTo(page, 'Multipath')
@@ -62,7 +62,7 @@ test('exports OpenShift virtual-machine iSCSI with a lowercase IQN warning', asy
   await choice(page, 'Virtual machine').click()
   await choice(page, 'iSCSI').click()
   await expect(page.getByText(/IQNs must be lowercase/)).toBeVisible()
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await continueToStorageSystems(page)
   await fillArray(page)
   await continueTo(page, 'StorageClasses & snapshots')
@@ -81,7 +81,7 @@ test('hides Multipath for NVMe/TCP and requires an NVMe subsystem ID', async ({ 
   await startWizard(page)
   await choice(page, 'Red Hat OpenShift').click()
   await choice(page, 'NVMe/TCP').click()
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await expect(sidebar(page)).not.toContainText('Multipath')
   await continueToStorageSystems(page)
   await fillArray(page)
@@ -107,7 +107,7 @@ test('omits StorageClass artifacts and hides Test volume when generation is off'
   page,
 }) => {
   await startWizard(page)
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await continueToStorageSystems(page)
   await fillArray(page)
   await continueTo(page, 'StorageClasses & snapshots')
@@ -127,7 +127,7 @@ test('enabling the OpenShift Console Plugin also packages Performance Metrics', 
   page,
 }) => {
   await startWizard(page)
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await page.getByRole('checkbox', { name: /OpenShift Console Plugin/ }).check()
   await expect(page.getByRole('checkbox', { name: /Performance Metrics/ })).toBeChecked()
   await expect(sidebar(page)).toContainText('Performance Metrics')
@@ -151,7 +151,7 @@ test('enabling the OpenShift Console Plugin also packages Performance Metrics', 
 
 test('coerces a VSP One SDS Block array to the SDS StorageClass shape', async ({ page }) => {
   await startWizard(page)
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await continueToStorageSystems(page)
   await fillArray(page, 'VSP One SDS Block')
   await continueTo(page, 'StorageClasses & snapshots')
@@ -172,7 +172,7 @@ test('exports RKE2 with kubectl and a loose multipath.conf', async ({ page }) =>
   await startWizard(page)
   await choice(page, 'Rancher Kubernetes Engine 2 (RKE2)').click()
   await expect(sidebar(page)).not.toContainText('Console Plugin')
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
   await continueToStorageSystems(page)
   await fillArray(page)
   await continueTo(page, 'StorageClasses & snapshots')

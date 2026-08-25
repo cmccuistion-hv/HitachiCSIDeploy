@@ -64,7 +64,7 @@ test('Continue advances on a short path', async ({ page }) => {
   await dismissWelcome(page)
 
   await choice(page, 'Kubernetes').click()
-  await continueTo(page, 'Hitachi CSI components')
+  await continueTo(page, 'CSI components')
 })
 
 test('ZIP download works on a short path', async ({ page }) => {
