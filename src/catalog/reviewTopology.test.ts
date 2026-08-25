@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { filledReplicationState, filledState } from '../test/fixtures'
-import { buildReviewTopology } from './reviewTopology'
+import { withSiteMetrics } from './siteMetrics'
+import { buildReviewTopology, type ReviewTopologyModel } from './reviewTopology'
 import type { StorageSystemConfig } from './types'
+
+function metricsChip(model: ReviewTopologyModel, siteIndex = 0) {
+  return model.sites[siteIndex].chips.flat().find((c) => c.label === 'Performance Metrics')
+}
 
 function extraArray(partial: Partial<StorageSystemConfig> & Pick<StorageSystemConfig, 'id' | 'name' | 'serial'>): StorageSystemConfig {
   return {
@@ -102,5 +107,34 @@ describe('buildReviewTopology', () => {
   it('points the test volume at both GAD arrays', () => {
     const site = buildReviewTopology(gadState(), []).sites[0]
     expect(site.testVolumeArrayIds).toEqual(['storage-1', 'storage-2'])
+  })
+
+  it('labels Performance Metrics as Prometheus only when Grafana is off', () => {
+    const model = buildReviewTopology(
+      filledState({
+        components: { metrics: true },
+        metrics: { deployPrometheus: true, deployGrafana: false },
+      }),
+      [],
+    )
+    expect(metricsChip(model)?.sub).toBe('Prometheus')
+  })
+
+  it('labels Performance Metrics from each site’s Prometheus/Grafana flags, not leftover top-level defaults', () => {
+    let state = filledReplicationState({ components: { metrics: true } })
+    expect(state.metrics.deployGrafana).toBe(true)
+    state = withSiteMetrics(state, 'primary', { deployPrometheus: true, deployGrafana: false })
+    state = withSiteMetrics(state, 'secondary', { deployPrometheus: false, deployGrafana: true })
+    const model = buildReviewTopology(state, [])
+    expect(metricsChip(model, 0)?.sub).toBe('Prometheus')
+    expect(metricsChip(model, 1)?.sub).toBe('Grafana')
+  })
+
+  it('omits Performance Metrics on a Replication site that skipped the install', () => {
+    let state = filledReplicationState({ components: { metrics: true } })
+    state = withSiteMetrics(state, 'secondary', { install: false })
+    const model = buildReviewTopology(state, [])
+    expect(metricsChip(model, 0)).toBeDefined()
+    expect(metricsChip(model, 1)).toBeUndefined()
   })
 })

@@ -6,6 +6,7 @@
 import { arrayForStorageClass, gadArraysForStorageClass } from './arrayBinding'
 import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath, supportsCsiVolumeSnapshots } from './platforms'
 import { getSiteStorage, hrpcPairSystem, pickStorageClassName, type SiteId } from './sites'
+import { metricsForSite, metricsInstalledForSite } from './siteMetrics'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { effectiveSerialNumber } from './validation'
 
@@ -272,24 +273,29 @@ function buildSite(
   }
 
   const metricsConsole: ReviewChip[] = []
-  if (state.components.metrics) {
+  if (metricsInstalledForSite(state, siteId)) {
     const id = `${site}:metrics`
     const metricFiles = under(files, '04-metrics', prefix)
+    const siteMetrics = metricsForSite(state, siteId)
+    const stacks = [
+      siteMetrics.deployPrometheus ? 'Prometheus' : '',
+      siteMetrics.deployGrafana ? 'Grafana' : '',
+    ].filter(Boolean)
     addHit({
       id,
       title: 'Performance Metrics',
-      why: 'Exporter, array credentials, and optional Prometheus / Grafana stacks from this package.',
+      why:
+        stacks.length === 2
+          ? 'Exporter, array credentials, and Prometheus and Grafana stacks from this package.'
+          : stacks.length === 1
+            ? `Exporter, array credentials, and the ${stacks[0]} stack from this package.`
+            : 'Exporter and array credentials from this package.',
       files: metricFiles,
     })
     metricsConsole.push({
       id,
       label: 'Performance Metrics',
-      sub: [
-        state.metrics.deployPrometheus ? 'Prometheus' : '',
-        state.metrics.deployGrafana ? 'Grafana' : '',
-      ]
-        .filter(Boolean)
-        .join(' + ') || 'exporter',
+      sub: stacks.join(' + ') || 'exporter',
       tone: 'node',
     })
   }
