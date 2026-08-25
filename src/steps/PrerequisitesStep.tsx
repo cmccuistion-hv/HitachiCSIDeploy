@@ -172,20 +172,19 @@ export function PrerequisitesMultipathStep() {
               {showDaemonSet ? (
                 <>
                   Packages a DaemonSet that writes the Hitachi <code>multipath.conf</code> on nodes (hosted/HCP).
-                  Apply the preview now or let <code>install.sh</code> apply it after export. Required for Fibre
-                  Channel and iSCSI.
+                  Apply the preview now or let <code>install.sh</code> apply it after export.
                 </>
               ) : plat.useOc ? (
                 <>
                   Packages a MachineConfig that embeds the Hitachi <code>multipath-sample.conf</code>. You can
                   apply the preview now (nodes reboot while you finish the wizard) or let{' '}
-                  <code>install.sh</code> apply it after export. Required for Fibre Channel and iSCSI.
+                  <code>install.sh</code> apply it after export.
                 </>
               ) : (
                 <>
                   Packages the Hitachi CSI sample (<code>multipath-sample.conf</code>) for workers.{' '}
                   <strong>You</strong> install it on nodes after export — <code>install.sh</code> does not push
-                  it. Required for Fibre Channel and iSCSI.
+                  it.
                 </>
               )}
             </p>
@@ -201,25 +200,15 @@ export function PrerequisitesMultipathStep() {
                   (and will also skip if it detects the same name). YAML stays in <code>00-prereq/</code> for
                   reference.
                 </Callout>
-              ) : (
+              ) : isAdvanced ? (
                 <Callout variant="ok">
-                  {isAdvanced ? (
-                    <>
-                      <strong>Optional early apply:</strong> copy the DaemonSet preview below and{' '}
-                      <code>oc apply -f …</code> from a machine with cluster access now. Check the box when done
-                      so <code>install.sh</code> skips re-apply. Or leave it unchecked and let{' '}
-                      <code>install.sh</code> apply after export. Use this path for HyperShift / HCP guests
-                      without MachineConfig.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Packaged for export:</strong> <code>install.sh</code> will apply the DaemonSet
-                      after export. If you apply it yourself outside this wizard, check the box below so{' '}
-                      <code>install.sh</code> skips re-apply.
-                    </>
-                  )}
+                  <strong>Optional early apply:</strong> copy the DaemonSet preview below and{' '}
+                  <code>oc apply -f …</code> from a machine with cluster access now. Check the box when done so{' '}
+                  <code>install.sh</code> skips re-apply. Or leave it unchecked and let{' '}
+                  <code>install.sh</code> apply after export. Use this path for HyperShift / HCP guests without
+                  MachineConfig.
                 </Callout>
-              )
+              ) : null
             ) : plat.useOc ? (
               mp.alreadyApplied ? (
                 <Callout variant="ok">
@@ -230,24 +219,14 @@ export function PrerequisitesMultipathStep() {
                   <code>UPDATED=True</code> / <code>UPDATING=False</code> (detail in{' '}
                   <code>logs/install-*.log</code>).
                 </Callout>
-              ) : (
+              ) : isAdvanced ? (
                 <Callout variant="ok">
-                  {isAdvanced ? (
-                    <>
-                      <strong>Optional early apply:</strong> copy the MachineConfig preview below and{' '}
-                      <code>oc apply -f …</code> from a machine with cluster access now — nodes can reboot while
-                      you finish the wizard. Check the box when done so <code>install.sh</code> skips re-apply.
-                      Or leave it unchecked and let <code>install.sh</code> apply after export.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Packaged for export:</strong> <code>install.sh</code> will apply the
-                      MachineConfig after export. If you apply it yourself outside this wizard, check the box
-                      below so <code>install.sh</code> skips re-apply.
-                    </>
-                  )}
+                  <strong>Optional early apply:</strong> copy the MachineConfig preview below and{' '}
+                  <code>oc apply -f …</code> from a machine with cluster access now — nodes can reboot while you
+                  finish the wizard. Check the box when done so <code>install.sh</code> skips re-apply. Or leave
+                  it unchecked and let <code>install.sh</code> apply after export.
                 </Callout>
-              )
+              ) : null
             ) : (
               <Callout variant="ok">
                 <strong>Later (after export):</strong> copy <code>00-prereq/multipath.conf</code> to each worker
@@ -393,19 +372,19 @@ export function PrerequisitesMultipathStep() {
                     </>
                   ) : null}
                 </Callout>
-                <p
-                  style={{
-                    margin: '0.75rem 0 0.35rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--hv-text-subtle)',
-                  }}
-                >
-                  {mp.alreadyApplied
-                    ? 'MachineConfig YAML kept in 00-prereq/ for reference:'
-                    : isAdvanced
-                      ? 'Preview — copy and oc apply now, or leave for install.sh after export:'
-                      : 'MachineConfig YAML is packaged into 00-prereq/ and applied by install.sh after export:'}
-                </p>
+                {(mp.alreadyApplied || isAdvanced) && (
+                  <p
+                    style={{
+                      margin: '0.75rem 0 0.35rem',
+                      fontSize: '0.85rem',
+                      color: 'var(--hv-text-subtle)',
+                    }}
+                  >
+                    {mp.alreadyApplied
+                      ? 'MachineConfig YAML kept in 00-prereq/ for reference:'
+                      : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                  </p>
+                )}
                 {!isAdvanced || mp.alreadyApplied ? null : (
                   <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
                     {`# From a host with oc access (optional early apply):
@@ -451,19 +430,19 @@ oc apply -f multipath-machineconfig.yaml
                   multipath is healthy before creating volumes. Prefer Hosted/HCP topology when the guest API
                   has no MachineConfig.
                 </Callout>
-                <p
-                  style={{
-                    margin: '0.75rem 0 0.35rem',
-                    fontSize: '0.85rem',
-                    color: 'var(--hv-text-subtle)',
-                  }}
-                >
-                  {mp.alreadyApplied
-                    ? 'DaemonSet YAML kept in 00-prereq/ for reference:'
-                    : isAdvanced
-                      ? 'Preview — copy and oc apply now, or leave for install.sh after export:'
-                      : 'DaemonSet YAML is packaged into 00-prereq/ and applied by install.sh after export:'}
-                </p>
+                {(mp.alreadyApplied || isAdvanced) && (
+                  <p
+                    style={{
+                      margin: '0.75rem 0 0.35rem',
+                      fontSize: '0.85rem',
+                      color: 'var(--hv-text-subtle)',
+                    }}
+                  >
+                    {mp.alreadyApplied
+                      ? 'DaemonSet YAML kept in 00-prereq/ for reference:'
+                      : 'Preview — copy and oc apply now, or leave for install.sh after export:'}
+                  </p>
+                )}
                 {!isAdvanced || mp.alreadyApplied ? null : (
                   <CodeBlock className="code-block" style={{ marginBottom: '0.5rem' }}>
                     {`# From a host with oc access (optional early apply):
@@ -514,8 +493,6 @@ export function PrerequisitesChecklistStep() {
     }))
   }
 
-  const done = items.filter((i) => state.prereqAcknowledged[i.id]).length
-
   return (
     <div className="step-panel">
       <h2>{showMultipathSibling ? 'Checklist' : 'Prerequisites'}</h2>
@@ -556,11 +533,6 @@ export function PrerequisitesChecklistStep() {
           </div>
         </Callout>
       )}
-
-      <Callout variant="ok">
-        Progress: {done} / {items.length} acknowledged. You can continue without checking all boxes, but
-        skipped environment checks are the most common cause of first-PV delays.
-      </Callout>
 
       <Section title="Environment checklist">
         <ul className="checklist">
