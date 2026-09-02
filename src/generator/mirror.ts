@@ -41,12 +41,16 @@ export function generateMirrorScript(
     'chmod +x ./mirror.sh ./hvcsi-offline-bundle.sh',
     './mirror.sh',
     '',
-    '# Under the hood, mirror.sh runs these offline bundle commands (one per enabled plugin):',
+    '# Under the hood, mirror.sh runs these offline bundle commands per enabled plugin:',
+    '#   create bundle (-c), extract tarball, push images (-p from extracted directory)',
   ]
 
   for (const b of bundles) {
     bundleLines.push(`hvcsi-offline-bundle.sh -c -t ${b.plugin} -v ${b.version}`)
-    bundleLines.push(`hvcsi-offline-bundle.sh -p -r ${b.registryPath}`)
+    bundleLines.push(`tar -xzf hvcsi-${b.plugin}-${b.version}-bundle.tar.gz -C offline-bundles`)
+    bundleLines.push(
+      `(cd offline-bundles/hvcsi-${b.plugin}-${b.version}-bundle && hvcsi-offline-bundle.sh -p -r ${b.registryPath})`,
+    )
     bundleLines.push('')
   }
   while (bundleLines.length && bundleLines[bundleLines.length - 1] === '') bundleLines.pop()
