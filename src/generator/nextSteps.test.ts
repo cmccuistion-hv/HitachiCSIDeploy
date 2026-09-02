@@ -8,13 +8,29 @@ function stepIds(state: ReturnType<typeof filledState>): string[] {
 
 describe('buildNextSteps', () => {
   it('adds the offline bundle step for an air-gapped OpenShift cluster', () => {
-    const steps = buildNextSteps(filledState({ airGapped: true }))
+    const steps = buildNextSteps(
+      filledState({
+        airGapped: true,
+        components: { replication: true, disasterRecovery: true, metrics: true },
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
     const airGapped = steps.find((step) => step.id === 'air-gapped')
 
     expect(airGapped).toBeDefined()
     expect(airGapped?.title).toContain('offline')
     expect(airGapped?.body).toContain('hvcsi-offline-bundle.sh')
-    expect(airGapped?.body).toContain('certified-operators')
+    expect(airGapped?.body).toContain('-r registry.local/hitachi/hspc')
+    expect(airGapped?.body).toContain('-r registry.local/hitachi/hrpc')
+    expect(airGapped?.body).toContain('-r registry.local/hitachi/hspp')
+    expect(airGapped?.body).toContain('mirror-extras.sh')
+    expect(airGapped?.body).toContain('oc-mirror')
+    expect(airGapped?.body).toContain('ImageDigestMirrorSet')
+    expect(airGapped?.body).toContain('CatalogSource')
   })
 
   it('tells Kubernetes operators to copy multipath.conf onto workers', () => {

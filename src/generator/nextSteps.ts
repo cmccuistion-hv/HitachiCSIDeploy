@@ -1,6 +1,7 @@
 import { PLATFORMS } from '../catalog/platforms'
 import { resolvedStorageClassName } from '../catalog/sites'
 import type { WizardState } from '../catalog/types'
+import { offlineRegistryPaths } from './offline'
 
 export interface NextStep {
   id: string
@@ -62,12 +63,34 @@ export function buildNextSteps(state: WizardState): NextStep[] {
   }
 
   if (state.airGapped) {
+    const paths = offlineRegistryPaths(state)
+    const bundleRegistryArgs: string[] = []
+    if (state.components.driver && paths.hspc) {
+      bundleRegistryArgs.push(`CSI Driver: \`-r ${paths.hspc}\``)
+    }
+    if (state.components.replication && paths.hrpc) {
+      bundleRegistryArgs.push(`Replication: \`-r ${paths.hrpc}\``)
+    }
+    if (state.components.metrics && paths.hspp) {
+      bundleRegistryArgs.push(`Performance Metrics: \`-r ${paths.hspp}\``)
+    }
+
+    const bundleArgSentence = bundleRegistryArgs.length
+      ? ` Use these \`-r\` registry paths: ${bundleRegistryArgs.join(', ')}.`
+      : ''
+
     steps.push({
       id: 'air-gapped',
       title: 'Prepare the offline content',
-      body: `Before running install.sh, use \`hvcsi-offline-bundle.sh\` from the CSI operator repository and push images to your private registry${
-        plat.useOc ? ', and mirror the certified-operators catalog for OperatorHub' : ''
-      }.`,
+      body: `Before running install.sh, use \`hvcsi-offline-bundle.sh\` from the CSI operator repository to mirror and push images to your private registry.${bundleArgSentence}${
+        paths.extras
+          ? ` If the ZIP includes \`mirror-extras.sh\`, run it to mirror wizard-owned images (for example the test volume, and hosted/HCP multipath) to \`${paths.extras}\`.`
+          : ''
+      }${
+        plat.useOc
+          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests so OLM can see the mirrored catalog before install.sh runs (instead of relying on the public certified-operators).'
+          : ''
+      }`,
     })
   }
 

@@ -10,6 +10,7 @@ import {
 import { CONNECTION_TYPES } from '../catalog/platforms'
 import { DOCS } from '../catalog/components'
 import { HELP, RECAP } from '../catalog/help'
+import type { WizardState } from '../catalog/types'
 import {
   generateMultipathMachineConfig,
   generateMultipathMachineConfigs,
@@ -490,6 +491,7 @@ export function PrerequisitesChecklistStep() {
     state.openshiftTopology,
     mp.includeDaemonSet,
     state.telemetryEnabled,
+    state,
   )
 
   const toggle = (id: string) => {
@@ -614,6 +616,7 @@ function buildPrereqs(
   _openshiftTopology: string,
   includeDaemonSet: boolean,
   telemetryEnabled: boolean,
+  state: WizardState,
 ): { id: string; title: string; body: string; snippet?: string }[] {
   const plat = PLATFORMS[platform as keyof typeof PLATFORMS]
   const items: { id: string; title: string; body: string; snippet?: string }[] = [
@@ -690,10 +693,34 @@ function buildPrereqs(
   }
 
   if (airGapped) {
+    const paths = offlineRegistryPaths(state)
+    const bundleRegistryArgs: string[] = []
+    if (state.components.driver && paths.hspc) bundleRegistryArgs.push(`CSI Driver: -r ${paths.hspc}`)
+    if (state.components.replication && paths.hrpc) bundleRegistryArgs.push(`Replication: -r ${paths.hrpc}`)
+    if (state.components.metrics && paths.hspp) bundleRegistryArgs.push(`Performance Metrics: -r ${paths.hspp}`)
+    const bundleArgSentence = bundleRegistryArgs.length
+      ? ` Use these \`-r\` registry paths: ${bundleRegistryArgs
+          .map((s) => `\`${s}\``)
+          .join(', ')}.`
+      : ''
+
+    const mirrorExtrasRelevant =
+      Boolean(paths.extras?.trim()) &&
+      (state.storageClassesEnabled ||
+        (plat.useOc && state.multipath.enabled && state.multipath.includeDaemonSet))
+
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
-      body: 'Run hvcsi-offline-bundle.sh and load the images into your private registry. On OpenShift, mirror the OperatorHub catalogs (including certified-operators) before install.',
+      body: `Mirror images into your private registry with \`hvcsi-offline-bundle.sh\` from the CSI operator repository.${bundleArgSentence}${
+        mirrorExtrasRelevant
+          ? ` If the ZIP includes \`mirror-extras.sh\`, run it to mirror wizard-owned images to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
+          : ''
+      }${
+        plat.useOc
+          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.'
+          : ''
+      }`,
     })
   } else {
     items.push({
