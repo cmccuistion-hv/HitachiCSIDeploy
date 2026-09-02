@@ -106,13 +106,17 @@ export async function fetchVersions(): Promise<VersionInfo> {
  * Resolve path to a sample/operator file for a given version.
  * Handles layout drift (v3.18.2 uses yaml/ subfolder).
  */
-export function templatePaths(folder: PluginFolder, version: string) {
+export function templatePaths(folder: PluginFolder, version: string, opts?: { k8sMinor?: number }) {
   const base = `${REPO.rawBase}/${folder}/${version}`
   if (folder === 'hspc') {
+    const k8sMinor = opts?.k8sMinor
     return {
       operatorNs: [`${base}/operator/hspc-operator-namespace.yaml`, `${base}/yaml/operator/hspc-operator-namespace.yaml`],
       operator: [`${base}/operator/hspc-operator.yaml`, `${base}/yaml/operator/hspc-operator.yaml`],
       hspcCr: [`${base}/operator/hspc_v1_hspc.yaml`, `${base}/yaml/operator/hspc_v1_hspc.yaml`],
+      k8sSample: k8sMinor
+        ? [`${base}/sample/hspc-k8s${k8sMinor}.yaml`, `${base}/yaml/sample/hspc-k8s${k8sMinor}.yaml`]
+        : [],
       secret: [`${base}/sample/secret-sample.yaml`, `${base}/yaml/sample/secret-sample.yaml`],
       secretStretched: [`${base}/sample/secret-sample-stretched.yaml`, `${base}/yaml/sample/secret-sample-stretched.yaml`],
       sc: [`${base}/sample/sc-sample.yaml`, `${base}/yaml/sample/sc-sample.yaml`],

@@ -34,6 +34,7 @@ import {
 import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, splitMonitoringStack } from './monitoringStack'
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
+import { offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
 import {
   applySiteMetricsToState,
   resolvedFlattenedMetricsPvcStorageClassName,
@@ -303,6 +304,76 @@ metadata:
   name: hspc
   namespace: ${namespace}
 spec: {}
+`
+}
+
+function parseK8sMinor(version: string): number | null {
+  const raw = (version || '').trim()
+  const parts = raw.split('.')
+  if (parts.length < 2) return null
+  const minor = parseInt(parts[1]!, 10)
+  return Number.isFinite(minor) && minor > 0 ? minor : null
+}
+
+function extractContainerImagesByName(yaml: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const lines = yaml.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const nameLine = lines[i]!
+    const m = nameLine.match(/^(\s*)-\s*name:\s*([A-Za-z0-9._-]+)\s*$/)
+    if (!m) continue
+    const indent = m[1]!.length
+    const name = m[2]!
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j]!
+      const next = line.match(/^(\s*)-\s*name:\s*([A-Za-z0-9._-]+)\s*$/)
+      if (next && next[1]!.length <= indent) break
+      const img = line.match(/^\s*image:\s*(['"]?)([^\s'"]+)\1\s*$/)
+      if (img) {
+        out[name] = img[2]!
+        break
+      }
+    }
+  }
+  return out
+}
+
+function generateHspcCrFromOfflineSample(namespace: string, rewrittenSampleYaml: string): string | null {
+  const byName = extractContainerImagesByName(rewrittenSampleYaml)
+  const controller = [
+    'hspc-csi-driver',
+    'external-attacher',
+    'csi-provisioner',
+    'liveness-probe',
+    'csi-resizer',
+    'csi-snapshotter',
+  ] as const
+  const node = ['hspc-csi-driver', 'driver-registrar'] as const
+
+  const missing = [...controller, ...node].filter((n) => !byName[n])
+  if (missing.length) return null
+
+  const controllerLines = controller
+    .map((name) => `        - name: ${name}\n          image: ${byName[name]}`)
+    .join('\n')
+  const nodeLines = node
+    .map((name) => `        - name: ${name}\n          image: ${byName[name]}`)
+    .join('\n')
+
+  return `apiVersion: csi.hitachi.com/v1
+kind: HSPC
+metadata:
+  name: hspc
+  namespace: ${namespace}
+spec:
+  csiDriver:
+    enable: true
+    controller:
+      containers:
+${controllerLines}
+    node:
+      containers:
+${nodeLines}
 `
 }
 
@@ -851,12 +922,45 @@ export function generateInstallScript(
     )
   }
 
+  const hasOfflineNonOlmOperator =
+    !plat.operatorHub &&
+    applyFiles.some((f) => f.path === '02-driver/hspc-operator-namespace-offline.yaml') &&
+    applyFiles.some((f) => f.path === '02-driver/hspc-operator-offline.yaml')
+
+  if (hasOfflineNonOlmOperator) {
+    lines.push(
+      `echo "==> CSI Driver operator (offline package)"`,
+      `OPERATOR_NS=${JSON.stringify(state.operatorNamespace)}`,
+      'apply "02-driver/hspc-operator-namespace-offline.yaml"',
+      'apply "02-driver/hspc-operator-offline.yaml"',
+      '',
+      'echo "==> Waiting for operator Deployment Available..."',
+      '"$CMD" wait --for=condition=Available deploy/hspc-operator-controller-manager -n "$OPERATOR_NS" --timeout=300s || true',
+      '',
+      'echo "==> Waiting for HSPC CRD..."',
+      'wait_crd hspcs.csi.hitachi.com hspc "$OPERATOR_NS"',
+      '',
+      'echo "==> Applying CSI Driver HSPC instance"',
+      'apply "02-driver/hspc-cr.yaml"',
+      '',
+    )
+  }
+
   for (const f of applyFiles) {
     if (f.group === 'prereq') continue
     // Replication URLs + ordering handled in the dedicated block below
     if (f.group === 'replication' || f.path.startsWith('03-replication/')) continue
     // OperatorHub path: OLM + HSPC CR applied above
     if (plat.operatorHub && f.path.startsWith('02-driver/')) {
+      continue
+    }
+    // Offline non-OLM driver path: offline operator + HSPC CR applied above
+    if (
+      hasOfflineNonOlmOperator &&
+      (f.path === '02-driver/hspc-operator-namespace-offline.yaml' ||
+        f.path === '02-driver/hspc-operator-offline.yaml' ||
+        f.path === '02-driver/hspc-cr.yaml')
+    ) {
       continue
     }
     // Telemetry disable ConfigMap must be applied only after HSPC READY (dedicated block below)
@@ -1343,7 +1447,79 @@ multipath -ll
   }
 
   // Driver
+  let hspcCrYaml = generateHspcCr(state.driverNamespace)
   if (!plat.operatorHub) {
+    const offlineEnabled = state.airGapped && Boolean(state.offline?.registryBase?.trim())
+    const offlineRegistry = offlineRegistryPaths(state).hspc
+    let fetchFailed = false
+
+    if (offlineEnabled && offlineRegistry) {
+      const k8sMinor = parseK8sMinor(state.platformVersion)
+      const hspcPaths = templatePaths('hspc', state.versions.driver, {
+        k8sMinor: k8sMinor ?? undefined,
+      })
+
+      const nsRaw = await fetchFirstAvailable(hspcPaths.operatorNs ?? [])
+      if (nsRaw) {
+        files.push({
+          path: '02-driver/hspc-operator-namespace-offline.yaml',
+          content: nsRaw,
+          description: 'CSI Driver operator namespace (offline package)',
+          group: 'driver',
+        })
+      } else {
+        fetchFailed = true
+      }
+
+      const opRaw = await fetchFirstAvailable(hspcPaths.operator ?? [])
+      if (opRaw) {
+        files.push({
+          path: '02-driver/hspc-operator-offline.yaml',
+          content: rewriteImagesToRegistry(opRaw, offlineRegistry),
+          description: 'CSI Driver operator manifests (offline package; images rewritten to private registry)',
+          group: 'driver',
+        })
+      } else {
+        fetchFailed = true
+      }
+
+      const sampleRaw = await fetchFirstAvailable(hspcPaths.k8sSample ?? [])
+      if (sampleRaw) {
+        const rewrittenSample = rewriteImagesToRegistry(sampleRaw, offlineRegistry)
+        const populated = generateHspcCrFromOfflineSample(state.driverNamespace, rewrittenSample)
+        if (populated) {
+          hspcCrYaml = populated
+        } else {
+          fetchFailed = true
+        }
+      } else {
+        fetchFailed = true
+      }
+
+      files.push({
+        path: '02-driver/README.md',
+        content: `# CSI Driver install (Kubernetes — air-gapped)
+
+This ZIP includes the CSI Driver operator YAML with container images rewritten to your private registry base:
+
+- \`02-driver/hspc-operator-namespace-offline.yaml\`
+- \`02-driver/hspc-operator-offline.yaml\`
+- \`02-driver/hspc-cr.yaml\` (offline image bundle fields populated when the upstream sample is available)
+
+Run \`install.sh\`. It applies the offline operator, waits for the HSPC API, then applies \`hspc-cr.yaml\`.
+
+${fetchFailed ? 'WARNING: could not fetch some upstream CSI Driver YAML/sample; re-export when GitHub is reachable.\n' : ''}${
+  state.telemetryEnabled
+    ? ''
+    : `
+Telemetry is disabled in this package. \`install.sh\` applies \`hspc-csi-telemetry-config\` (awsEnabled=false)
+after the CSI Driver HSPC instance is READY.`
+}
+`,
+        description: 'Air-gapped Kubernetes CSI Driver install notes',
+        group: 'driver',
+      })
+    } else {
     files.push({
       path: '02-driver/README.md',
       content: `# CSI Driver install (Kubernetes)
@@ -1367,6 +1543,7 @@ after the CSI Driver HSPC instance is READY.`
       description: 'Kubernetes driver install notes',
       group: 'driver',
     })
+    }
   } else {
     for (const f of generateOperatorHubFiles(state)) {
       files.push({ ...f, group: 'driver' })
@@ -1413,7 +1590,7 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
 
   files.push({
     path: '02-driver/hspc-cr.yaml',
-    content: generateHspcCr(state.driverNamespace),
+    content: hspcCrYaml,
     description: 'Hitachi CSI Driver custom resource',
     group: 'driver',
   })

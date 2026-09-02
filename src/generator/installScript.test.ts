@@ -280,6 +280,40 @@ apply_manifest bad.yaml
     expect(script).not.toContain('operatorhub-subscription.yaml')
   })
 
+  it('applies offline non-OLM operator YAML before the HSPC instance', () => {
+    const script = generateInstallScript(
+      filledState({
+        platform: 'kubernetes',
+        platformVersion: '1.34',
+        driverNamespace: 'kube-system',
+        operatorNamespace: 'hspc-operator-system',
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+      [
+        yamlFile('02-driver/hspc-operator-namespace-offline.yaml'),
+        yamlFile('02-driver/hspc-operator-offline.yaml'),
+        yamlFile('02-driver/hspc-cr.yaml'),
+      ],
+    )
+
+    const nsIdx = script.indexOf('apply "02-driver/hspc-operator-namespace-offline.yaml"')
+    const opIdx = script.indexOf('apply "02-driver/hspc-operator-offline.yaml"')
+    const crdWait = script.indexOf('wait_crd hspcs.csi.hitachi.com hspc "$OPERATOR_NS"')
+    const crIdx = script.indexOf('apply "02-driver/hspc-cr.yaml"')
+
+    expect(nsIdx).toBeGreaterThan(-1)
+    expect(opIdx).toBeGreaterThan(nsIdx)
+    expect(crdWait).toBeGreaterThan(opIdx)
+    expect(crIdx).toBeGreaterThan(crdWait)
+    expect(script).toContain('hspc-operator-controller-manager')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('stamps the wizard build id in the header and after logging starts', () => {
     const stamp = wizardVersion()
     const script = generateInstallScript(filledState(), [yamlFile('02-driver/hspc-cr.yaml')])

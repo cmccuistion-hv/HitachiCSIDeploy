@@ -79,6 +79,65 @@ function mockConsolePluginFetch() {
   })
 }
 
+function mockOfflineDriverFetch(opts: { k8sMinor: number }) {
+  const sample = [
+    'apiVersion: v1',
+    'kind: Pod',
+    'metadata:',
+    '  name: hspc-offline-sample',
+    'spec:',
+    '  containers:',
+    '    - name: hspc-csi-driver',
+    '      image: registry.hitachivantara.com/hitachicsi-oci-oss/hspc-csi-driver:v3.18.3',
+    '    - name: external-attacher',
+    '      image: registry.k8s.io/sig-storage/csi-attacher:v4.6.0',
+    '    - name: csi-provisioner',
+    '      image: registry.k8s.io/sig-storage/csi-provisioner:v5.1.0',
+    '    - name: liveness-probe',
+    '      image: registry.k8s.io/sig-storage/livenessprobe:v2.14.0',
+    '    - name: csi-resizer',
+    '      image: registry.k8s.io/sig-storage/csi-resizer:v1.11.0',
+    '    - name: csi-snapshotter',
+    '      image: registry.k8s.io/sig-storage/csi-snapshotter:v8.1.0',
+    '---',
+    'apiVersion: v1',
+    'kind: Pod',
+    'metadata:',
+    '  name: hspc-offline-sample-node',
+    'spec:',
+    '  containers:',
+    '    - name: hspc-csi-driver',
+    '      image: registry.hitachivantara.com/hitachicsi-oci-oss/hspc-csi-driver:v3.18.3',
+    '    - name: driver-registrar',
+    '      image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.11.0',
+  ].join('\n')
+
+  vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
+    const joined = urls.join(' ')
+    if (joined.includes('hspc-operator-namespace.yaml')) {
+      return ['apiVersion: v1', 'kind: Namespace', 'metadata:', '  name: hspc-operator-system'].join('\n')
+    }
+    if (joined.includes('hspc-operator.yaml')) {
+      return [
+        'apiVersion: apps/v1',
+        'kind: Deployment',
+        'metadata:',
+        '  name: hspc-operator-controller-manager',
+        'spec:',
+        '  template:',
+        '    spec:',
+        '      containers:',
+        '        - name: manager',
+        '          image: registry.hitachivantara.com/hitachicsi-oci-oss/hspc-operator:v3.18.3',
+      ].join('\n')
+    }
+    if (joined.includes(`hspc-k8s${opts.k8sMinor}.yaml`)) {
+      return sample
+    }
+    return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+  })
+}
+
 const confMultipath: MultipathConfig = {
   enabled: true,
   includeConf: true,
@@ -188,6 +247,72 @@ describe('generateAll package matrix', () => {
       expect(fileAt(files, '02-driver/hspc-cr.yaml').content).toContain('namespace: kube-system')
     },
   )
+
+  it('packages offline CSI Driver operator + image-pinned HSPC CR for air-gapped Kubernetes', async () => {
+    mockOfflineDriverFetch({ k8sMinor: 34 })
+    const files = await generateAll(
+      filledState({
+        platform: 'kubernetes',
+        platformVersion: '1.34',
+        connectionType: 'iscsi',
+        driverNamespace: 'kube-system',
+        operatorNamespace: 'hspc-operator-system',
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+        multipath: confMultipath,
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).toEqual(
+      expect.arrayContaining([
+        '02-driver/hspc-operator-namespace-offline.yaml',
+        '02-driver/hspc-operator-offline.yaml',
+        '02-driver/hspc-cr.yaml',
+        'install.sh',
+      ]),
+    )
+
+    const op = fileAt(files, '02-driver/hspc-operator-offline.yaml').content
+    expect(op).toContain('registry.local/hitachi/hspc/hspc-operator:v3.18.3')
+    expect(op).not.toContain('registry.hitachivantara.com')
+
+    const cr = fileAt(files, '02-driver/hspc-cr.yaml').content
+    expect(cr).toContain('csiDriver:')
+    expect(cr).toContain('controller:')
+    expect(cr).toContain('node:')
+    expect(cr).toContain('image: registry.local/hitachi/hspc/hspc-csi-driver:v3.18.3')
+    expect(cr).not.toContain('registry.hitachivantara.com')
+    expect(cr).not.toContain('registry.k8s.io')
+
+    const script = fileAt(files, 'install.sh').content
+    const nsIdx = script.indexOf('apply "02-driver/hspc-operator-namespace-offline.yaml"')
+    const opIdx = script.indexOf('apply "02-driver/hspc-operator-offline.yaml"')
+    const crIdx = script.indexOf('apply "02-driver/hspc-cr.yaml"')
+    expect(nsIdx).toBeGreaterThan(-1)
+    expect(opIdx).toBeGreaterThan(nsIdx)
+    expect(crIdx).toBeGreaterThan(opIdx)
+  })
+
+  it('does not populate the HSPC CR spec on air-gapped OpenShift (OperatorHub path)', async () => {
+    mockOfflineDriverFetch({ k8sMinor: 34 })
+    const files = await generateAll(
+      filledState({
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+    expect(fileAt(files, '02-driver/hspc-cr.yaml').content).toContain('spec: {}')
+    expect(fileAt(files, '02-driver/hspc-cr.yaml').content).not.toContain('csiDriver:')
+  })
 
   it('packages OpenShift iSCSI with MachineConfig (dm-multipath still required)', async () => {
     const base = filledState()
