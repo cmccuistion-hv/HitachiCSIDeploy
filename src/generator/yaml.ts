@@ -1895,6 +1895,8 @@ You do not create these Secrets by hand.
     const metricsNs = state.metrics.namespace || 'hspc-monitoring-system'
     const stackSc = resolvedFlattenedMetricsPvcStorageClassName(state)
     const hsppPaths = templatePaths('hspp', state.versions.metrics)
+    const offlineMetricsEnabled = state.airGapped && Boolean((state.offline?.registryBase || '').trim())
+    const offlineHsppRegistry = offlineMetricsEnabled ? offlineRegistryPaths(state).hspp : ''
     const stackLines: string[] = []
     let fetchFailed = false
 
@@ -1939,13 +1941,29 @@ metadata:
 
     const exporterRaw = await fetchFirstAvailable(hsppPaths.exporter ?? [])
     if (exporterRaw) {
+      let content = rewriteYamlNamespace(exporterRaw, metricsNs)
+      if (offlineMetricsEnabled && offlineHsppRegistry) {
+        content = rewriteImagesToRegistry(content, offlineHsppRegistry)
+      }
       files.push({
         path: '04-metrics/exporter.yaml',
-        content: rewriteYamlNamespace(exporterRaw, metricsNs),
+        content,
         description: 'Performance Metrics exporter',
         group: 'metrics',
       })
       stackLines.push(`${cmd} apply -f exporter.yaml`)
+
+      let patch = generateMetricsExporterPatch({ ...state.metrics, namespace: metricsNs }, state.versions.metrics)
+      if (offlineMetricsEnabled && offlineHsppRegistry) {
+        patch = rewriteImagesToRegistry(patch, offlineHsppRegistry)
+      }
+      files.push({
+        path: '04-metrics/exporter-patch.yaml',
+        content: patch,
+        description: 'Performance Metrics exporter patch (env + image tag aligned to wizard version)',
+        group: 'metrics',
+      })
+      stackLines.push(`${cmd} apply -f exporter-patch.yaml`)
     } else {
       fetchFailed = true
     }
@@ -1959,9 +1977,13 @@ metadata:
         const { prometheusYaml, grafanaYaml } = splitMonitoringStack(combined)
 
         if (state.metrics.deployPrometheus && prometheusYaml.trim()) {
+          let content = rewriteStorageClassName(rewriteYamlNamespace(prometheusYaml, metricsNs), stackSc)
+          if (offlineMetricsEnabled && offlineHsppRegistry) {
+            content = rewriteImagesToRegistry(content, offlineHsppRegistry)
+          }
           files.push({
             path: '04-metrics/prometheus-stack.yaml',
-            content: rewriteStorageClassName(rewriteYamlNamespace(prometheusYaml, metricsNs), stackSc),
+            content,
             description: 'Prometheus stack (from upstream HSPP monitoring YAML)',
             group: 'metrics',
           })
@@ -1977,6 +1999,9 @@ metadata:
                 port: state.consolePlugin.prometheusPort,
               })
           content = rewriteStorageClassName(rewriteYamlNamespace(content, metricsNs), stackSc)
+          if (offlineMetricsEnabled && offlineHsppRegistry) {
+            content = rewriteImagesToRegistry(content, offlineHsppRegistry)
+          }
           files.push({
             path: '04-metrics/grafana-stack.yaml',
             content,

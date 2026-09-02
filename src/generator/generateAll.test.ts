@@ -46,16 +46,75 @@ const MONITORING_STACK_MOCK = [
   'spec:',
   '  storageClassName: sc-sample',
   '---',
+  'apiVersion: apps/v1',
+  'kind: Deployment',
+  'metadata:',
+  '  name: prometheus',
+  'spec:',
+  '  template:',
+  '    spec:',
+  '      containers:',
+  '        - name: prometheus',
+  '          image: registry.hitachivantara.com/hitachicsi-oci-oss/prometheus:v2.50.0',
+  '---',
   'apiVersion: v1',
   'kind: ConfigMap',
   'metadata:',
+  '  name: grafana-datasources',
+  'data:',
+  '  datasources.yaml: |',
+  '    apiVersion: 1',
+  '    datasources:',
+  '      - name: Prometheus',
+  '        url: http://prometheus:9090',
+  '---',
+  'apiVersion: apps/v1',
+  'kind: Deployment',
+  'metadata:',
   '  name: grafana',
+  'spec:',
+  '  template:',
+  '    spec:',
+  '      containers:',
+  '        - name: grafana',
+  '          image: registry.hitachivantara.com/hitachicsi-oci-oss/grafana:11.1.0',
 ].join('\n')
 
 function mockMonitoringStackFetch() {
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
     const joined = urls.join('')
     if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
+    return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+  })
+}
+
+function mockHsppFetchWithImages() {
+  const exporter = [
+    'apiVersion: apps/v1',
+    'kind: Deployment',
+    'metadata:',
+    '  name: storage-exporter',
+    '  namespace: hspc-monitoring-system',
+    'spec:',
+    '  template:',
+    '    spec:',
+    '      containers:',
+    '        - name: storage-exporter',
+    '          image: registry.hitachivantara.com/hitachicsi-oci-oss/storage-plugin-for-prometheus:v3.18.3',
+  ].join('\n')
+
+  vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
+    const joined = urls.join(' ')
+    if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
+    if (joined.includes('/hspp/') && joined.includes('/yaml/exporter.yaml')) return exporter
+    if (joined.includes('/hspp/') && joined.includes('/yaml/scc-for-openshift.yaml')) {
+      return [
+        'apiVersion: security.openshift.io/v1',
+        'kind: SecurityContextConstraints',
+        'metadata:',
+        '  name: hspp-scc-sample',
+      ].join('\n')
+    }
     return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
   })
 }
@@ -603,6 +662,7 @@ describe('generateAll package matrix', () => {
         '04-metrics/scc-for-openshift.yaml',
         '04-metrics/metrics-secret.yaml',
         '04-metrics/exporter.yaml',
+        '04-metrics/exporter-patch.yaml',
         '04-metrics/README.md',
       ]),
     )
@@ -646,6 +706,62 @@ describe('generateAll package matrix', () => {
 
     expect(secret).toContain('serial: 400001')
     expect(secret).toContain('serial: 400099')
+  })
+
+  it('rewrites Performance Metrics images to the hspp offline registry path when air-gapped', async () => {
+    mockHsppFetchWithImages()
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: { enabled: true },
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+
+    const exporter = fileAt(files, '04-metrics/exporter.yaml').content
+    const patch = fileAt(files, '04-metrics/exporter-patch.yaml').content
+    const prom = fileAt(files, '04-metrics/prometheus-stack.yaml').content
+    const graf = fileAt(files, '04-metrics/grafana-stack.yaml').content
+
+    for (const yaml of [exporter, patch, prom, graf]) {
+      expect(yaml).not.toContain('registry.hitachivantara.com')
+      expect(yaml).toContain('registry.local/hitachi/hspp/')
+    }
+    expect(exporter).toContain('image: registry.local/hitachi/hspp/storage-plugin-for-prometheus:v3.18.3')
+    expect(patch).toContain('image: registry.local/hitachi/hspp/storage-plugin-for-prometheus:v3.18.3')
+    expect(prom).toContain('image: registry.local/hitachi/hspp/prometheus:v2.50.0')
+    expect(graf).toContain('image: registry.local/hitachi/hspp/grafana:11.1.0')
+  })
+
+  it('keeps Performance Metrics public registry images when online', async () => {
+    mockHsppFetchWithImages()
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: { enabled: true },
+        airGapped: false,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+
+    const exporter = fileAt(files, '04-metrics/exporter.yaml').content
+    const patch = fileAt(files, '04-metrics/exporter-patch.yaml').content
+    const prom = fileAt(files, '04-metrics/prometheus-stack.yaml').content
+    const graf = fileAt(files, '04-metrics/grafana-stack.yaml').content
+
+    for (const yaml of [exporter, patch, prom, graf]) {
+      expect(yaml).toContain('registry.hitachivantara.com')
+      expect(yaml).not.toContain('registry.local/hitachi/hspp/')
+    }
   })
 
   it('packages different Performance Metrics settings per Replication site', async () => {
