@@ -383,6 +383,60 @@ describe('generateAll package matrix', () => {
     )
   })
 
+  it('generates mirror-plan.md at the ZIP root when air-gapped and registry base is set', async () => {
+    const files = await generateAll(
+      filledState({
+        airGapped: true,
+        components: { driver: true, replication: true, disasterRecovery: true, metrics: true },
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'hv-certified-mirror',
+          catalogIndexImage: 'registry.local/olm/index:2026-09-02',
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+    expect(generatedPaths).toContain('mirror-plan.md')
+    expect(generatedPaths).toContain('mirror-plan.sh')
+
+    const plan = fileAt(files, 'mirror-plan.md').content
+    expect(plan).toContain('Configure → Mirror → Install')
+    expect(plan).toContain('hvcsi-offline-bundle.sh')
+    expect(plan).toContain('hvcsi-offline-bundle.sh -c')
+    expect(plan).toContain('-p -r registry.local/hitachi/hspc')
+    expect(plan).toContain('-p -r registry.local/hitachi/hrpc')
+    expect(plan).toContain('-p -r registry.local/hitachi/hspp')
+    expect(plan).toContain('mirror-extras.sh')
+    expect(plan).toContain('oc-mirror')
+    expect(plan).toContain('ImageDigestMirrorSet')
+    expect(plan).toContain('CatalogSource')
+    expect(plan).toContain('hv-certified-mirror')
+    expect(plan).toContain('02-driver/operatorhub-catalogsource.yaml')
+  })
+
+  it('generates one mirror plan for dual-site packages (no primary/secondary duplicates)', async () => {
+    mockOfflineHrpcFetch()
+    const files = await generateAll(
+      filledReplicationState({
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+    expect(generatedPaths).toContain('mirror-plan.md')
+    expect(generatedPaths).toContain('mirror-plan.sh')
+    expect(generatedPaths.some((p) => p.startsWith('primary/') && p.includes('mirror-plan'))).toBe(
+      false,
+    )
+    expect(generatedPaths.some((p) => p.startsWith('secondary/') && p.includes('mirror-plan'))).toBe(
+      false,
+    )
+  })
+
   it('emits mirror-extras.sh for only the used images (Block quickstart uses pause, not busybox)', async () => {
     const files = await generateAll(
       filledState({

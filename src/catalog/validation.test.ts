@@ -531,7 +531,7 @@ describe('effectiveSerialNumber', () => {
 
 describe('air-gapped registry export validation', () => {
   const AIR_GAPPED_REGISTRY_MSG =
-    'Set a private registry base on the Platform step for air-gapped installs.'
+    'Set a private registry base on the Prerequisites step for air-gapped installs.'
 
   it('blocks export when air-gapped and registry base is empty', () => {
     const state = filledState({
@@ -541,7 +541,7 @@ describe('air-gapped registry export validation', () => {
     const fix = airGappedRegistryInvalidFix(state)
     expect(fix).not.toBeNull()
     expect(fix?.message).toBe(AIR_GAPPED_REGISTRY_MSG)
-    expect(fix?.stepId).toBe('platform')
+    expect(fix?.stepId).toBe('prerequisites-checklist')
   })
 
   it('blocks export when air-gapped and registry base is whitespace', () => {

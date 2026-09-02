@@ -9,7 +9,13 @@ import { nextUniqueName } from './uniqueName'
 /** Blocking issue plus where the wizard should take the user to fix it. */
 export type WizardFix = {
   message: string
-  stepId: 'platform' | 'storage' | 'storageclasses' | 'replication' | 'console'
+  stepId:
+    | 'platform'
+    | 'prerequisites-checklist'
+    | 'storage'
+    | 'storageclasses'
+    | 'replication'
+    | 'console'
   site?: SiteId
 }
 
@@ -784,8 +790,8 @@ export function airGappedRegistryInvalidFix(state: WizardState): WizardFix | nul
   if (!state.airGapped) return null
   if (t(state.offline?.registryBase)) return null
   return wizardFix(
-    'Set a private registry base on the Platform step for air-gapped installs.',
-    'platform',
+    'Set a private registry base on the Prerequisites step for air-gapped installs.',
+    'prerequisites-checklist',
   )
 }
 
@@ -808,6 +814,7 @@ export function consolePluginPrometheusWiringInvalidFix(state: WizardState): Wiz
 
 export function wizardFixCta(fix: WizardFix): string {
   if (fix.stepId === 'platform') return 'Open Platform'
+  if (fix.stepId === 'prerequisites-checklist') return 'Open Prerequisites'
   if (fix.stepId === 'console') return 'Open Console Plugin'
   if (fix.site === 'secondary') return 'Open Secondary site'
   if (fix.site === 'primary') return 'Open Primary site'

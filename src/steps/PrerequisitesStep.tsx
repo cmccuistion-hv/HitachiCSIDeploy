@@ -501,6 +501,17 @@ export function PrerequisitesChecklistStep() {
     }))
   }
 
+  const derivedPaths = offlineRegistryPaths({
+    offline: { registryBase: state.offline.registryBase },
+  })
+  const paths = offlineRegistryPaths(state)
+  const baseSet = Boolean((state.offline.registryBase || '').trim())
+  const hasAnyOfflinePlugin =
+    state.components.driver || state.components.replication || state.components.metrics
+  const updateOffline = (partial: Partial<typeof state.offline>) => {
+    setState((s) => ({ ...s, offline: { ...s.offline, ...partial } }))
+  }
+
   return (
     <div className="step-panel">
       <h2>{showMultipathSibling ? 'Checklist' : 'Prerequisites'}</h2>
@@ -508,6 +519,172 @@ export function PrerequisitesChecklistStep() {
         Confirm what you should check before install—cluster access, array setup, and network reachability.
         Multipath packaging is on the Multipath substep when that option is enabled.
       </p>
+
+      {state.airGapped && (
+        <Section title="Air-gapped workflow">
+          <Callout>
+            <strong>Configure → Mirror → Install</strong>
+            <ol style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.92rem' }}>
+              <li>
+                <strong>Configure</strong>: finish this wizard and export the ZIP (the ZIP includes offline-ready
+                manifests).
+              </li>
+              <li>
+                <strong>Mirror (connected jump host)</strong>: mirror images (and on OpenShift/ROSA, catalogs)
+                into your private registry. The ZIP includes <code>mirror-plan.md</code> with the exact commands
+                for this package.
+              </li>
+              <li>
+                <strong>Install (cluster admin host)</strong>: in the disconnected environment, unzip and run{' '}
+                <code>install.sh</code> (Replication exports use <code>primary/</code> then <code>secondary/</code>).
+              </li>
+            </ol>
+            <p style={{ margin: '0.65rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
+              This wizard rewrites manifests to reference your private registry. It does <strong>not</strong>{' '}
+              push images into that registry — mirroring is a separate step.
+            </p>
+          </Callout>
+
+          <div className="field-grid" style={{ marginTop: '1rem' }}>
+            <Field
+              label="Private registry base"
+              hint="Host and optional path prefix for mirrored images (no trailing slash). Export is blocked until this is set."
+            >
+              <input
+                type="text"
+                value={state.offline.registryBase}
+                placeholder="registry.example.com:5000/hitachi"
+                onChange={(e) => updateOffline({ registryBase: e.target.value })}
+              />
+            </Field>
+          </div>
+
+          {baseSet && hasAnyOfflinePlugin && (
+            <div style={{ marginTop: '1rem' }}>
+              <Callout>
+                <p style={{ margin: 0 }}>
+                  Registry paths for the enabled components (used by <code>mirror-plan.md</code>):
+                </p>
+                <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem' }}>
+                  {state.components.driver && (
+                    <li>
+                      CSI Driver: <code>{paths.hspc}</code>
+                    </li>
+                  )}
+                  {state.components.replication && (
+                    <li>
+                      Replication (includes DR Operator): <code>{paths.hrpc}</code>
+                    </li>
+                  )}
+                  {state.components.metrics && (
+                    <li>
+                      Performance Metrics: <code>{paths.hspp}</code>
+                    </li>
+                  )}
+                </ul>
+              </Callout>
+            </div>
+          )}
+
+          {hasAnyOfflinePlugin && (
+            <AdvancedSection title="Advanced registry paths">
+              <div className="field-grid">
+                {state.components.driver && (
+                  <Field
+                    label="CSI Driver registry path"
+                    hint={
+                      baseSet
+                        ? `Default: ${derivedPaths.hspc}`
+                        : 'Optional override when registry base is set'
+                    }
+                  >
+                    <input
+                      type="text"
+                      value={state.offline.hspcPath ?? ''}
+                      placeholder={baseSet ? derivedPaths.hspc : 'registry.example.com:5000/hspc'}
+                      onChange={(e) =>
+                        updateOffline({ hspcPath: e.target.value.trim() || undefined })
+                      }
+                    />
+                  </Field>
+                )}
+                {state.components.replication && (
+                  <Field
+                    label="Replication registry path"
+                    hint={
+                      baseSet
+                        ? `Default: ${derivedPaths.hrpc}`
+                        : 'Optional override when registry base is set'
+                    }
+                  >
+                    <input
+                      type="text"
+                      value={state.offline.hrpcPath ?? ''}
+                      placeholder={baseSet ? derivedPaths.hrpc : 'registry.example.com:5000/hrpc'}
+                      onChange={(e) =>
+                        updateOffline({ hrpcPath: e.target.value.trim() || undefined })
+                      }
+                    />
+                  </Field>
+                )}
+                {state.components.metrics && (
+                  <Field
+                    label="Performance Metrics registry path"
+                    hint={
+                      baseSet
+                        ? `Default: ${derivedPaths.hspp}`
+                        : 'Optional override when registry base is set'
+                    }
+                  >
+                    <input
+                      type="text"
+                      value={state.offline.hsppPath ?? ''}
+                      placeholder={baseSet ? derivedPaths.hspp : 'registry.example.com:5000/hspp'}
+                      onChange={(e) =>
+                        updateOffline({ hsppPath: e.target.value.trim() || undefined })
+                      }
+                    />
+                  </Field>
+                )}
+              </div>
+            </AdvancedSection>
+          )}
+
+          {plat.operatorHub && (
+            <div style={{ marginTop: '1rem' }}>
+              <Callout variant="warn">
+                <strong>OpenShift/ROSA (OperatorHub):</strong> OLM discovers operators through a catalog. In an
+                air-gapped cluster, mirror the OperatorHub catalog with <code>oc-mirror</code> and apply the
+                generated mirror policy (for example ImageDigestMirrorSet) and CatalogSource manifests before
+                running <code>install.sh</code>.
+              </Callout>
+              <div className="field-grid" style={{ marginTop: '0.85rem' }}>
+                <Field
+                  label="CatalogSource name"
+                  hint="Mirrored OperatorHub CatalogSource on this cluster (default certified-operators)."
+                >
+                  <input
+                    type="text"
+                    value={state.offline.catalogSourceName}
+                    onChange={(e) => updateOffline({ catalogSourceName: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="Catalog index image"
+                  hint="Optional mirrored catalog index image. When set, the ZIP packages 02-driver/operatorhub-catalogsource.yaml."
+                >
+                  <input
+                    type="text"
+                    value={state.offline.catalogIndexImage}
+                    placeholder="registry.example.com:5000/catalog/certified-operators:latest"
+                    onChange={(e) => updateOffline({ catalogIndexImage: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
 
       {!mp.enabled && needsDm && (
         <Callout variant="ok">
@@ -694,15 +871,6 @@ function buildPrereqs(
 
   if (airGapped) {
     const paths = offlineRegistryPaths(state)
-    const bundleRegistryArgs: string[] = []
-    if (state.components.driver && paths.hspc) bundleRegistryArgs.push(`CSI Driver: -r ${paths.hspc}`)
-    if (state.components.replication && paths.hrpc) bundleRegistryArgs.push(`Replication: -r ${paths.hrpc}`)
-    if (state.components.metrics && paths.hspp) bundleRegistryArgs.push(`Performance Metrics: -r ${paths.hspp}`)
-    const bundleArgSentence = bundleRegistryArgs.length
-      ? ` Use these \`-r\` registry paths: ${bundleRegistryArgs
-          .map((s) => `\`${s}\``)
-          .join(', ')}.`
-      : ''
 
     const mirrorExtrasRelevant =
       Boolean(paths.extras?.trim()) &&
@@ -712,13 +880,13 @@ function buildPrereqs(
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
-      body: `Mirror images into your private registry with \`hvcsi-offline-bundle.sh\` from the CSI operator repository.${bundleArgSentence}${
+      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror-plan.md\` with the exact commands for this package (offline bundle \`-r\` paths, and any optional extras).${
         mirrorExtrasRelevant
           ? ` If the ZIP includes \`mirror-extras.sh\`, run it to mirror wizard-owned images to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
           : ''
       }${
         plat.useOc
-          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.'
+          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install so OLM can discover the operator offline.'
           : ''
       }`,
     })

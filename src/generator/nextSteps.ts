@@ -64,31 +64,19 @@ export function buildNextSteps(state: WizardState): NextStep[] {
 
   if (state.airGapped) {
     const paths = offlineRegistryPaths(state)
-    const bundleRegistryArgs: string[] = []
-    if (state.components.driver && paths.hspc) {
-      bundleRegistryArgs.push(`CSI Driver: \`-r ${paths.hspc}\``)
-    }
-    if (state.components.replication && paths.hrpc) {
-      bundleRegistryArgs.push(`Replication: \`-r ${paths.hrpc}\``)
-    }
-    if (state.components.metrics && paths.hspp) {
-      bundleRegistryArgs.push(`Performance Metrics: \`-r ${paths.hspp}\``)
-    }
-
-    const bundleArgSentence = bundleRegistryArgs.length
-      ? ` Use these \`-r\` registry paths: ${bundleRegistryArgs.join(', ')}.`
-      : ''
+    const mirrorExtrasRelevant =
+      Boolean(paths.extras?.trim()) &&
+      (state.storageClassesEnabled ||
+        (plat.useOc && state.multipath.enabled && state.multipath.includeDaemonSet))
 
     steps.push({
       id: 'air-gapped',
-      title: 'Prepare the offline content',
-      body: `Before running install.sh, use \`hvcsi-offline-bundle.sh\` from the CSI operator repository to mirror and push images to your private registry.${bundleArgSentence}${
-        paths.extras
-          ? ` If the ZIP includes \`mirror-extras.sh\`, run it to mirror wizard-owned images (for example the test volume, and hosted/HCP multipath) to \`${paths.extras}\`.`
-          : ''
-      }${
+      title: 'Mirror offline content',
+      body: `Before running install.sh, follow \`mirror-plan.md\` at the ZIP root. It contains the exact mirror commands (including \`hvcsi-offline-bundle.sh\` \`-r\` paths for enabled components${
+        mirrorExtrasRelevant ? ', plus \`mirror-extras.sh\` when included' : ''
+      }).${
         plat.useOc
-          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests so OLM can see the mirrored catalog before install.sh runs (instead of relying on the public certified-operators).'
+          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.sh so OLM can discover the operator offline.'
           : ''
       }`,
     })

@@ -22,11 +22,9 @@ describe('buildNextSteps', () => {
     const airGapped = steps.find((step) => step.id === 'air-gapped')
 
     expect(airGapped).toBeDefined()
-    expect(airGapped?.title).toContain('offline')
+    expect(airGapped?.title).toContain('Mirror')
+    expect(airGapped?.body).toContain('mirror-plan.md')
     expect(airGapped?.body).toContain('hvcsi-offline-bundle.sh')
-    expect(airGapped?.body).toContain('-r registry.local/hitachi/hspc')
-    expect(airGapped?.body).toContain('-r registry.local/hitachi/hrpc')
-    expect(airGapped?.body).toContain('-r registry.local/hitachi/hspp')
     expect(airGapped?.body).toContain('mirror-extras.sh')
     expect(airGapped?.body).toContain('oc-mirror')
     expect(airGapped?.body).toContain('ImageDigestMirrorSet')

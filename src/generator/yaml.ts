@@ -36,6 +36,7 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
+import { generateMirrorPlanMarkdown, generateMirrorPlanScript } from './mirrorPlan'
 import {
   applySiteMetricsToState,
   resolvedFlattenedMetricsPvcStorageClassName,
@@ -129,6 +130,30 @@ function mirrorExtrasFile(state: WizardState): GeneratedFile | null {
     description: 'Mirror wizard-owned images to private registry (extras path)',
     group: 'scripts',
   }
+}
+
+function mirrorPlanFiles(
+  state: WizardState,
+  opts?: { includeMirrorExtras?: boolean },
+): GeneratedFile[] {
+  if (!state.airGapped) return []
+  if (!String(state.offline?.registryBase || '').trim()) return []
+  return [
+    {
+      path: 'mirror-plan.md',
+      content: generateMirrorPlanMarkdown(state, {
+        includeMirrorExtras: Boolean(opts?.includeMirrorExtras),
+      }),
+      description: 'Air-gapped mirror plan (connected jump host + install host)',
+      group: 'scripts',
+    },
+    {
+      path: 'mirror-plan.sh',
+      content: generateMirrorPlanScript(),
+      description: 'Prints mirror-plan.md',
+      group: 'scripts',
+    },
+  ]
 }
 
 function b64(s: string): string {
@@ -2208,6 +2233,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     const files = await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
     const mirror = mirrorExtrasFile(state)
     if (mirror) files.push(mirror)
+    files.push(...mirrorPlanFiles(state, { includeMirrorExtras: Boolean(mirror) }))
     return files
   }
 
@@ -2230,6 +2256,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     drScNameOverride: drScName,
   })
   const mirror = mirrorExtrasFile(ensured)
+  const planFiles = mirrorPlanFiles(ensured, { includeMirrorExtras: Boolean(mirror) })
 
   const out: GeneratedFile[] = [
     {
@@ -2238,6 +2265,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
       description: 'Two-site package overview and install order',
       group: 'scripts',
     },
+    ...planFiles,
     ...(mirror ? [mirror] : []),
     ...prefixFiles(primaryFiles, 'primary'),
     ...prefixFiles(secondaryFiles, 'secondary'),
