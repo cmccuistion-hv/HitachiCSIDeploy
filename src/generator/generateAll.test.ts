@@ -232,6 +232,68 @@ describe('generateAll package matrix', () => {
     expect(fileAt(files, 'install.sh').content).not.toContain('wait_mcp_healthy')
   })
 
+  it('packages air-gapped OpenShift with a mirrored CatalogSource and Subscription source override', async () => {
+    const files = await generateAll(
+      filledState({
+        airGapped: true,
+        offline: {
+          registryBase: '',
+          catalogSourceName: 'hv-certified-mirror',
+          catalogIndexImage: 'registry.local/olm/index:2026-09-02',
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).toContain('02-driver/operatorhub-catalogsource.yaml')
+    expect(fileAt(files, '02-driver/operatorhub-catalogsource.yaml').content).toContain(
+      'image: registry.local/olm/index:2026-09-02',
+    )
+    expect(fileAt(files, '02-driver/operatorhub-catalogsource.yaml').content).toContain(
+      'name: hv-certified-mirror',
+    )
+    expect(fileAt(files, '02-driver/operatorhub-subscription.yaml').content).toContain(
+      'source: hv-certified-mirror',
+    )
+  })
+
+  it('air-gapped OpenShift overrides Subscription source even without packaging a CatalogSource', async () => {
+    const files = await generateAll(
+      filledState({
+        airGapped: true,
+        offline: {
+          registryBase: '',
+          catalogSourceName: 'hv-certified-precreated',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).not.toContain('02-driver/operatorhub-catalogsource.yaml')
+    expect(fileAt(files, '02-driver/operatorhub-subscription.yaml').content).toContain(
+      'source: hv-certified-precreated',
+    )
+  })
+
+  it('online OpenShift keeps Subscription source as certified-operators', async () => {
+    const files = await generateAll(
+      filledState({
+        airGapped: false,
+        offline: {
+          registryBase: '',
+          catalogSourceName: 'hv-certified-mirror',
+          catalogIndexImage: 'registry.local/olm/index:2026-09-02',
+        },
+      }),
+    )
+
+    expect(fileAt(files, '02-driver/operatorhub-subscription.yaml').content).toContain(
+      'source: certified-operators',
+    )
+    expect(paths(files)).not.toContain('02-driver/operatorhub-catalogsource.yaml')
+  })
+
   it.each(['kubernetes', 'rke2', 'eks'] as const)(
     'packages %s iSCSI with loose multipath config and kubectl',
     async (platform) => {

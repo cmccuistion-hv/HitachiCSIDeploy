@@ -49,6 +49,34 @@ describe('generateInstallScript', () => {
     execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
   })
 
+  it('applies an OperatorHub CatalogSource before the Subscription when packaged', () => {
+    const script = generateInstallScript(
+      filledState({
+        airGapped: true,
+        offline: {
+          registryBase: '',
+          catalogSourceName: 'hv-certified-mirror',
+          catalogIndexImage: 'registry.local/olm/index:2026-09-02',
+        },
+      }),
+      [
+        yamlFile('02-driver/operatorhub-namespace.yaml'),
+        yamlFile('02-driver/operatorhub-operatorgroup.yaml'),
+        yamlFile('02-driver/operatorhub-catalogsource.yaml'),
+        yamlFile('02-driver/operatorhub-subscription.yaml'),
+        yamlFile('02-driver/hspc-cr.yaml'),
+      ],
+    )
+
+    const catIdx = script.indexOf('apply "02-driver/operatorhub-catalogsource.yaml"')
+    const subIdx = script.indexOf('apply "02-driver/operatorhub-subscription.yaml"')
+    expect(catIdx).toBeGreaterThan(-1)
+    expect(subIdx).toBeGreaterThan(catIdx)
+    expect(script).toContain('wait_catalogsource_ready')
+    expect(script).toContain('CATALOGSOURCE_NAME="hv-certified-mirror"')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('waits for cert-manager Certificate and Issuer APIs before applying the DR operator', () => {
     const script = generateInstallScript(filledReplicationState(), [
       yamlFile('03-replication/cert-manager.yaml', 'replication'),

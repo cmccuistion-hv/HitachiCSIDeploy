@@ -24,6 +24,7 @@ import {
 } from './multipathDaemonSet'
 import {
   HSPC_OLM_PACKAGE,
+  HSPC_OLM_SOURCE,
   generateOperatorHubFiles,
 } from './operatorHub'
 import {
@@ -843,12 +844,52 @@ export function generateInstallScript(
   if (plat.operatorHub) {
     const ns = state.operatorNamespace
     const pkg = HSPC_OLM_PACKAGE
+    const hasCatalogSource = applyFiles.some(
+      (f) => f.path === '02-driver/operatorhub-catalogsource.yaml',
+    )
+    const catalogSourceName = state.airGapped
+      ? (state.offline?.catalogSourceName || '').trim() || HSPC_OLM_SOURCE
+      : HSPC_OLM_SOURCE
     lines.push(
       `echo "==> CSI Driver operator (OperatorHub / OLM)"`,
       `OPERATOR_NS=${JSON.stringify(ns)}`,
       `OPERATOR_SUB=${JSON.stringify(pkg)}`,
       'apply "02-driver/operatorhub-namespace.yaml"',
       'apply "02-driver/operatorhub-operatorgroup.yaml"',
+      ...(hasCatalogSource
+        ? [
+            '',
+            'echo "==> Mirrored OperatorHub CatalogSource"',
+            `CATALOGSOURCE_NS=${JSON.stringify('openshift-marketplace')}`,
+            `CATALOGSOURCE_NAME=${JSON.stringify(catalogSourceName)}`,
+            'apply "02-driver/operatorhub-catalogsource.yaml"',
+            '',
+            'wait_catalogsource_ready() {',
+            '  local ns="$1"',
+            '  local name="$2"',
+            '  local end=$((SECONDS + 600))',
+            '  while (( SECONDS < end )); do',
+            '    if ! "$CMD" get catalogsource "$name" -n "$ns" >/dev/null 2>&1; then',
+            '      echo "    Waiting for CatalogSource $name in $ns..."',
+            '      sleep 5',
+            '      continue',
+            '    fi',
+            '    local st msg',
+            '    st="$("$CMD" get catalogsource "$name" -n "$ns" -o jsonpath="{.status.connectionState.lastObservedState}" 2>/dev/null || true)"',
+            '    msg="$("$CMD" get catalogsource "$name" -n "$ns" -o jsonpath="{.status.connectionState.lastObservedMessage}" 2>/dev/null || true)"',
+            '    echo "    CatalogSource $name state=${st:-?} ${msg:-}"',
+            '    if [[ "$st" == "READY" ]]; then',
+            '      return 0',
+            '    fi',
+            '    sleep 10',
+            '  done',
+            '  echo "Timed out waiting for CatalogSource READY: $name in $ns" >&2',
+            '  "$CMD" get catalogsource "$name" -n "$ns" -o yaml || true',
+            '  return 1',
+            '}',
+            'wait_catalogsource_ready "$CATALOGSOURCE_NS" "$CATALOGSOURCE_NAME"',
+          ]
+        : []),
       'apply "02-driver/operatorhub-subscription.yaml"',
       '',
       'echo "==> Approving day-0 InstallPlan (Subscription stays Manual for later upgrades)"',
@@ -1562,7 +1603,17 @@ after the CSI Driver HSPC instance is READY.`
 4. Waits until CRD \`hspcs.csi.hitachi.com\` is Established and kind HSPC is discoverable.
 5. Applies \`hspc-cr.yaml\` in \`${state.driverNamespace}\` and waits until READY.
 
-Air-gapped: mirror the \`certified-operators\` catalog first.
+## Air-gapped / mirrored catalogs
+
+This wizard keeps OpenShift/ROSA installs on the **OperatorHub/OLM** path.
+
+- If \`offline.catalogIndexImage\` is set, the ZIP includes \`02-driver/operatorhub-catalogsource.yaml\`
+  and \`install.sh\` applies it **before** the Subscription and waits until the CatalogSource reports READY.
+- The Subscription \`spec.source\` is set from \`offline.catalogSourceName\` when \`airGapped\` is on
+  (default \`certified-operators\`).
+- \`02-driver/hspc-cr.yaml\` stays \`spec: {}\` on OpenShift/ROSA. Image redirection is handled by
+  \`oc-mirror\` and the cluster’s mirror policies (for example ImageDigestMirrorSet / ImageTagMirrorSet),
+  not by embedding image overrides into the HSPC custom resource.
 
 Manual verify:
 

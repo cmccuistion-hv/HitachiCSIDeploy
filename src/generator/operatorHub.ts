@@ -28,7 +28,7 @@ spec:
 `
 }
 
-export function generateOperatorSubscription(namespace: string): string {
+export function generateOperatorSubscription(namespace: string, source: string): string {
   return `apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -37,9 +37,26 @@ metadata:
 spec:
   channel: ${HSPC_OLM_CHANNEL}
   name: ${HSPC_OLM_PACKAGE}
-  source: ${HSPC_OLM_SOURCE}
+  source: ${source}
   sourceNamespace: ${HSPC_OLM_SOURCE_NS}
   installPlanApproval: Manual
+`
+}
+
+export function generateOperatorHubCatalogSource(opts: {
+  name: string
+  indexImage: string
+}): string {
+  return `apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ${opts.name}
+  namespace: ${HSPC_OLM_SOURCE_NS}
+spec:
+  sourceType: grpc
+  image: ${opts.indexImage}
+  displayName: ${JSON.stringify(`Mirrored ${opts.name} catalog`)}
+  publisher: ${JSON.stringify('Mirrored')}
 `
 }
 
@@ -50,6 +67,10 @@ export function generateOperatorHubFiles(state: WizardState): {
   description: string
 }[] {
   const ns = state.operatorNamespace
+  const source = state.airGapped
+    ? (state.offline?.catalogSourceName || '').trim() || HSPC_OLM_SOURCE
+    : HSPC_OLM_SOURCE
+  const indexImage = (state.offline?.catalogIndexImage || '').trim()
   return [
     {
       path: '02-driver/operatorhub-namespace.yaml',
@@ -61,10 +82,19 @@ export function generateOperatorHubFiles(state: WizardState): {
       content: generateOperatorGroup(ns),
       description: 'OperatorGroup targeting the operator namespace',
     },
+    ...(state.airGapped && indexImage
+      ? [
+          {
+            path: '02-driver/operatorhub-catalogsource.yaml',
+            content: generateOperatorHubCatalogSource({ name: source, indexImage }),
+            description: `CatalogSource for mirrored OperatorHub catalog (${source})`,
+          },
+        ]
+      : []),
     {
       path: '02-driver/operatorhub-subscription.yaml',
-      content: generateOperatorSubscription(ns),
-      description: 'Subscription (certified-operators, Manual update approval)',
+      content: generateOperatorSubscription(ns, source),
+      description: `Subscription (${source}, Manual update approval)`,
     },
   ]
 }
