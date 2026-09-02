@@ -531,8 +531,8 @@ export function PrerequisitesChecklistStep() {
               </li>
               <li>
                 <strong>Mirror (connected jump host)</strong>: mirror images (and on OpenShift/ROSA, catalogs)
-                into your private registry. The ZIP includes <code>mirror.sh</code> with the exact commands for
-                this package.
+                into your private registry. The ZIP includes <code>mirror.sh</code> (and{' '}
+                <code>hvcsi-offline-bundle.sh</code>) to orchestrate mirroring for this package.
               </li>
               <li>
                 <strong>Install (cluster admin host)</strong>: in the disconnected environment, unzip and run{' '}
@@ -880,7 +880,7 @@ function buildPrereqs(
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
-      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror.sh\` at the ZIP root — run \`chmod +x mirror.sh && ./mirror.sh\` to print the exact commands for this package (offline bundle \`-r\` paths, and any optional extras).${
+      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror.sh\` and \`hvcsi-offline-bundle.sh\` at the ZIP root — run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` on a connected jump host to mirror the enabled components.${
         mirrorExtrasRelevant
           ? ` If the package needs wizard-owned gap-fill images, run \`./mirror.sh extras\` to mirror them to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
           : ''

@@ -76,9 +76,9 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     steps.push({
       id: 'air-gapped',
       title: 'Mirror offline content',
-      body: `Before running install.sh, use \`mirror.sh\` at the ZIP root (\`chmod +x mirror.sh && ./mirror.sh\`). It prints the exact mirror commands (including \`hvcsi-offline-bundle.sh\` \`-r\` paths for enabled components${
-        mirrorExtrasRelevant ? ', plus an optional extras step (\`./mirror.sh extras\`)' : ''
-      }).${
+      body: `Before running install.sh, mirror images into your private registry from a connected jump host. The exported ZIP includes \`mirror.sh\` and \`hvcsi-offline-bundle.sh\` at the ZIP root — run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` to mirror the enabled components${
+        mirrorExtrasRelevant ? ', then optionally run \`./mirror.sh extras\` for wizard-owned gap-fill images' : ''
+      }.${
         plat.useOc
           ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.sh so OLM can discover the operator offline.'
           : ''

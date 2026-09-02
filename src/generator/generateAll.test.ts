@@ -7,13 +7,17 @@ import { filledReplicationState, filledState } from '../test/fixtures'
 import { fetchFirstAvailable } from '../services/versions'
 import { generateAll, snapshotClassOpts, type GeneratedFile } from './yaml'
 
+const HV_OFFLINE_BUNDLE_MOCK = ['#!/usr/bin/env bash', 'echo "mocked hvcsi-offline-bundle.sh"'].join('\n')
+
 vi.mock('../services/versions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/versions')>()
   return {
     ...actual,
-    fetchFirstAvailable: vi.fn(async () =>
-      ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n'),
-    ),
+    fetchFirstAvailable: vi.fn(async (urls: string[]) => {
+      const joined = (urls || []).join(' ')
+      if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
+      return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+    }),
   }
 })
 
@@ -82,7 +86,8 @@ const MONITORING_STACK_MOCK = [
 
 function mockMonitoringStackFetch() {
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
-    const joined = urls.join('')
+    const joined = urls.join(' ')
+    if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
     if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
     return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
   })
@@ -105,6 +110,7 @@ function mockHsppFetchWithImages() {
 
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
     const joined = urls.join(' ')
+    if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
     if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
     if (joined.includes('/hspp/') && joined.includes('/yaml/exporter.yaml')) return exporter
     if (joined.includes('/hspp/') && joined.includes('/yaml/scc-for-openshift.yaml')) {
@@ -131,7 +137,8 @@ const CONSOLE_PLUGIN_MOCK = [
 
 function mockConsolePluginFetch() {
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
-    const joined = urls.join('')
+    const joined = urls.join(' ')
+    if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
     if (joined.includes('consoleplugin')) return CONSOLE_PLUGIN_MOCK
     if (joined.includes('grafana-prometheus')) return MONITORING_STACK_MOCK
     return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
@@ -173,6 +180,7 @@ function mockOfflineDriverFetch(opts: { k8sMinor: number }) {
 
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
     const joined = urls.join(' ')
+    if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
     if (joined.includes('hspc-operator-namespace.yaml')) {
       return ['apiVersion: v1', 'kind: Namespace', 'metadata:', '  name: hspc-operator-system'].join('\n')
     }
@@ -200,6 +208,7 @@ function mockOfflineDriverFetch(opts: { k8sMinor: number }) {
 function mockOfflineHrpcFetch() {
   vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
     const joined = urls.join(' ')
+    if (joined.includes('hvcsi-offline-bundle.sh')) return HV_OFFLINE_BUNDLE_MOCK
     if (joined.includes('hspc-replication-operator-namespace.yaml')) {
       return ['apiVersion: v1', 'kind: Namespace', 'metadata:', '  name: hspc-replication-operator-system'].join(
         '\n',
@@ -341,6 +350,7 @@ describe('generateAll package matrix', () => {
     )
     expect(fileAt(files, '06-quickstart/pod.yaml').content).toContain('image: busybox:1.36')
     expect(generatedPaths).not.toContain('mirror.sh')
+    expect(generatedPaths).not.toContain('hvcsi-offline-bundle.sh')
     expect(installScript).toContain('Multipath DaemonSet (hosted/HCP)')
     expect(installScript).not.toContain('wait_mcp_healthy')
     expect(installScript).not.toContain('"$CMD" get mcp')
@@ -359,6 +369,7 @@ describe('generateAll package matrix', () => {
         },
       }),
     )
+    expect(paths(files)).toContain('hvcsi-offline-bundle.sh')
 
     const ds = fileAt(files, '00-prereq/hitachi-csi-multipath-daemonset.yaml').content
     expect(ds).toContain('image: registry.local/hitachi/alpine:3.19')
@@ -374,6 +385,7 @@ describe('generateAll package matrix', () => {
     const mirror = fileAt(files, 'mirror.sh').content
     expect(mirror).toContain('Configure → Mirror → Install')
     expect(mirror).toContain('hvcsi-offline-bundle.sh')
+    expect(mirror).toContain('git clone')
     expect(mirror).toContain('EXTRAS_REGISTRY_BASE="registry.local/hitachi"')
     expect(mirror).toContain('EXTRAS_IMAGES=(')
     expect(mirror).toContain('"alpine:3.19"')
@@ -396,6 +408,7 @@ describe('generateAll package matrix', () => {
     )
     const generatedPaths = paths(files)
     expect(generatedPaths).toContain('mirror.sh')
+    expect(generatedPaths).toContain('hvcsi-offline-bundle.sh')
 
     const plan = fileAt(files, 'mirror.sh').content
     expect(plan).toContain('Configure → Mirror → Install')
@@ -426,6 +439,7 @@ describe('generateAll package matrix', () => {
     )
     const generatedPaths = paths(files)
     expect(generatedPaths).toContain('mirror.sh')
+    expect(generatedPaths).toContain('hvcsi-offline-bundle.sh')
     expect(generatedPaths.some((p) => p.startsWith('primary/') && p.includes('mirror.'))).toBe(
       false,
     )

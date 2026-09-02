@@ -34,6 +34,7 @@ import {
 } from './remoteKubeconfig'
 import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, splitMonitoringStack } from './monitoringStack'
 import { patchConsolePluginManifest } from './consolePlugin'
+import { REPO } from '../catalog/components'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
 import { generateMirrorScript } from './mirror'
@@ -93,6 +94,38 @@ function mirrorScriptFile(state: WizardState): GeneratedFile | null {
     path: 'mirror.sh',
     content: generateMirrorScript(state, { extrasImages }),
     description: 'Air-gapped mirror entrypoint (plan + optional wizard-owned extras)',
+    group: 'scripts',
+  }
+}
+
+async function hvOfflineBundleScriptFile(state: WizardState): Promise<GeneratedFile | null> {
+  if (!state.airGapped) return null
+  if (!String(state.offline?.registryBase || '').trim()) return null
+
+  const url = `${REPO.rawBase}/hvcsi-offline-bundle.sh`
+  const raw = await fetchFirstAvailable([url])
+  if (raw) {
+    return {
+      path: 'hvcsi-offline-bundle.sh',
+      content: raw,
+      description: 'Hitachi CSI offline bundle helper (from csi-operator-hitachi)',
+      group: 'scripts',
+    }
+  }
+
+  // Keep mirror.sh usable even if export-time fetch fails: it can still clone and use the repo’s copy.
+  return {
+    path: 'hvcsi-offline-bundle.sh',
+    content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# WIZARD_OFFLINE_BUNDLE_PLACEHOLDER=1
+
+echo "ERROR: This ZIP could not embed hvcsi-offline-bundle.sh at export time." >&2
+echo "Run ./mirror.sh, which will clone csi-operator-hitachi and use the script from that checkout." >&2
+exit 1
+`,
+    description: 'Offline bundle helper (placeholder when fetch failed)',
     group: 'scripts',
   }
 }
@@ -2142,7 +2175,11 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
   if (!state.components.replication) {
     const files = await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
     const mirror = mirrorScriptFile(state)
-    if (mirror) files.push(mirror)
+    if (mirror) {
+      files.push(mirror)
+      const offline = await hvOfflineBundleScriptFile(state)
+      if (offline) files.push(offline)
+    }
     return files
   }
 
@@ -2165,9 +2202,11 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     drScNameOverride: drScName,
   })
   const mirror = mirrorScriptFile(ensured)
+  const offline = mirror ? await hvOfflineBundleScriptFile(ensured) : null
 
   const out: GeneratedFile[] = [
     ...(mirror ? [mirror] : []),
+    ...(offline ? [offline] : []),
     ...prefixFiles(primaryFiles, 'primary'),
     ...prefixFiles(secondaryFiles, 'secondary'),
   ]
