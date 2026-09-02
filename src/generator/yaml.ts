@@ -59,6 +59,78 @@ export interface GeneratedFile {
   group: 'prereq' | 'driver' | 'storage' | 'replication' | 'metrics' | 'console' | 'quickstart' | 'scripts'
 }
 
+const WIZARD_EXTRAS_ALPINE = 'alpine:3.19'
+const WIZARD_EXTRAS_BUSYBOX = 'busybox:1.36'
+const WIZARD_EXTRAS_PAUSE = 'registry.k8s.io/pause:3.9'
+
+function wizardOwnedExtrasImagesUsedByPackage(state: WizardState): string[] {
+  const plat = PLATFORMS[state.platform]
+  const out = new Set<string>()
+
+  if (state.multipath.enabled && plat.useOc && state.multipath.includeDaemonSet) {
+    out.add(WIZARD_EXTRAS_ALPINE)
+    out.add(WIZARD_EXTRAS_PAUSE)
+  }
+
+  if (state.storageClassesEnabled) {
+    if (state.quickstart.volumeMode === 'Block') out.add(WIZARD_EXTRAS_PAUSE)
+    else out.add(WIZARD_EXTRAS_BUSYBOX)
+  }
+
+  return [...out]
+}
+
+function generateMirrorExtrasScript(opts: {
+  registryBase: string
+  images: string[]
+}): string {
+  const base = (opts.registryBase || '').trim().replace(/\/+$/, '')
+  const images = opts.images
+  const lines: string[] = [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    '',
+    '# mirror-extras.sh — wizard-owned images (gap-fill)',
+    `# Wizard: ${wizardVersion()}`,
+    '# Note: Hitachi hvcsi-offline-bundle.sh does not mirror these images.',
+    `REGISTRY_BASE=${JSON.stringify(base)}`,
+    '',
+    'if [[ -z "$REGISTRY_BASE" ]]; then',
+    '  echo "ERROR: REGISTRY_BASE is empty." >&2',
+    '  exit 1',
+    'fi',
+    'command -v skopeo >/dev/null 2>&1 || { echo "ERROR: skopeo is required." >&2; exit 1; }',
+    '',
+    'echo "==> Mirroring wizard-owned images to $REGISTRY_BASE"',
+    '',
+  ]
+
+  for (const src of images) {
+    const flattened = src.split('/').pop() || src
+    lines.push(`skopeo copy docker://${src} docker://${base}/${flattened}`)
+  }
+
+  lines.push('')
+  return lines.join('\n')
+}
+
+function mirrorExtrasFile(state: WizardState): GeneratedFile | null {
+  if (!state.airGapped) return null
+  const paths = offlineRegistryPaths(state)
+  const base = (paths.extras || '').trim()
+  if (!base) return null
+
+  const images = wizardOwnedExtrasImagesUsedByPackage(state)
+  if (!images.length) return null
+
+  return {
+    path: 'mirror-extras.sh',
+    content: generateMirrorExtrasScript({ registryBase: base, images }),
+    description: 'Mirror wizard-owned images to private registry (extras path)',
+    group: 'scripts',
+  }
+}
+
 function b64(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))
 }
@@ -465,7 +537,13 @@ spec:
 `
 }
 
-export function generateTestPod(qs: QuickstartConfig): string {
+export function generateTestPod(
+  qs: QuickstartConfig,
+  opts?: { registryPath?: string },
+): string {
+  const registry = (opts?.registryPath || '').trim()
+  const pauseImage = registry ? `${registry}/pause:3.9` : 'registry.k8s.io/pause:3.9'
+  const busyboxImage = registry ? `${registry}/busybox:1.36` : 'busybox:1.36'
   if (qs.volumeMode === 'Block') {
     return `apiVersion: v1
 kind: Pod
@@ -474,7 +552,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: registry.k8s.io/pause:3.9
+      image: ${pauseImage}
       volumeDevices:
         - name: data
           devicePath: /dev/xvda
@@ -491,7 +569,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: busybox:1.36
+      image: ${busyboxImage}
       command: ["sh", "-c", "echo Hitachi CSI test volume OK > /data/hello.txt && sleep 3600"]
       volumeMounts:
         - name: data
@@ -1335,6 +1413,10 @@ async function generateAllSingleSite(
 ): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = []
   const plat = PLATFORMS[state.platform]
+  const extrasRegistry =
+    state.airGapped && Boolean((state.offline?.registryBase || '').trim())
+      ? offlineRegistryPaths(state).extras
+      : ''
 
   // Multipath prerequisites
   if (state.multipath.enabled) {
@@ -1388,6 +1470,7 @@ After apply (either path), wait until pools are healthy before CSI Driver instal
         name: state.multipath.machineConfigName,
         conf: state.multipath.customConf || undefined,
         enableIscsi: state.connectionType === 'iscsi',
+        registryPath: extrasRegistry || undefined,
       })) {
         files.push({ ...ds, group: 'prereq' })
       }
@@ -2097,7 +2180,7 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
     })
     files.push({
       path: '06-quickstart/pod.yaml',
-      content: generateTestPod(state.quickstart),
+      content: generateTestPod(state.quickstart, { registryPath: extrasRegistry || undefined }),
       description: 'Test Pod mounting the PVC',
       group: 'quickstart',
     })
@@ -2122,7 +2205,10 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
 
 export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
   if (!state.components.replication) {
-    return await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
+    const files = await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
+    const mirror = mirrorExtrasFile(state)
+    if (mirror) files.push(mirror)
+    return files
   }
 
   const ensured = ensureSitesForReplication(state)
@@ -2143,6 +2229,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     remoteKubeconfigSite: 'secondary',
     drScNameOverride: drScName,
   })
+  const mirror = mirrorExtrasFile(ensured)
 
   const out: GeneratedFile[] = [
     {
@@ -2151,6 +2238,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
       description: 'Two-site package overview and install order',
       group: 'scripts',
     },
+    ...(mirror ? [mirror] : []),
     ...prefixFiles(primaryFiles, 'primary'),
     ...prefixFiles(secondaryFiles, 'secondary'),
   ]

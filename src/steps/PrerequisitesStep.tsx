@@ -16,6 +16,7 @@ import {
   getMultipathConf,
 } from '../generator/multipath'
 import { generateMultipathDaemonSetYaml } from '../generator/multipathDaemonSet'
+import { offlineRegistryPaths } from '../generator/offline'
 import { AdvancedSection } from '../components/AdvancedSection'
 import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
@@ -33,6 +34,10 @@ export function PrerequisitesMultipathStep() {
   const showMachineConfig = mp.enabled && mp.includeMachineConfig
   const showDaemonSet = mp.enabled && mp.includeDaemonSet
   const enableIscsi = state.connectionType === 'iscsi'
+  const extrasRegistry =
+    state.airGapped && Boolean(state.offline?.registryBase?.trim())
+      ? offlineRegistryPaths(state).extras
+      : ''
 
   const mcPreview =
     showMachineConfig && mp.machineConfigRole !== 'all'
@@ -56,6 +61,7 @@ export function PrerequisitesMultipathStep() {
         name: mp.machineConfigName,
         conf: mp.customConf || undefined,
         enableIscsi,
+        registryPath: extrasRegistry || undefined,
       })
     : ''
 

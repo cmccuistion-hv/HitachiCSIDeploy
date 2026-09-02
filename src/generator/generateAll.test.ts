@@ -333,9 +333,81 @@ describe('generateAll package matrix', () => {
 
     expect(generatedPaths.some((path) => path.startsWith('00-prereq/') && path.includes('daemonset'))).toBe(true)
     expect(generatedPaths.some((path) => path.startsWith('00-prereq/') && path.includes('machineconfig'))).toBe(false)
+    expect(fileAt(files, '00-prereq/hitachi-csi-multipath-daemonset.yaml').content).toContain(
+      'image: alpine:3.19',
+    )
+    expect(fileAt(files, '00-prereq/hitachi-csi-multipath-daemonset.yaml').content).toContain(
+      'image: registry.k8s.io/pause:3.9',
+    )
+    expect(fileAt(files, '06-quickstart/pod.yaml').content).toContain('image: busybox:1.36')
+    expect(generatedPaths).not.toContain('mirror-extras.sh')
     expect(installScript).toContain('Multipath DaemonSet (hosted/HCP)')
     expect(installScript).not.toContain('wait_mcp_healthy')
     expect(installScript).not.toContain('"$CMD" get mcp')
+  })
+
+  it('rewrites wizard-owned extras images and emits mirror-extras.sh when air-gapped (Filesystem quickstart)', async () => {
+    const files = await generateAll(
+      filledState({
+        openshiftTopology: 'hosted',
+        multipath: hostedMultipath,
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+
+    const ds = fileAt(files, '00-prereq/hitachi-csi-multipath-daemonset.yaml').content
+    expect(ds).toContain('image: registry.local/hitachi/alpine:3.19')
+    expect(ds).toContain('image: registry.local/hitachi/pause:3.9')
+    expect(ds).not.toContain('image: alpine:3.19')
+    expect(ds).not.toContain('image: registry.k8s.io/pause:3.9')
+
+    const pod = fileAt(files, '06-quickstart/pod.yaml').content
+    expect(pod).toContain('image: registry.local/hitachi/busybox:1.36')
+    expect(pod).not.toContain('image: busybox:1.36')
+    expect(pod).not.toContain('image: registry.k8s.io/pause:3.9')
+
+    const mirror = fileAt(files, 'mirror-extras.sh').content
+    expect(mirror).toContain(
+      'skopeo copy docker://alpine:3.19 docker://registry.local/hitachi/alpine:3.19',
+    )
+    expect(mirror).toContain(
+      'skopeo copy docker://registry.k8s.io/pause:3.9 docker://registry.local/hitachi/pause:3.9',
+    )
+    expect(mirror).toContain(
+      'skopeo copy docker://busybox:1.36 docker://registry.local/hitachi/busybox:1.36',
+    )
+  })
+
+  it('emits mirror-extras.sh for only the used images (Block quickstart uses pause, not busybox)', async () => {
+    const files = await generateAll(
+      filledState({
+        openshiftTopology: 'hosted',
+        multipath: hostedMultipath,
+        quickstart: { volumeMode: 'Block' },
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+
+    const pod = fileAt(files, '06-quickstart/pod.yaml').content
+    expect(pod).toContain('image: registry.local/hitachi/pause:3.9')
+    expect(pod).not.toContain('busybox:1.36')
+    expect(pod).not.toContain('registry.k8s.io/pause:3.9')
+
+    const mirror = fileAt(files, 'mirror-extras.sh').content
+    expect(mirror).toContain(
+      'skopeo copy docker://registry.k8s.io/pause:3.9 docker://registry.local/hitachi/pause:3.9',
+    )
+    expect(mirror).not.toContain('busybox:1.36')
   })
 
   it('packages ROSA with hosted DaemonSet multipath by default fixture override', async () => {

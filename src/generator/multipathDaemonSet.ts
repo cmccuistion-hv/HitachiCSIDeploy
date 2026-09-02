@@ -32,9 +32,14 @@ export function generateMultipathDaemonSetYaml(opts: {
   namespace?: string
   conf?: string
   enableIscsi: boolean
+  /** Optional air-gapped registry base (extras); flattened image layout */
+  registryPath?: string
 }): string {
   const { name, namespace } = expectedMultipathDaemonSet(opts)
   const conf = getMultipathConf(opts.conf).replace(/\s+$/, '\n')
+  const registry = (opts.registryPath || '').trim()
+  const initImage = registry ? `${registry}/alpine:3.19` : 'alpine:3.19'
+  const pauseImage = registry ? `${registry}/pause:3.9` : 'registry.k8s.io/pause:3.9'
 
   const iscsiBits = opts.enableIscsi
     ? `
@@ -100,7 +105,7 @@ spec:
         key: node-role.kubernetes.io/control-plane
       initContainers:
       - name: init-node
-        image: alpine:3.19
+        image: ${initImage}
         command:
         - nsenter
         - --mount=/proc/1/ns/mnt
@@ -116,7 +121,7 @@ ${indentYamlBlock(startupScript, 12)}
           privileged: true
       containers:
       - name: pause
-        image: registry.k8s.io/pause:3.9
+        image: ${pauseImage}
 `
 }
 
@@ -125,6 +130,7 @@ export function generateMultipathDaemonSetFiles(opts: {
   namespace?: string
   conf?: string
   enableIscsi: boolean
+  registryPath?: string
 }): { path: string; content: string; description: string }[] {
   const name = opts.name || DEFAULT_NAME
   return [
