@@ -49,6 +49,25 @@ export function ExportStep() {
   const exportFix = storageExportFix ?? consolePromFix ?? airGappedFix
   const nextSteps = buildNextSteps(state)
 
+  const offlineReplicationRequired =
+    state.components.replication && state.airGapped && Boolean(state.offline?.registryBase?.trim())
+  const dualSite = files.some((f) => f.path.startsWith('primary/')) && files.some((f) => f.path.startsWith('secondary/'))
+  const repPrefix = dualSite ? ['primary', 'secondary'] : ['']
+  const requiredReplicationFiles = offlineReplicationRequired
+    ? repPrefix.flatMap((p) => {
+        const pre = p ? `${p}/` : ''
+        return [
+          `${pre}03-replication/hspc-replication-operator-namespace.yaml`,
+          `${pre}03-replication/hspc-replication-operator.yaml`,
+          `${pre}03-replication/cert-manager.yaml`,
+          `${pre}03-replication/dr-operator-install.yaml`,
+        ]
+      })
+    : []
+  const missingOfflineReplication = requiredReplicationFiles.filter(
+    (path) => !files.some((f) => f.path === path),
+  )
+
   const downloadZip = async () => {
     setDownloading(true)
     try {
@@ -133,6 +152,11 @@ export function ExportStep() {
               <span>{exportFix.message}</span>
               <span className="callout-go-cta">{wizardFixCta(exportFix)}</span>
             </button>
+          </Callout>
+        ) : missingOfflineReplication.length ? (
+          <Callout variant="warn">
+            WARNING: could not fetch some upstream Replication operator/DR YAML; re-export when GitHub is
+            reachable.
           </Callout>
         ) : (
           <Callout variant="ok">

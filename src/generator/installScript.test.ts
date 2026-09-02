@@ -96,6 +96,32 @@ describe('generateInstallScript', () => {
     execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
   })
 
+  it('air-gapped Replication applies packaged operator YAML and does not use apply_url fallbacks', () => {
+    const script = generateInstallScript(
+      filledReplicationState({
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+      [
+        yamlFile('03-replication/hspc-replication-operator-namespace.yaml', 'replication'),
+        yamlFile('03-replication/hspc-replication-operator.yaml', 'replication'),
+        yamlFile('03-replication/cert-manager.yaml', 'replication'),
+        yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+      ],
+    )
+
+    expect(script).toContain('apply "03-replication/hspc-replication-operator-namespace.yaml"')
+    expect(script).toContain('apply "03-replication/hspc-replication-operator.yaml"')
+    expect(script).toContain('apply "03-replication/cert-manager.yaml"')
+    expect(script).toContain('apply "03-replication/dr-operator-install.yaml"')
+    expect(script).not.toContain('raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('sets DR operator fsGroup from the OpenShift namespace supplemental-groups range before apply', () => {
     const script = generateInstallScript(filledReplicationState(), [
       yamlFile('03-replication/cert-manager.yaml', 'replication'),

@@ -1016,6 +1016,7 @@ export function generateInstallScript(
   }
 
   if (state.components.replication) {
+    const offlineHrpcEnabled = state.airGapped && Boolean((state.offline?.registryBase || '').trim())
     const hrpcBase = `https://raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/${state.versions.replication}`
     const drScName =
       opts?.drScNameOverride?.trim() ||
@@ -1024,15 +1025,40 @@ export function generateInstallScript(
     lines.push(
       '',
       'echo "==> Replication operator + Disaster Recovery (automatic)"',
-      `apply_url "${hrpcBase}/yaml/hspc-replication-operator-namespace.yaml"`,
-      `apply_url "${hrpcBase}/yaml/hspc-replication-operator.yaml"`,
     )
+    if (offlineHrpcEnabled) {
+      lines.push(
+        'echo "==> Air-gapped: applying packaged Replication YAML only"',
+        'require_file() {',
+        '  local f="$1"',
+        '  if [[ ! -f "$f" ]]; then',
+        '    echo "ERROR: Missing required packaged file: $f" >&2',
+        '    echo "Re-export when GitHub is reachable so the wizard can fetch upstream templates and rewrite images for your private registry." >&2',
+        '    exit 1',
+        '  fi',
+        '}',
+        'require_file "03-replication/hspc-replication-operator-namespace.yaml"',
+        'require_file "03-replication/hspc-replication-operator.yaml"',
+        'require_file "03-replication/cert-manager.yaml"',
+        'require_file "03-replication/dr-operator-install.yaml"',
+        'apply "03-replication/hspc-replication-operator-namespace.yaml"',
+        'apply "03-replication/hspc-replication-operator.yaml"',
+      )
+    } else {
+      lines.push(
+        `apply_url "${hrpcBase}/yaml/hspc-replication-operator-namespace.yaml"`,
+        `apply_url "${hrpcBase}/yaml/hspc-replication-operator.yaml"`,
+      )
+    }
     if (files.some((f) => f.path === '03-replication/storage-secrets.yaml')) {
       lines.push('apply "03-replication/storage-secrets.yaml"')
     }
     const hasLocalCert = files.some((f) => f.path === '03-replication/cert-manager.yaml')
     const hasLocalDr = files.some((f) => f.path === '03-replication/dr-operator-install.yaml')
-    if (hasLocalCert) {
+    if (offlineHrpcEnabled) {
+      // require_file() is declared above in the offline block
+      lines.push('apply "03-replication/cert-manager.yaml"')
+    } else if (hasLocalCert) {
       lines.push('apply "03-replication/cert-manager.yaml"')
     } else {
       lines.push(`apply_url "${hrpcBase}/dr-operator/yaml/cert-manager.yaml"`)
@@ -1098,7 +1124,7 @@ export function generateInstallScript(
         '',
       )
     }
-    if (hasLocalDr) {
+    if (offlineHrpcEnabled || hasLocalDr) {
       if (plat.useOc) {
         lines.push(
           `echo "==> OpenShift: set DR operator fsGroup from namespace ${JSON.stringify(state.replication.namespace)}"`,
@@ -1658,19 +1684,50 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
   // Replication
   if (state.components.replication) {
     const hrpcPaths = templatePaths('hrpc', state.versions.replication)
+    const offlineEnabled = state.airGapped && Boolean(state.offline?.registryBase?.trim())
+    const offlineRegistry = offlineEnabled ? offlineRegistryPaths(state).hrpc : ''
     const drScName =
       opts?.drScNameOverride?.trim() ||
       (state.storageClassesEnabled && resolvedCurrentStorageClassName(state)) ||
       'hitachi-csi'
 
+    let fetchFailed = false
+    if (offlineEnabled && offlineRegistry) {
+      const opNsRaw = await fetchFirstAvailable(hrpcPaths.operatorNs ?? [])
+      if (opNsRaw) {
+        files.push({
+          path: '03-replication/hspc-replication-operator-namespace.yaml',
+          content: rewriteImagesToRegistry(opNsRaw, offlineRegistry),
+          description: 'Replication operator namespace (offline package)',
+          group: 'replication',
+        })
+      } else {
+        fetchFailed = true
+      }
+
+      const opRaw = await fetchFirstAvailable(hrpcPaths.operator ?? [])
+      if (opRaw) {
+        files.push({
+          path: '03-replication/hspc-replication-operator.yaml',
+          content: rewriteImagesToRegistry(opRaw, offlineRegistry),
+          description: 'Replication operator manifests (offline package; images rewritten to private registry)',
+          group: 'replication',
+        })
+      } else {
+        fetchFailed = true
+      }
+    }
+
     const certRaw = await fetchFirstAvailable(hrpcPaths.certManager ?? [])
     if (certRaw) {
       files.push({
         path: '03-replication/cert-manager.yaml',
-        content: certRaw,
+        content: offlineEnabled && offlineRegistry ? rewriteImagesToRegistry(certRaw, offlineRegistry) : certRaw,
         description: 'cert-manager (required by Disaster Recovery operator)',
         group: 'replication',
       })
+    } else if (offlineEnabled && offlineRegistry) {
+      fetchFailed = true
     }
 
     const drRaw = await fetchFirstAvailable(hrpcPaths.drInstall ?? [])
@@ -1679,10 +1736,12 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
       const patched = drRaw.replaceAll('<storage-class-name>', drScName)
       files.push({
         path: '03-replication/dr-operator-install.yaml',
-        content: patched,
+        content: offlineEnabled && offlineRegistry ? rewriteImagesToRegistry(patched, offlineRegistry) : patched,
         description: `Disaster Recovery operator install (PVC uses StorageClass ${drScName})`,
         group: 'replication',
       })
+    } else if (offlineEnabled && offlineRegistry) {
+      fetchFailed = true
     }
 
     const remoteSite = opts?.remoteKubeconfigSite ?? 'both'
@@ -1723,7 +1782,13 @@ export KUBECONFIG_S=/path/to/secondary-kubeconfig
 
 Details: \`remote-kubeconfig-notes.md\`.
 
-${certRaw && drRaw ? '' : '\nWARNING: could not fetch some upstream Replication/DR YAML; re-export when GitHub is reachable.\n'}
+${
+  fetchFailed
+    ? '\nWARNING: could not fetch some upstream Replication operator/DR YAML; re-export when GitHub is reachable.\n'
+    : certRaw && drRaw
+      ? ''
+      : '\nWARNING: could not fetch some upstream Replication/DR YAML; re-export when GitHub is reachable.\n'
+}
 `,
       description: 'Replication and DR Operator install notes',
       group: 'replication',

@@ -138,6 +138,68 @@ function mockOfflineDriverFetch(opts: { k8sMinor: number }) {
   })
 }
 
+function mockOfflineHrpcFetch() {
+  vi.mocked(fetchFirstAvailable).mockImplementation(async (urls) => {
+    const joined = urls.join(' ')
+    if (joined.includes('hspc-replication-operator-namespace.yaml')) {
+      return ['apiVersion: v1', 'kind: Namespace', 'metadata:', '  name: hspc-replication-operator-system'].join(
+        '\n',
+      )
+    }
+    if (joined.includes('hspc-replication-operator.yaml')) {
+      return [
+        'apiVersion: apps/v1',
+        'kind: Deployment',
+        'metadata:',
+        '  name: hspc-replication-operator-controller-manager',
+        'spec:',
+        '  template:',
+        '    spec:',
+        '      containers:',
+        '        - name: manager',
+        '          image: quay.io/hitachi/hspc-replication-operator:v3.18.3',
+      ].join('\n')
+    }
+    if (joined.includes('cert-manager.yaml')) {
+      return [
+        'apiVersion: apps/v1',
+        'kind: Deployment',
+        'metadata:',
+        '  name: cert-manager',
+        '  namespace: cert-manager',
+        'spec:',
+        '  template:',
+        '    spec:',
+        '      containers:',
+        '        - name: controller',
+        '          image: quay.io/jetstack/cert-manager-controller:v1.15.0',
+      ].join('\n')
+    }
+    if (joined.includes('dr-operator-install.yaml')) {
+      return [
+        'apiVersion: v1',
+        'kind: PersistentVolumeClaim',
+        'metadata:',
+        '  name: hspc-dr-operator-pvc',
+        'spec:',
+        '  storageClassName: <storage-class-name>',
+        '---',
+        'apiVersion: apps/v1',
+        'kind: Deployment',
+        'metadata:',
+        '  name: dr-operator',
+        'spec:',
+        '  template:',
+        '    spec:',
+        '      containers:',
+        '        - name: dr-operator',
+        '          image: quay.io/hitachi/dr-operator:v0.1.0',
+      ].join('\n')
+    }
+    return ['apiVersion: v1', 'kind: ConfigMap', 'metadata:', '  name: mocked-upstream'].join('\n')
+  })
+}
+
 const confMultipath: MultipathConfig = {
   enabled: true,
   includeConf: true,
@@ -358,6 +420,55 @@ describe('generateAll package matrix', () => {
     expect(nsIdx).toBeGreaterThan(-1)
     expect(opIdx).toBeGreaterThan(nsIdx)
     expect(crIdx).toBeGreaterThan(opIdx)
+  })
+
+  it('packages air-gapped Replication operator YAML with image rewrites and local-only apply paths', async () => {
+    mockOfflineHrpcFetch()
+    const files = await generateAll(
+      filledReplicationState({
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).toEqual(
+      expect.arrayContaining([
+        'primary/03-replication/hspc-replication-operator-namespace.yaml',
+        'primary/03-replication/hspc-replication-operator.yaml',
+        'primary/03-replication/cert-manager.yaml',
+        'primary/03-replication/dr-operator-install.yaml',
+        'primary/install.sh',
+        'secondary/03-replication/hspc-replication-operator-namespace.yaml',
+        'secondary/03-replication/hspc-replication-operator.yaml',
+        'secondary/03-replication/cert-manager.yaml',
+        'secondary/03-replication/dr-operator-install.yaml',
+        'secondary/install.sh',
+      ]),
+    )
+
+    const op = fileAt(files, 'primary/03-replication/hspc-replication-operator.yaml').content
+    expect(op).toContain('registry.local/hitachi/hrpc/hspc-replication-operator:v3.18.3')
+    expect(op).not.toContain('quay.io/')
+
+    const cert = fileAt(files, 'primary/03-replication/cert-manager.yaml').content
+    expect(cert).toContain('registry.local/hitachi/hrpc/cert-manager-controller:v1.15.0')
+    expect(cert).not.toContain('quay.io/')
+
+    const dr = fileAt(files, 'primary/03-replication/dr-operator-install.yaml').content
+    expect(dr).not.toContain('<storage-class-name>')
+    expect(dr).toContain('registry.local/hitachi/hrpc/dr-operator:v0.1.0')
+
+    const script = fileAt(files, 'primary/install.sh').content
+    expect(script).toContain('apply "03-replication/hspc-replication-operator-namespace.yaml"')
+    expect(script).toContain('apply "03-replication/hspc-replication-operator.yaml"')
+    expect(script).toContain('apply "03-replication/cert-manager.yaml"')
+    expect(script).toContain('apply "03-replication/dr-operator-install.yaml"')
+    expect(script).not.toContain('raw.githubusercontent.com/hitachi-vantara/csi-operator-hitachi/main/hrpc/')
   })
 
   it('does not populate the HSPC CR spec on air-gapped OpenShift (OperatorHub path)', async () => {
