@@ -9,7 +9,7 @@ import { nextUniqueName } from './uniqueName'
 /** Blocking issue plus where the wizard should take the user to fix it. */
 export type WizardFix = {
   message: string
-  stepId: 'storage' | 'storageclasses' | 'replication' | 'console'
+  stepId: 'platform' | 'storage' | 'storageclasses' | 'replication' | 'console'
   site?: SiteId
 }
 
@@ -780,6 +780,15 @@ export function storageArtifactsContinueInvalidReason(state: WizardState): strin
   return storageArtifactsContinueInvalidFix(state)?.message ?? null
 }
 
+export function airGappedRegistryInvalidFix(state: WizardState): WizardFix | null {
+  if (!state.airGapped) return null
+  if (t(state.offline?.registryBase)) return null
+  return wizardFix(
+    'Set a private registry base on the Platform step for air-gapped installs.',
+    'platform',
+  )
+}
+
 export function consolePluginPrometheusWiringInvalidFix(state: WizardState): WizardFix | null {
   if (!state.components.consolePlugin) return null
   if (!state.components.replication) return null
@@ -798,6 +807,7 @@ export function consolePluginPrometheusWiringInvalidFix(state: WizardState): Wiz
 }
 
 export function wizardFixCta(fix: WizardFix): string {
+  if (fix.stepId === 'platform') return 'Open Platform'
   if (fix.stepId === 'console') return 'Open Console Plugin'
   if (fix.site === 'secondary') return 'Open Secondary site'
   if (fix.site === 'primary') return 'Open Primary site'

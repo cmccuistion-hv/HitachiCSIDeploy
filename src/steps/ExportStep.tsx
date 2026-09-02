@@ -4,6 +4,7 @@ import { DOCS, REPO } from '../catalog/components'
 import { HELP } from '../catalog/help'
 import { PLATFORMS } from '../catalog/platforms'
 import {
+  airGappedRegistryInvalidFix,
   consolePluginPrometheusWiringInvalidFix,
   storageArtifactsInvalidFix,
   storageArtifactsValid,
@@ -43,8 +44,9 @@ export function ExportStep() {
   const storageExportBlocked = !storageArtifactsValid(state)
   const storageExportFix = storageExportBlocked ? storageArtifactsInvalidFix(state) : null
   const consolePromFix = consolePluginPrometheusWiringInvalidFix(state)
-  const exportBlocked = storageExportBlocked || consolePromFix !== null
-  const exportFix = storageExportFix ?? consolePromFix
+  const airGappedFix = airGappedRegistryInvalidFix(state)
+  const exportBlocked = storageExportBlocked || consolePromFix !== null || airGappedFix !== null
+  const exportFix = storageExportFix ?? consolePromFix ?? airGappedFix
   const nextSteps = buildNextSteps(state)
 
   const downloadZip = async () => {

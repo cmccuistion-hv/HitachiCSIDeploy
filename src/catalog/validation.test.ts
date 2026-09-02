@@ -9,6 +9,7 @@ import { ensureSitesForReplication } from './sites'
 import { createDefaultState, type WizardState } from './types'
 import { withSiteMetrics } from './metrics'
 import {
+  airGappedRegistryInvalidFix,
   consolePluginPrometheusWiringInvalidFix,
   effectiveSerialNumber,
   hrpcResourceGroupIdReason,
@@ -525,6 +526,55 @@ describe('effectiveSerialNumber', () => {
         systems,
       ),
     ).toBe('')
+  })
+})
+
+describe('air-gapped registry export validation', () => {
+  const AIR_GAPPED_REGISTRY_MSG =
+    'Set a private registry base on the Platform step for air-gapped installs.'
+
+  it('blocks export when air-gapped and registry base is empty', () => {
+    const state = filledState({
+      airGapped: true,
+      offline: { ...createDefaultState().offline, registryBase: '' },
+    })
+    const fix = airGappedRegistryInvalidFix(state)
+    expect(fix).not.toBeNull()
+    expect(fix?.message).toBe(AIR_GAPPED_REGISTRY_MSG)
+    expect(fix?.stepId).toBe('platform')
+  })
+
+  it('blocks export when air-gapped and registry base is whitespace', () => {
+    const state = filledState({
+      airGapped: true,
+      offline: { ...createDefaultState().offline, registryBase: '   ' },
+    })
+    expect(airGappedRegistryInvalidFix(state)?.message).toBe(AIR_GAPPED_REGISTRY_MSG)
+  })
+
+  it('does not block export when air-gapped and registry base is set', () => {
+    const state = filledState({
+      airGapped: true,
+      offline: { ...createDefaultState().offline, registryBase: 'mirror.local:5000/csi' },
+    })
+    expect(airGappedRegistryInvalidFix(state)).toBeNull()
+  })
+
+  it('does not block export when not air-gapped even if registry base is empty', () => {
+    const state = filledState({
+      airGapped: false,
+      offline: { ...createDefaultState().offline, registryBase: '' },
+    })
+    expect(airGappedRegistryInvalidFix(state)).toBeNull()
+  })
+
+  it('does not block Continue when air-gapped without registry base', () => {
+    const state = filledState({
+      airGapped: true,
+      offline: { ...createDefaultState().offline, registryBase: '' },
+    })
+    expect(storageSystemsValidForContinue(state)).toBe(true)
+    expect(storageArtifactsValidForContinue(state)).toBe(true)
   })
 })
 
