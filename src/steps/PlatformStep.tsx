@@ -13,7 +13,9 @@ import {
 } from '../catalog/platforms'
 import type { MultipathConfig } from '../catalog/types'
 import { HELP } from '../catalog/help'
+import { offlineRegistryPaths } from '../generator/offline'
 import { useWizard } from '../state/WizardContext'
+import { AdvancedSection } from '../components/AdvancedSection'
 import { Callout, ChoiceCard, Field, Section } from '../components/ui'
 
 function applyMultipathSideEffects(
@@ -235,6 +237,17 @@ export function PlatformStep() {
 
 function ToggleAirGapped() {
   const { state, patch } = useWizard()
+  const plat = PLATFORMS[state.platform]
+  const derivedPaths = offlineRegistryPaths({
+    offline: { registryBase: state.offline.registryBase },
+  })
+  const paths = offlineRegistryPaths(state)
+  const baseSet = Boolean(state.offline.registryBase.trim())
+
+  const updateOffline = (partial: Partial<typeof state.offline>) => {
+    patch({ offline: { ...state.offline, ...partial } })
+  }
+
   return (
     <>
       <label className="toggle-row">
@@ -252,10 +265,134 @@ function ToggleAirGapped() {
         </div>
       </label>
       {state.airGapped && (
-        <Callout variant="warn">
-          Mirror <code>registry.hitachivantara.com</code> and CSI sidecar images. On OpenShift, mirror the
-          certified-operators catalog before installing the CSI Driver from Software Catalog.
-        </Callout>
+        <>
+          <div style={{ marginTop: '1rem' }}>
+            <Callout variant="warn">
+              Mirror <code>registry.hitachivantara.com</code> and CSI sidecar images. On OpenShift, mirror the
+              certified-operators catalog before installing the CSI Driver from Software Catalog.
+            </Callout>
+          </div>
+
+          <div className="field-grid" style={{ marginTop: '1rem' }}>
+            <Field
+              label="Private registry"
+              hint="Host and optional path prefix for mirrored CSI images (no trailing slash)."
+            >
+              <input
+                type="text"
+                value={state.offline.registryBase}
+                placeholder="registry.example.com:5000"
+                onChange={(e) => updateOffline({ registryBase: e.target.value })}
+              />
+            </Field>
+          </div>
+
+          <div style={{ marginTop: '1rem' }}>
+            <Callout>
+              <p style={{ margin: 0 }}>
+                Run <code>hvcsi-offline-bundle.sh -c</code>, then{' '}
+                <code>-p -r &lt;registry-path&gt;</code> for each enabled component.
+              </p>
+              {baseSet && (
+                <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem' }}>
+                  {state.components.driver && (
+                    <li>
+                      CSI Driver: <code>{paths.hspc}</code>
+                    </li>
+                  )}
+                  {state.components.replication && (
+                    <li>
+                      Replication: <code>{paths.hrpc}</code>
+                    </li>
+                  )}
+                  {state.components.metrics && (
+                    <li>
+                      Performance Metrics: <code>{paths.hspp}</code>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </Callout>
+          </div>
+
+          <AdvancedSection title="Advanced offline registry paths">
+            <div className="field-grid">
+              <Field
+                label="CSI Driver registry path"
+                hint={
+                  baseSet
+                    ? `Default: ${derivedPaths.hspc}`
+                    : 'Optional override when registry base is set'
+                }
+              >
+                <input
+                  type="text"
+                  value={state.offline.hspcPath ?? ''}
+                  placeholder={baseSet ? derivedPaths.hspc : 'registry.example.com:5000/hspc'}
+                  onChange={(e) =>
+                    updateOffline({ hspcPath: e.target.value.trim() || undefined })
+                  }
+                />
+              </Field>
+              <Field
+                label="Replication registry path"
+                hint={
+                  baseSet ? `Default: ${derivedPaths.hrpc}` : 'Optional override when registry base is set'
+                }
+              >
+                <input
+                  type="text"
+                  value={state.offline.hrpcPath ?? ''}
+                  placeholder={baseSet ? derivedPaths.hrpc : 'registry.example.com:5000/hrpc'}
+                  onChange={(e) =>
+                    updateOffline({ hrpcPath: e.target.value.trim() || undefined })
+                  }
+                />
+              </Field>
+              <Field
+                label="Performance Metrics registry path"
+                hint={
+                  baseSet ? `Default: ${derivedPaths.hspp}` : 'Optional override when registry base is set'
+                }
+              >
+                <input
+                  type="text"
+                  value={state.offline.hsppPath ?? ''}
+                  placeholder={baseSet ? derivedPaths.hspp : 'registry.example.com:5000/hspp'}
+                  onChange={(e) =>
+                    updateOffline({ hsppPath: e.target.value.trim() || undefined })
+                  }
+                />
+              </Field>
+            </div>
+          </AdvancedSection>
+
+          {plat.operatorHub && (
+            <div className="field-grid" style={{ marginTop: '1rem' }}>
+              <Field
+                label="CatalogSource name"
+                hint="Mirrored OperatorHub catalog on this cluster (default certified-operators)."
+              >
+                <input
+                  type="text"
+                  value={state.offline.catalogSourceName}
+                  onChange={(e) => updateOffline({ catalogSourceName: e.target.value })}
+                />
+              </Field>
+              <Field
+                label="Catalog index image"
+                hint="Optional mirrored catalog index image for the CatalogSource."
+              >
+                <input
+                  type="text"
+                  value={state.offline.catalogIndexImage}
+                  placeholder="registry.example.com:5000/catalog/certified-operators:latest"
+                  onChange={(e) => updateOffline({ catalogIndexImage: e.target.value })}
+                />
+              </Field>
+            </div>
+          )}
+        </>
       )}
     </>
   )

@@ -31,6 +31,7 @@ import { migrateArrayBinding } from '../catalog/arrayBinding'
 import { fetchVersions, type VersionInfo } from '../services/versions'
 import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
 import { migrateMetricsConfig } from './migrateMetrics'
+import { migrateOfflineConfig } from './migrateOffline'
 import { STEPS_BASE, type VisibleStep } from './steps'
 import { persistSiteTabFocus } from './siteTabFocus'
 
@@ -165,6 +166,7 @@ function loadState(): WizardState {
       merged.snapshotClass.retentionPeriod = '24'
     }
     merged.metrics = migrateMetricsConfig(parsed.metrics, createDefaultState().metrics)
+    merged.offline = migrateOfflineConfig(parsed.offline, createDefaultState().offline)
     if (merged.components.replication) {
       merged = ensureSitesForReplication(merged)
     }
@@ -351,6 +353,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     const base = createDefaultState()
     const next = { ...base, ...parsed, version: WIZARD_STATE_VERSION }
     next.metrics = migrateMetricsConfig(parsed.metrics, base.metrics)
+    next.offline = migrateOfflineConfig(parsed.offline, base.offline)
     next.storageSystems = (next.storageSystems || []).map((sys) => migrateStorageSystemFamily(sys))
     if (next.sites) {
       next.sites = {

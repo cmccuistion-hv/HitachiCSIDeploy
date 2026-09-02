@@ -215,6 +215,18 @@ export interface MultipathConfig {
   customConf: string
 }
 
+export interface OfflineConfig {
+  registryBase: string
+  /** Optional overrides; empty = derive from registryBase */
+  hspcPath?: string
+  hrpcPath?: string
+  hsppPath?: string
+  /** OpenShift/ROSA CatalogSource name; default certified-operators */
+  catalogSourceName: string
+  /** Optional mirrored index image for CatalogSource */
+  catalogIndexImage: string
+}
+
 export interface WizardState {
   version: number
   platform: PlatformId
@@ -228,6 +240,7 @@ export interface WizardState {
   nodeEnvironment: NodeEnvironment
   connectionType: ConnectionType
   airGapped: boolean
+  offline: OfflineConfig
   components: {
     driver: boolean
     replication: boolean
@@ -277,6 +290,11 @@ export function createDefaultState(): WizardState {
     nodeEnvironment: 'bare-metal',
     connectionType: 'fc',
     airGapped: false,
+    offline: {
+      registryBase: '',
+      catalogSourceName: 'certified-operators',
+      catalogIndexImage: '',
+    },
     components: {
       driver: true,
       replication: false,
