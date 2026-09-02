@@ -268,8 +268,9 @@ function ToggleAirGapped() {
         <>
           <div style={{ marginTop: '1rem' }}>
             <Callout variant="warn">
-              Mirror <code>registry.hitachivantara.com</code> and CSI sidecar images. On OpenShift, mirror the
-              certified-operators catalog before installing the CSI Driver from Software Catalog.
+              Mirror <code>registry.hitachivantara.com</code> and CSI sidecar images. On OpenShift/ROSA, mirror
+              the OperatorHub catalog with <code>oc-mirror</code>, apply the generated IDMS and CatalogSource
+              manifests, then set CatalogSource name and index image below.
             </Callout>
           </div>
 

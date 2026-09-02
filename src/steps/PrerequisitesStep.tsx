@@ -731,10 +731,13 @@ function buildPrereqs(
   }
 
   if (plat.operatorHub) {
+    const catalogSource = (state.offline?.catalogSourceName || '').trim() || 'certified-operators'
     items.push({
       id: 'operatorhub',
       title: 'OperatorHub catalog is reachable',
-      body: 'On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub—the catalog of certified operators. The Subscription uses Manual update approval. In air-gapped environments, mirror certified-operators first.',
+      body: airGapped
+        ? `On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub. The Subscription uses Manual update approval and your configured CatalogSource (\`${catalogSource}\`). Mirror and apply the catalog per the offline checklist item above (oc-mirror, IDMS, mirrored CatalogSource)—not the public certified-operators feed.`
+        : 'On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub—the catalog of certified operators. The Subscription uses Manual update approval.',
     })
   }
 
