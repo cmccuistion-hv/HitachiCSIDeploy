@@ -340,13 +340,13 @@ describe('generateAll package matrix', () => {
       'image: registry.k8s.io/pause:3.9',
     )
     expect(fileAt(files, '06-quickstart/pod.yaml').content).toContain('image: busybox:1.36')
-    expect(generatedPaths).not.toContain('mirror-extras.sh')
+    expect(generatedPaths).not.toContain('mirror.sh')
     expect(installScript).toContain('Multipath DaemonSet (hosted/HCP)')
     expect(installScript).not.toContain('wait_mcp_healthy')
     expect(installScript).not.toContain('"$CMD" get mcp')
   })
 
-  it('rewrites wizard-owned extras images and emits mirror-extras.sh when air-gapped (Filesystem quickstart)', async () => {
+  it('rewrites wizard-owned extras images and emits mirror.sh when air-gapped (Filesystem quickstart)', async () => {
     const files = await generateAll(
       filledState({
         openshiftTopology: 'hosted',
@@ -371,19 +371,18 @@ describe('generateAll package matrix', () => {
     expect(pod).not.toContain('image: busybox:1.36')
     expect(pod).not.toContain('image: registry.k8s.io/pause:3.9')
 
-    const mirror = fileAt(files, 'mirror-extras.sh').content
-    expect(mirror).toContain(
-      'skopeo copy docker://alpine:3.19 docker://registry.local/hitachi/alpine:3.19',
-    )
-    expect(mirror).toContain(
-      'skopeo copy docker://registry.k8s.io/pause:3.9 docker://registry.local/hitachi/pause:3.9',
-    )
-    expect(mirror).toContain(
-      'skopeo copy docker://busybox:1.36 docker://registry.local/hitachi/busybox:1.36',
-    )
+    const mirror = fileAt(files, 'mirror.sh').content
+    expect(mirror).toContain('Configure → Mirror → Install')
+    expect(mirror).toContain('hvcsi-offline-bundle.sh')
+    expect(mirror).toContain('EXTRAS_REGISTRY_BASE="registry.local/hitachi"')
+    expect(mirror).toContain('EXTRAS_IMAGES=(')
+    expect(mirror).toContain('"alpine:3.19"')
+    expect(mirror).toContain('"registry.k8s.io/pause:3.9"')
+    expect(mirror).toContain('"busybox:1.36"')
+    expect(mirror).toContain('skopeo copy "docker://${src}" "docker://${EXTRAS_REGISTRY_BASE}/${dst}"')
   })
 
-  it('generates mirror-plan.md at the ZIP root when air-gapped and registry base is set', async () => {
+  it('generates mirror.sh at the ZIP root when air-gapped and registry base is set', async () => {
     const files = await generateAll(
       filledState({
         airGapped: true,
@@ -396,17 +395,16 @@ describe('generateAll package matrix', () => {
       }),
     )
     const generatedPaths = paths(files)
-    expect(generatedPaths).toContain('mirror-plan.md')
-    expect(generatedPaths).toContain('mirror-plan.sh')
+    expect(generatedPaths).toContain('mirror.sh')
 
-    const plan = fileAt(files, 'mirror-plan.md').content
+    const plan = fileAt(files, 'mirror.sh').content
     expect(plan).toContain('Configure → Mirror → Install')
     expect(plan).toContain('hvcsi-offline-bundle.sh')
     expect(plan).toContain('hvcsi-offline-bundle.sh -c')
     expect(plan).toContain('-p -r registry.local/hitachi/hspc')
     expect(plan).toContain('-p -r registry.local/hitachi/hrpc')
     expect(plan).toContain('-p -r registry.local/hitachi/hspp')
-    expect(plan).toContain('mirror-extras.sh')
+    expect(plan).toContain('mirror.sh extras')
     expect(plan).toContain('oc-mirror')
     expect(plan).toContain('ImageDigestMirrorSet')
     expect(plan).toContain('CatalogSource')
@@ -414,7 +412,7 @@ describe('generateAll package matrix', () => {
     expect(plan).toContain('02-driver/operatorhub-catalogsource.yaml')
   })
 
-  it('generates one mirror plan for dual-site packages (no primary/secondary duplicates)', async () => {
+  it('generates one mirror script for dual-site packages (no primary/secondary duplicates)', async () => {
     mockOfflineHrpcFetch()
     const files = await generateAll(
       filledReplicationState({
@@ -427,17 +425,16 @@ describe('generateAll package matrix', () => {
       }),
     )
     const generatedPaths = paths(files)
-    expect(generatedPaths).toContain('mirror-plan.md')
-    expect(generatedPaths).toContain('mirror-plan.sh')
-    expect(generatedPaths.some((p) => p.startsWith('primary/') && p.includes('mirror-plan'))).toBe(
+    expect(generatedPaths).toContain('mirror.sh')
+    expect(generatedPaths.some((p) => p.startsWith('primary/') && p.includes('mirror.'))).toBe(
       false,
     )
-    expect(generatedPaths.some((p) => p.startsWith('secondary/') && p.includes('mirror-plan'))).toBe(
+    expect(generatedPaths.some((p) => p.startsWith('secondary/') && p.includes('mirror.'))).toBe(
       false,
     )
   })
 
-  it('emits mirror-extras.sh for only the used images (Block quickstart uses pause, not busybox)', async () => {
+  it('includes only used extras images in mirror.sh (Block quickstart uses pause, not busybox)', async () => {
     const files = await generateAll(
       filledState({
         openshiftTopology: 'hosted',
@@ -457,11 +454,9 @@ describe('generateAll package matrix', () => {
     expect(pod).not.toContain('busybox:1.36')
     expect(pod).not.toContain('registry.k8s.io/pause:3.9')
 
-    const mirror = fileAt(files, 'mirror-extras.sh').content
-    expect(mirror).toContain(
-      'skopeo copy docker://registry.k8s.io/pause:3.9 docker://registry.local/hitachi/pause:3.9',
-    )
-    expect(mirror).not.toContain('busybox:1.36')
+    const mirror = fileAt(files, 'mirror.sh').content
+    expect(mirror).toContain('"registry.k8s.io/pause:3.9"')
+    expect(mirror).not.toContain('"busybox:1.36"')
   })
 
   it('packages ROSA with hosted DaemonSet multipath by default fixture override', async () => {
@@ -1138,7 +1133,6 @@ describe('generateAll package matrix', () => {
 
     expect(generatedPaths).toEqual(
       expect.arrayContaining([
-        'README.md',
         'primary/install.sh',
         'secondary/install.sh',
         'primary/03-replication/storage-secrets.yaml',

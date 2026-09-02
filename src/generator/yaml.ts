@@ -36,7 +36,7 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
 import { offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
-import { generateMirrorPlanMarkdown, generateMirrorPlanScript } from './mirrorPlan'
+import { generateMirrorScript } from './mirror'
 import {
   applySiteMetricsToState,
   resolvedFlattenedMetricsPvcStorageClassName,
@@ -81,79 +81,20 @@ function wizardOwnedExtrasImagesUsedByPackage(state: WizardState): string[] {
   return [...out]
 }
 
-function generateMirrorExtrasScript(opts: {
-  registryBase: string
-  images: string[]
-}): string {
-  const base = (opts.registryBase || '').trim().replace(/\/+$/, '')
-  const images = opts.images
-  const lines: string[] = [
-    '#!/usr/bin/env bash',
-    'set -euo pipefail',
-    '',
-    '# mirror-extras.sh — wizard-owned images (gap-fill)',
-    `# Wizard: ${wizardVersion()}`,
-    '# Note: Hitachi hvcsi-offline-bundle.sh does not mirror these images.',
-    `REGISTRY_BASE=${JSON.stringify(base)}`,
-    '',
-    'if [[ -z "$REGISTRY_BASE" ]]; then',
-    '  echo "ERROR: REGISTRY_BASE is empty." >&2',
-    '  exit 1',
-    'fi',
-    'command -v skopeo >/dev/null 2>&1 || { echo "ERROR: skopeo is required." >&2; exit 1; }',
-    '',
-    'echo "==> Mirroring wizard-owned images to $REGISTRY_BASE"',
-    '',
-  ]
-
-  for (const src of images) {
-    const flattened = src.split('/').pop() || src
-    lines.push(`skopeo copy docker://${src} docker://${base}/${flattened}`)
-  }
-
-  lines.push('')
-  return lines.join('\n')
-}
-
-function mirrorExtrasFile(state: WizardState): GeneratedFile | null {
+function mirrorScriptFile(state: WizardState): GeneratedFile | null {
   if (!state.airGapped) return null
-  const paths = offlineRegistryPaths(state)
-  const base = (paths.extras || '').trim()
-  if (!base) return null
+  if (!String(state.offline?.registryBase || '').trim()) return null
 
-  const images = wizardOwnedExtrasImagesUsedByPackage(state)
-  if (!images.length) return null
+  const paths = offlineRegistryPaths(state)
+  const extrasBase = (paths.extras || '').trim()
+  const extrasImages = extrasBase ? wizardOwnedExtrasImagesUsedByPackage(state) : []
 
   return {
-    path: 'mirror-extras.sh',
-    content: generateMirrorExtrasScript({ registryBase: base, images }),
-    description: 'Mirror wizard-owned images to private registry (extras path)',
+    path: 'mirror.sh',
+    content: generateMirrorScript(state, { extrasImages }),
+    description: 'Air-gapped mirror entrypoint (plan + optional wizard-owned extras)',
     group: 'scripts',
   }
-}
-
-function mirrorPlanFiles(
-  state: WizardState,
-  opts?: { includeMirrorExtras?: boolean },
-): GeneratedFile[] {
-  if (!state.airGapped) return []
-  if (!String(state.offline?.registryBase || '').trim()) return []
-  return [
-    {
-      path: 'mirror-plan.md',
-      content: generateMirrorPlanMarkdown(state, {
-        includeMirrorExtras: Boolean(opts?.includeMirrorExtras),
-      }),
-      description: 'Air-gapped mirror plan (connected jump host + install host)',
-      group: 'scripts',
-    },
-    {
-      path: 'mirror-plan.sh',
-      content: generateMirrorPlanScript(),
-      description: 'Prints mirror-plan.md',
-      group: 'scripts',
-    },
-  ]
 }
 
 function b64(s: string): string {
@@ -1401,37 +1342,6 @@ function primaryHrpcStorageClassName(state: WizardState): string | undefined {
   )
 }
 
-function generateDualFolderReadme(state: WizardState): string {
-  const plat = PLATFORMS[state.platform]
-  const cmd = plat.useOc ? 'oc' : 'kubectl'
-  return `# Hitachi CSI Deployment (two-site package)
-
-This ZIP contains two install trees:
-
-- \`primary/\` — run on the **primary** cluster
-- \`secondary/\` — run on the **secondary** cluster
-
-## Install order
-
-1. Set your ${cmd} context to the **primary** cluster.
-2. Run the primary installer, then switch context and run the secondary installer:
-
-\`\`\`bash
-cd primary
-chmod +x install.sh
-./install.sh
-
-cd ../secondary
-chmod +x install.sh
-./install.sh
-\`\`\`
-
-Each folder contains its own \`03-replication/remote-kubeconfig-for-*-site.yaml\` (if you pasted kubeconfigs in the wizard) and its own \`install.sh\`. If only one remote-kubeconfig YAML exists in the folder, \`install.sh\` applies it automatically.
-
-If you did **not** paste kubeconfigs in the wizard, you can export \`KUBECONFIG_P\` and \`KUBECONFIG_S\` and \`install.sh\` will run the helper that creates both remote kubeconfig Secrets.
-`
-}
-
 async function generateAllSingleSite(
   state: WizardState,
   opts?: { remoteKubeconfigSite?: SiteId | 'both'; drScNameOverride?: string },
@@ -2231,9 +2141,8 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
 export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
   if (!state.components.replication) {
     const files = await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
-    const mirror = mirrorExtrasFile(state)
+    const mirror = mirrorScriptFile(state)
     if (mirror) files.push(mirror)
-    files.push(...mirrorPlanFiles(state, { includeMirrorExtras: Boolean(mirror) }))
     return files
   }
 
@@ -2255,17 +2164,9 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     remoteKubeconfigSite: 'secondary',
     drScNameOverride: drScName,
   })
-  const mirror = mirrorExtrasFile(ensured)
-  const planFiles = mirrorPlanFiles(ensured, { includeMirrorExtras: Boolean(mirror) })
+  const mirror = mirrorScriptFile(ensured)
 
   const out: GeneratedFile[] = [
-    {
-      path: 'README.md',
-      content: generateDualFolderReadme(ensured),
-      description: 'Two-site package overview and install order',
-      group: 'scripts',
-    },
-    ...planFiles,
     ...(mirror ? [mirror] : []),
     ...prefixFiles(primaryFiles, 'primary'),
     ...prefixFiles(secondaryFiles, 'secondary'),

@@ -531,8 +531,8 @@ export function PrerequisitesChecklistStep() {
               </li>
               <li>
                 <strong>Mirror (connected jump host)</strong>: mirror images (and on OpenShift/ROSA, catalogs)
-                into your private registry. The ZIP includes <code>mirror-plan.md</code> with the exact commands
-                for this package.
+                into your private registry. The ZIP includes <code>mirror.sh</code> with the exact commands for
+                this package.
               </li>
               <li>
                 <strong>Install (cluster admin host)</strong>: in the disconnected environment, unzip and run{' '}
@@ -563,7 +563,7 @@ export function PrerequisitesChecklistStep() {
             <div style={{ marginTop: '1rem' }}>
               <Callout>
                 <p style={{ margin: 0 }}>
-                  Registry paths for the enabled components (used by <code>mirror-plan.md</code>):
+                  Registry paths for the enabled components (used by <code>mirror.sh</code>):
                 </p>
                 <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem' }}>
                   {state.components.driver && (
@@ -880,9 +880,9 @@ function buildPrereqs(
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
-      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror-plan.md\` with the exact commands for this package (offline bundle \`-r\` paths, and any optional extras).${
+      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror.sh\` at the ZIP root — run \`chmod +x mirror.sh && ./mirror.sh\` to print the exact commands for this package (offline bundle \`-r\` paths, and any optional extras).${
         mirrorExtrasRelevant
-          ? ` If the ZIP includes \`mirror-extras.sh\`, run it to mirror wizard-owned images to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
+          ? ` If the package needs wizard-owned gap-fill images, run \`./mirror.sh extras\` to mirror them to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
           : ''
       }${
         plat.useOc

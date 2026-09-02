@@ -23,9 +23,9 @@ describe('buildNextSteps', () => {
 
     expect(airGapped).toBeDefined()
     expect(airGapped?.title).toContain('Mirror')
-    expect(airGapped?.body).toContain('mirror-plan.md')
+    expect(airGapped?.body).toContain('mirror.sh')
     expect(airGapped?.body).toContain('hvcsi-offline-bundle.sh')
-    expect(airGapped?.body).toContain('mirror-extras.sh')
+    expect(airGapped?.body).toContain('mirror.sh extras')
     expect(airGapped?.body).toContain('oc-mirror')
     expect(airGapped?.body).toContain('ImageDigestMirrorSet')
     expect(airGapped?.body).toContain('CatalogSource')

@@ -222,7 +222,7 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
   expect(config.wizardVersion).toMatch(new RegExp(`^${pkg.version.replaceAll('.', '\\.')}\\+`))
 
   expect(paths).toEqual(
-    expect.arrayContaining(['README.md', 'primary/install.sh', 'secondary/install.sh']),
+    expect.arrayContaining(['INSTALL.md', 'primary/install.sh', 'secondary/install.sh']),
   )
   expect(config.replication.primaryKubeconfig).toBeUndefined()
   expect(config.replication.secondaryKubeconfig).toBeUndefined()

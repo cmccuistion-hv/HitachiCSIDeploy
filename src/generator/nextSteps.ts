@@ -29,7 +29,11 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     {
       id: 'unzip',
       title: 'Unzip the package',
-      body: `Unzip the package on a machine that can reach the cluster, with the correct ${clusterCommand} context ready.`,
+      body: `Unzip the package on a machine that can reach the cluster, with the correct ${clusterCommand} context ready.${
+        state.components.replication
+          ? ' Replication exports a two-site package with primary/ and secondary/ install trees.'
+          : ''
+      }`,
       command: `unzip ${archiveName}.zip -d ${archiveName}\ncd ${archiveName}`,
     },
   ]
@@ -72,8 +76,8 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     steps.push({
       id: 'air-gapped',
       title: 'Mirror offline content',
-      body: `Before running install.sh, follow \`mirror-plan.md\` at the ZIP root. It contains the exact mirror commands (including \`hvcsi-offline-bundle.sh\` \`-r\` paths for enabled components${
-        mirrorExtrasRelevant ? ', plus \`mirror-extras.sh\` when included' : ''
+      body: `Before running install.sh, use \`mirror.sh\` at the ZIP root (\`chmod +x mirror.sh && ./mirror.sh\`). It prints the exact mirror commands (including \`hvcsi-offline-bundle.sh\` \`-r\` paths for enabled components${
+        mirrorExtrasRelevant ? ', plus an optional extras step (\`./mirror.sh extras\`)' : ''
       }).${
         plat.useOc
           ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.sh so OLM can discover the operator offline.'
