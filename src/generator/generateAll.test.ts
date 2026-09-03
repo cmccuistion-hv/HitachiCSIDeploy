@@ -405,6 +405,12 @@ describe('generateAll package matrix', () => {
     expect(mirror).toContain('"registry.k8s.io/pause:3.9"')
     expect(mirror).toContain('"busybox:1.36"')
     expect(mirror).toContain('skopeo copy "docker://${src}" "docker://${EXTRAS_REGISTRY_BASE}/${dst}"')
+    expect(mirror).toContain('SKIP_VERIFY')
+    expect(mirror).toContain('verify_images()')
+    expect(mirror).toContain('skopeo inspect')
+    expect(mirror).toContain('images missing — re-run mirror.sh to retry.')
+    expect(mirror).toContain('exit 1')
+    expect(mirror).toContain('images verified')
   })
 
   it('rewrites Console Plugin images to the hspc registry path and mirrors them via mirror.sh extras when air-gapped', async () => {
@@ -436,6 +442,8 @@ describe('generateAll package matrix', () => {
     expect(mirror).toContain('"registry.hitachivantara.com/hitachicsi-oci-oss/hv-ocp-ui:v3.18.3"')
     expect(mirror).toContain('"registry.redhat.io/openshift4/ose-tools-rhel8@sha256:')
     expect(mirror).toContain('skopeo copy "docker://${src}" "docker://${HSPC_REGISTRY_BASE}/${dst}"')
+    expect(mirror).toContain('SKIP_VERIFY')
+    expect(mirror).toContain('verify_images()')
   })
 
   it('generates mirror.sh at the ZIP root when air-gapped and registry base is set', async () => {
@@ -472,6 +480,8 @@ describe('generateAll package matrix', () => {
     expect(plan).toContain('CatalogSource')
     expect(plan).toContain('hv-certified-mirror')
     expect(plan).toContain('02-driver/operatorhub-catalogsource.yaml')
+    expect(plan).toContain('SKIP_VERIFY')
+    expect(plan).toContain('images verified')
   })
 
   it('generates one mirror script for dual-site packages (no primary/secondary duplicates)', async () => {

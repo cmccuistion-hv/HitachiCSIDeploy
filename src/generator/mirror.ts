@@ -12,6 +12,7 @@ export function generateMirrorScript(
   opts?: {
     extrasImages?: string[]
     hspcExtrasImages?: string[]
+    verifyImages?: string[]
   },
 ): string {
   const plat = PLATFORMS[state.platform]
@@ -20,6 +21,7 @@ export function generateMirrorScript(
   const extrasRegistryBase = t(paths.extras)
   const extrasImages = (opts?.extrasImages || []).map((s) => s.trim()).filter(Boolean)
   const hspcExtrasImages = (opts?.hspcExtrasImages || []).map((s) => s.trim()).filter(Boolean)
+  const verifyImages = (opts?.verifyImages || []).map((s) => s.trim()).filter(Boolean)
   const catalogSourceName = t(state.offline?.catalogSourceName) || 'certified-operators'
   const catalogIndexImage = t(state.offline?.catalogIndexImage)
 
@@ -120,6 +122,8 @@ export function generateMirrorScript(
     hspcExtrasImages.length > 0
       ? `HSPC_EXTRAS_IMAGES=(${hspcExtrasImages.map((i) => JSON.stringify(i)).join(' ')})`
       : 'HSPC_EXTRAS_IMAGES=()'
+  const verifyImagesArray =
+    verifyImages.length > 0 ? `VERIFY_IMAGES=(${verifyImages.map((i) => JSON.stringify(i)).join(' ')})` : 'VERIFY_IMAGES=()'
 
   return `#!/usr/bin/env bash
 set -euo pipefail
@@ -133,13 +137,18 @@ WIZARD_VERSION=${JSON.stringify(wizardVersion())}
 REGISTRY_BASE=${JSON.stringify(registryBase)}
 EXTRAS_REGISTRY_BASE=${JSON.stringify(extrasRegistryBase)}
 HSPC_REGISTRY_BASE=${JSON.stringify(t(paths.hspc))}
+HRPC_REGISTRY_BASE=${JSON.stringify(t(paths.hrpc))}
+HSPP_REGISTRY_BASE=${JSON.stringify(t(paths.hspp))}
 ${extrasArray}
 ${hspcExtrasArray}
+${verifyImagesArray}
 
 REPO_URL="https://github.com/hitachi-vantara/csi-operator-hitachi.git"
 REPO_REF="main"
 REPO_DIR="\${SCRIPT_DIR}/csi-operator-hitachi"
 BUNDLES=(${bundles.map((b) => JSON.stringify(`${b.plugin}|${b.version}|${b.registryPath}`)).join(' ')})
+
+VERIFY_PREFIXES=("\${EXTRAS_REGISTRY_BASE}" "\${HSPC_REGISTRY_BASE}" "\${HRPC_REGISTRY_BASE}" "\${HSPP_REGISTRY_BASE}")
 
 print_plan() {
   cat <<'EOF'
@@ -210,6 +219,102 @@ run_bundle() {
   (cd "\${extracted}" && "\${script_path}" -p -r "\${registry_path}")
 }
 
+is_truthy() {
+  case "\${1:-}" in
+    1|true|TRUE|yes|YES|y|Y) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+skopeo_tls_flag() {
+  # Carry over insecure-registry behavior from other scripts when set.
+  # (Common: HSPC_INSECURE_REG=1 for OpenShift route-based registries.)
+  if is_truthy "\${HSPC_INSECURE_REG:-}" || is_truthy "\${HRPC_INSECURE_REG:-}" || is_truthy "\${HSPP_INSECURE_REG:-}" || is_truthy "\${INSECURE_REG:-}"; then
+    echo "--tls-verify=false"
+  else
+    echo ""
+  fi
+}
+
+image_matches_verify_prefixes() {
+  local ref="$1"
+  local p
+  for p in "\${VERIFY_PREFIXES[@]}"; do
+    [[ -z "\${p}" ]] && continue
+    if [[ "\${ref}" == "\${p}"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+inspect_image_exists() {
+  local ref="$1"
+
+  if command -v skopeo >/dev/null 2>&1; then
+    local tls
+    tls="$(skopeo_tls_flag)"
+    # shellcheck disable=SC2086
+    skopeo inspect \${tls} "docker://\${ref}" >/dev/null 2>&1
+    return $?
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    docker manifest inspect "\${ref}" >/dev/null 2>&1
+    return $?
+  fi
+
+  echo "ERROR: verify requires skopeo (preferred) or docker." >&2
+  return 2
+}
+
+verify_images() {
+  if is_truthy "\${SKIP_VERIFY:-}"; then
+    echo "==> Verify: SKIP_VERIFY=1 (skipping image existence checks)"
+    return 0
+  fi
+
+  if [[ "\${#VERIFY_IMAGES[@]}" -eq 0 ]]; then
+    echo "==> Verify: no images listed to verify"
+    return 0
+  fi
+
+  declare -A seen=()
+  local images=()
+  local img
+  for img in "\${VERIFY_IMAGES[@]}"; do
+    [[ -z "\${img}" ]] && continue
+    image_matches_verify_prefixes "\${img}" || continue
+    [[ -n "\${seen[\${img}]:-}" ]] && continue
+    seen[\${img}]=1
+    images+=("\${img}")
+  done
+
+  if [[ "\${#images[@]}" -eq 0 ]]; then
+    echo "==> Verify: no images matched your configured registry base"
+    return 0
+  fi
+
+  echo "==> Verify: checking \${#images[@]} images exist in your registry"
+  local missing=()
+  for img in "\${images[@]}"; do
+    if ! inspect_image_exists "\${img}"; then
+      missing+=("\${img}")
+    fi
+  done
+
+  if [[ "\${#missing[@]}" -gt 0 ]]; then
+    echo "ERROR: \${#missing[@]}/\${#images[@]} images are missing from your registry:" >&2
+    for img in "\${missing[@]}"; do
+      echo "  - \${img}" >&2
+    done
+    echo "\${#missing[@]} images missing — re-run mirror.sh to retry." >&2
+    exit 1
+  fi
+
+  echo "\${#images[@]}/\${#images[@]} images verified"
+}
+
 run_mirror() {
   require_cmd skopeo
   ensure_repo
@@ -232,6 +337,8 @@ run_mirror() {
     registry_path="\${entry##*|}"
     run_bundle "\${plugin}" "\${version}" "\${registry_path}" "\${script_path}"
   done
+
+  verify_images
 }
 
 run_extras() {
@@ -266,6 +373,8 @@ run_extras() {
     dst="\${src##*/}"
     skopeo copy "docker://\${src}" "docker://\${HSPC_REGISTRY_BASE}/\${dst}"
   done
+
+  verify_images
 }
 
 cmd="\${1:-mirror}"

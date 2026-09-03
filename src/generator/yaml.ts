@@ -36,7 +36,7 @@ import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, 
 import { patchConsolePluginManifest } from './consolePlugin'
 import { REPO } from '../catalog/components'
 import { fetchFirstAvailable, templatePaths } from '../services/versions'
-import { offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
+import { extractImages, offlineRegistryPaths, rewriteImagesToRegistry } from './offline'
 import { generateMirrorScript } from './mirror'
 import {
   applySiteMetricsToState,
@@ -88,7 +88,16 @@ function wizardOwnedExtrasImagesUsedByPackage(state: WizardState): string[] {
   return [...out]
 }
 
-function mirrorScriptFile(state: WizardState): GeneratedFile | null {
+function imagesUsedByPackage(files: GeneratedFile[]): string[] {
+  const out = new Set<string>()
+  for (const f of files) {
+    if (!f.path.endsWith('.yaml') && !f.path.endsWith('.yml')) continue
+    for (const img of extractImages(f.content)) out.add(img)
+  }
+  return [...out].sort()
+}
+
+function mirrorScriptFile(state: WizardState, packageFiles: GeneratedFile[]): GeneratedFile | null {
   if (!state.airGapped) return null
   if (!String(state.offline?.registryBase || '').trim()) return null
 
@@ -100,10 +109,11 @@ function mirrorScriptFile(state: WizardState): GeneratedFile | null {
     hspcExtrasImages.push(`${CONSOLE_PLUGIN_HV_OCP_UI_REPO}:${state.versions.driver}`)
     hspcExtrasImages.push(CONSOLE_PLUGIN_OSE_TOOLS_RHEL8_DIGEST)
   }
+  const verifyImages = imagesUsedByPackage(packageFiles)
 
   return {
     path: 'mirror.sh',
-    content: generateMirrorScript(state, { extrasImages, hspcExtrasImages }),
+    content: generateMirrorScript(state, { extrasImages, hspcExtrasImages, verifyImages }),
     description: 'Air-gapped mirror entrypoint (plan + optional gap-fill images)',
     group: 'scripts',
   }
@@ -2191,7 +2201,7 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
 export async function generateAll(state: WizardState): Promise<GeneratedFile[]> {
   if (!state.components.replication) {
     const files = await generateAllSingleSite(state, { remoteKubeconfigSite: 'both' })
-    const mirror = mirrorScriptFile(state)
+    const mirror = mirrorScriptFile(state, files)
     if (mirror) {
       files.push(mirror)
       const offline = await hvOfflineBundleScriptFile(state)
@@ -2218,7 +2228,7 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
     remoteKubeconfigSite: 'secondary',
     drScNameOverride: drScName,
   })
-  const mirror = mirrorScriptFile(ensured)
+  const mirror = mirrorScriptFile(ensured, [...primaryFiles, ...secondaryFiles])
   const offline = mirror ? await hvOfflineBundleScriptFile(ensured) : null
 
   const out: GeneratedFile[] = [
