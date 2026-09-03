@@ -5,12 +5,7 @@ export type OfflineRegistryConfig = {
   hsppPath?: string
 }
 
-const DIGEST_IMAGE_RE =
-  /(image:\s*["']?)([^"' \t]+\/)?([^/"' \t@:]+)@sha256:/g
-const TAGGED_IMAGE_RE =
-  /(image:\s*["']?)([^"' \t]+\/)?([^/"' \t@:]+):([^"' \t]+)/g
-const BARE_IMAGE_LINE_RE =
-  /^(\s*-?\s*image:\s*["']?)([A-Za-z0-9._-]+)(["']?)\s*$/
+const IMAGE_LINE_RE = /^(\s*-?\s*image:\s*)(['"]?)([^\s'"]+)\2/
 
 function trimRegistryBase(base: string): string {
   return base.replace(/\/+$/, '')
@@ -39,23 +34,42 @@ export function offlineRegistryPaths(state: {
 }
 
 export function rewriteImagesToRegistry(yaml: string, registryPath: string): string {
-  const withDigests = yaml.replace(
-    DIGEST_IMAGE_RE,
-    `$1${registryPath}/$3@sha256:`,
-  )
-  const withTags = withDigests.replace(
-    TAGGED_IMAGE_RE,
-    `$1${registryPath}/$3:$4`,
-  )
-
-  return withTags
+  const prefix = `${registryPath}/`
+  return yaml
     .split('\n')
-    .map((line) =>
-      line.replace(
-        BARE_IMAGE_LINE_RE,
-        `$1${registryPath}/$2:latest$3`,
-      ),
-    )
+    .map((line) => {
+      const match = line.match(IMAGE_LINE_RE)
+      if (!match) return line
+
+      const imgPrefix = match[1]
+      const quote = match[2] ?? ''
+      const ref = match[3] ?? ''
+
+      if (ref.startsWith(prefix)) {
+        return line
+      }
+
+      let rewritten = ''
+      if (ref.includes('@sha256:')) {
+        const [before, digestRest] = ref.split('@sha256:')
+        const repo = before.split('/').pop() || before
+        rewritten = `${registryPath}/${repo}@sha256:${digestRest}`
+      } else {
+        const lastSlash = ref.lastIndexOf('/')
+        const lastColon = ref.lastIndexOf(':')
+        if (lastColon > lastSlash) {
+          const before = ref.slice(0, lastColon)
+          const tag = ref.slice(lastColon + 1)
+          const repo = before.split('/').pop() || before
+          rewritten = `${registryPath}/${repo}:${tag}`
+        } else {
+          const repo = ref.split('/').pop() || ref
+          rewritten = `${registryPath}/${repo}:latest`
+        }
+      }
+
+      return line.replace(IMAGE_LINE_RE, `${imgPrefix}${quote}${rewritten}${quote}`)
+    })
     .join('\n')
 }
 

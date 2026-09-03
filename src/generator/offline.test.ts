@@ -13,9 +13,8 @@ describe('rewriteImagesToRegistry', () => {
 
   it('rewrites digest refs and keeps the digest', () => {
     const yaml = '          image: registry.example.com/ns/repo@sha256:abcdef0123456789\n'
-    // Matches hvcsi-offline-bundle.sh sed order: digest pass then tag pass (colon in registry path).
     expect(rewriteImagesToRegistry(yaml, REGISTRY)).toBe(
-      `          image: ${REGISTRY}/${REGISTRY}/repo@sha256:abcdef0123456789\n`,
+      `          image: ${REGISTRY}/repo@sha256:abcdef0123456789\n`,
     )
   })
 
