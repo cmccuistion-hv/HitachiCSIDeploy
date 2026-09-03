@@ -30,11 +30,11 @@ export function generateMirrorScript(
   if (state.components.metrics) bundles.push({ plugin: 'hspp', version: state.versions.metrics, registryPath: paths.hspp })
 
   const bundleLines: string[] = [
-    '# On a connected jump host (internet + private registry access):',
+    '# On a connected computer (public internet + access to your private registry):',
     '# 1) Run ./mirror.sh to clone the operator repo and mirror images.',
     '# 2) (Optional) Mirror gap-fill images with ./mirror.sh extras (wizard-owned and any known gaps).',
     '#',
-    '# Requirements on the jump host: git, skopeo, and access to Docker registries.',
+    '# Requirements on the connected computer: git, skopeo, and access to Docker registries.',
     '',
     '# This ZIP includes hvcsi-offline-bundle.sh for convenience. mirror.sh will also clone',
     '# hitachi-vantara/csi-operator-hitachi and can use the script from that repo checkout.',
@@ -89,7 +89,7 @@ export function generateMirrorScript(
     '',
     '# Configure → Mirror → Install',
     '# 1) Configure (this wizard / ZIP): set the private registry base, then export the ZIP.',
-    '# 2) Mirror (connected jump host): run mirror.sh to mirror images (and on OpenShift/ROSA, catalogs) into your private registry.',
+    '# 2) Mirror (connected computer): mirroring copies container images into your private registry so the cluster does not need the public internet. Run mirror.sh to mirror images (and on OpenShift/ROSA, catalogs) into your private registry.',
     '# 3) Install (cluster admin host): in the disconnected environment, unzip and run install.sh.',
     '#',
     '# This wizard rewrites manifests to reference your private registry. It does not push images into that registry.',
@@ -102,7 +102,7 @@ export function generateMirrorScript(
     state.components.replication ? `# - Replication (includes DR Operator): ${paths.hrpc}` : undefined,
     state.components.metrics ? `# - Performance Metrics: ${paths.hspp}` : undefined,
     '',
-    '# Mirror commands (connected jump host):',
+    '# Mirror commands (connected computer):',
     ...bundleLines.map((l) => `# ${l}`),
     openshiftCatalogNotes ? openshiftCatalogNotes.split('\n').map((l) => `# ${l}`).join('\n') : '',
     '',

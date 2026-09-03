@@ -77,13 +77,13 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     steps.push({
       id: 'air-gapped',
       title: 'Mirror offline content',
-      body: `Before running install.sh, mirror images into your private registry from a connected jump host. The exported ZIP includes \`mirror.sh\` and \`hvcsi-offline-bundle.sh\` at the ZIP root — run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` to mirror the enabled components${
+      body: `Mirroring means copying container images into your private registry so the cluster does not need the public internet. On a connected computer (public internet access + access to your private registry), run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` to mirror the enabled components${
         mirrorExtrasRelevant
           ? ', then optionally run \`./mirror.sh extras\` for gap-fill images not covered by \`hvcsi-offline-bundle.sh\`'
           : ''
       }.${
         plat.useOc
-          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install.sh so OLM can discover the operator offline.'
+          ? ' OpenShift/ROSA also needs a mirrored OperatorHub catalog so OLM (the operator manager) can discover the CSI Driver operator offline. Mirror the catalog with oc-mirror and apply the generated mirror policy (for example ImageDigestMirrorSet / IDMS) and the mirrored CatalogSource manifests on the cluster before install.sh. See INSTALL.md and the notes at the top of mirror.sh.'
           : ''
       }`,
     })

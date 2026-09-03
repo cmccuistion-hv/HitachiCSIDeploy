@@ -530,9 +530,10 @@ export function PrerequisitesChecklistStep() {
                 manifests).
               </li>
               <li>
-                <strong>Mirror (connected jump host)</strong>: mirror images (and on OpenShift/ROSA, catalogs)
-                into your private registry. The ZIP includes <code>mirror.sh</code> (and{' '}
-                <code>hvcsi-offline-bundle.sh</code>) to orchestrate mirroring for this package.
+                <strong>Mirror (connected computer)</strong>: on a computer that can reach the public internet
+                and your private registry, copy images (and on OpenShift/ROSA, catalogs) into your private
+                registry. The ZIP includes <code>mirror.sh</code> (and <code>hvcsi-offline-bundle.sh</code>) to
+                orchestrate mirroring for this package.
               </li>
               <li>
                 <strong>Install (cluster admin host)</strong>: in the disconnected environment, unzip and run{' '}
@@ -540,8 +541,9 @@ export function PrerequisitesChecklistStep() {
               </li>
             </ol>
             <p style={{ margin: '0.65rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-              This wizard rewrites manifests to reference your private registry. It does <strong>not</strong>{' '}
-              push images into that registry — mirroring is a separate step.
+              This wizard rewrites manifests to reference your private registry. It does <strong>not</strong> push
+              images into that registry — mirroring is the step where you copy the images into it so the cluster
+              can pull them without the public internet.
             </p>
           </Callout>
 
@@ -653,10 +655,11 @@ export function PrerequisitesChecklistStep() {
           {plat.operatorHub && (
             <div style={{ marginTop: '1rem' }}>
               <Callout variant="warn">
-                <strong>OpenShift/ROSA (OperatorHub):</strong> OLM discovers operators through a catalog. In an
-                air-gapped cluster, mirror the OperatorHub catalog with <code>oc-mirror</code> and apply the
-                generated mirror policy (for example ImageDigestMirrorSet) and CatalogSource manifests before
-                running <code>install.sh</code>.
+                <strong>OpenShift/ROSA (OperatorHub):</strong> OpenShift installs operators from OperatorHub
+                using OLM (Operator Lifecycle Manager). In an air-gapped cluster, OpenShift must be pointed at a
+                mirrored catalog: mirror with <code>oc-mirror</code>, then apply the generated mirror policy (for
+                example ImageDigestMirrorSet / IDMS) and the mirrored CatalogSource manifests before{' '}
+                <code>install.sh</code>. See <code>mirror.sh</code> for the guided checklist.
               </Callout>
               <div className="field-grid" style={{ marginTop: '0.85rem' }}>
                 <Field
@@ -881,13 +884,13 @@ function buildPrereqs(
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
-      body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror.sh\` and \`hvcsi-offline-bundle.sh\` at the ZIP root — run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` on a connected jump host to mirror the enabled components.${
+      body: `Mirroring means copying container images into your private registry so the cluster does not need the public internet. On a connected computer (public internet access + access to your private registry), run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` to mirror the enabled components.${
         mirrorExtrasRelevant
           ? ` If the package needs gap-fill images not covered by \`hvcsi-offline-bundle.sh\`, run \`./mirror.sh extras\` (these are mirrored into \`${paths.extras}\` and/or \`${paths.hspc}\`).`
           : ''
       }${
         plat.useOc
-          ? ' On OpenShift/ROSA, mirror the OperatorHub catalog with oc-mirror and apply the generated ImageDigestMirrorSet (IDMS) and CatalogSource manifests before install so OLM can discover the operator offline.'
+          ? ' OpenShift/ROSA also needs a mirrored OperatorHub catalog so OLM (the operator manager) can discover the CSI Driver operator offline. Mirror the catalog with oc-mirror and apply the generated mirror policy (for example ImageDigestMirrorSet / IDMS) and the mirrored CatalogSource manifests on the cluster before install.'
           : ''
       }`,
     })
@@ -905,7 +908,7 @@ function buildPrereqs(
       id: 'operatorhub',
       title: 'OperatorHub catalog is reachable',
       body: airGapped
-        ? `On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub. The Subscription uses Manual update approval and your configured CatalogSource (\`${catalogSource}\`). Mirror and apply the catalog per the offline checklist item above (oc-mirror, IDMS, mirrored CatalogSource)—not the public certified-operators feed.`
+        ? `On OpenShift, install.sh installs the CSI Driver through OperatorHub using OLM (Operator Lifecycle Manager). The Subscription uses Manual update approval and your configured CatalogSource (\`${catalogSource}\`). In an air-gapped cluster, mirror and apply the catalog first (oc-mirror, mirror policy such as IDMS, mirrored CatalogSource)—do not rely on the public certified-operators feed.`
         : 'On OpenShift, install.sh installs the CSI Driver through OLM (Operator Lifecycle Manager) from OperatorHub—the catalog of certified operators. The Subscription uses Manual update approval.',
     })
   }
