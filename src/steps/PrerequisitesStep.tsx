@@ -875,14 +875,15 @@ function buildPrereqs(
     const mirrorExtrasRelevant =
       Boolean(paths.extras?.trim()) &&
       (state.storageClassesEnabled ||
-        (plat.useOc && state.multipath.enabled && state.multipath.includeDaemonSet))
+        (plat.useOc && state.multipath.enabled && state.multipath.includeDaemonSet) ||
+        (state.components.consolePlugin && plat.supportsConsolePlugin))
 
     items.push({
       id: 'offline',
       title: 'Container images are mirrored locally',
       body: `Before running \`install.sh\`, mirror images into your private registry (and on OpenShift/ROSA, mirror catalogs). The exported ZIP includes \`mirror.sh\` and \`hvcsi-offline-bundle.sh\` at the ZIP root — run \`chmod +x mirror.sh hvcsi-offline-bundle.sh && ./mirror.sh\` on a connected jump host to mirror the enabled components.${
         mirrorExtrasRelevant
-          ? ` If the package needs wizard-owned gap-fill images, run \`./mirror.sh extras\` to mirror them to \`${paths.extras}\` (these are not mirrored by \`hvcsi-offline-bundle.sh\`).`
+          ? ` If the package needs gap-fill images not covered by \`hvcsi-offline-bundle.sh\`, run \`./mirror.sh extras\` (these are mirrored into \`${paths.extras}\` and/or \`${paths.hspc}\`).`
           : ''
       }${
         plat.useOc

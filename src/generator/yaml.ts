@@ -65,6 +65,12 @@ const WIZARD_EXTRAS_ALPINE = 'alpine:3.19'
 const WIZARD_EXTRAS_BUSYBOX = 'busybox:1.36'
 const WIZARD_EXTRAS_PAUSE = 'registry.k8s.io/pause:3.9'
 
+// Known coverage gap: hvcsi-offline-bundle.sh -t hspc does not scan consoleplugin-ocp-ui.yaml.
+// Keep in sync with .superpowers/sdd/offline-image-coverage-gaps.md.
+const CONSOLE_PLUGIN_HV_OCP_UI_REPO = 'registry.hitachivantara.com/hitachicsi-oci-oss/hv-ocp-ui'
+const CONSOLE_PLUGIN_OSE_TOOLS_RHEL8_DIGEST =
+  'registry.redhat.io/openshift4/ose-tools-rhel8@sha256:e44074f21e0cca6464e50cb6ff934747e0bd11162ea01d522433a1a1ae116103'
+
 function wizardOwnedExtrasImagesUsedByPackage(state: WizardState): string[] {
   const plat = PLATFORMS[state.platform]
   const out = new Set<string>()
@@ -89,11 +95,16 @@ function mirrorScriptFile(state: WizardState): GeneratedFile | null {
   const paths = offlineRegistryPaths(state)
   const extrasBase = (paths.extras || '').trim()
   const extrasImages = extrasBase ? wizardOwnedExtrasImagesUsedByPackage(state) : []
+  const hspcExtrasImages: string[] = []
+  if (state.components.consolePlugin && PLATFORMS[state.platform].supportsConsolePlugin) {
+    hspcExtrasImages.push(`${CONSOLE_PLUGIN_HV_OCP_UI_REPO}:${state.versions.driver}`)
+    hspcExtrasImages.push(CONSOLE_PLUGIN_OSE_TOOLS_RHEL8_DIGEST)
+  }
 
   return {
     path: 'mirror.sh',
-    content: generateMirrorScript(state, { extrasImages }),
-    description: 'Air-gapped mirror entrypoint (plan + optional wizard-owned extras)',
+    content: generateMirrorScript(state, { extrasImages, hspcExtrasImages }),
+    description: 'Air-gapped mirror entrypoint (plan + optional gap-fill images)',
     group: 'scripts',
   }
 }
@@ -2103,9 +2114,15 @@ ${stackNotes}
     const pluginUrls = templatePaths('hspc', state.versions.driver).consolePlugin ?? []
     const pluginRaw = await fetchFirstAvailable(pluginUrls)
     if (pluginRaw) {
+      const offlineEnabled = state.airGapped && Boolean(state.offline?.registryBase?.trim())
+      const offlineRegistry = offlineEnabled ? offlineRegistryPaths(state).hspc : ''
+      let content = patchConsolePluginManifest(pluginRaw, state.consolePlugin)
+      if (offlineEnabled && offlineRegistry) {
+        content = rewriteImagesToRegistry(content, offlineRegistry)
+      }
       files.push({
         path: '05-console/consoleplugin-ocp-ui.yaml',
-        content: patchConsolePluginManifest(pluginRaw, state.consolePlugin),
+        content,
         description: 'OpenShift Console Plugin manifests (Prometheus target patched from wizard)',
         group: 'console',
       })

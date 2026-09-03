@@ -11,6 +11,7 @@ export function generateMirrorScript(
   state: WizardState,
   opts?: {
     extrasImages?: string[]
+    hspcExtrasImages?: string[]
   },
 ): string {
   const plat = PLATFORMS[state.platform]
@@ -18,6 +19,7 @@ export function generateMirrorScript(
   const paths = offlineRegistryPaths(state)
   const extrasRegistryBase = t(paths.extras)
   const extrasImages = (opts?.extrasImages || []).map((s) => s.trim()).filter(Boolean)
+  const hspcExtrasImages = (opts?.hspcExtrasImages || []).map((s) => s.trim()).filter(Boolean)
   const catalogSourceName = t(state.offline?.catalogSourceName) || 'certified-operators'
   const catalogIndexImage = t(state.offline?.catalogIndexImage)
 
@@ -30,7 +32,7 @@ export function generateMirrorScript(
   const bundleLines: string[] = [
     '# On a connected jump host (internet + private registry access):',
     '# 1) Run ./mirror.sh to clone the operator repo and mirror images.',
-    '# 2) (Optional) Mirror wizard-owned gap-fill images with ./mirror.sh extras.',
+    '# 2) (Optional) Mirror gap-fill images with ./mirror.sh extras (wizard-owned and any known gaps).',
     '#',
     '# Requirements on the jump host: git, skopeo, and access to Docker registries.',
     '',
@@ -55,10 +57,10 @@ export function generateMirrorScript(
   }
   while (bundleLines.length && bundleLines[bundleLines.length - 1] === '') bundleLines.pop()
 
-  if (extrasImages.length) {
+  if (extrasImages.length || hspcExtrasImages.length) {
     bundleLines.push(
       '',
-      '# Optional: mirror wizard-owned gap-fill images (when needed by this ZIP):',
+      '# Optional: mirror gap-fill images (when needed by this ZIP):',
       'chmod +x ./mirror.sh && ./mirror.sh extras',
     )
   }
@@ -114,6 +116,10 @@ export function generateMirrorScript(
 
   const extrasArray =
     extrasImages.length > 0 ? `EXTRAS_IMAGES=(${extrasImages.map((i) => JSON.stringify(i)).join(' ')})` : 'EXTRAS_IMAGES=()'
+  const hspcExtrasArray =
+    hspcExtrasImages.length > 0
+      ? `HSPC_EXTRAS_IMAGES=(${hspcExtrasImages.map((i) => JSON.stringify(i)).join(' ')})`
+      : 'HSPC_EXTRAS_IMAGES=()'
 
   return `#!/usr/bin/env bash
 set -euo pipefail
@@ -126,7 +132,9 @@ cd "$SCRIPT_DIR"
 WIZARD_VERSION=${JSON.stringify(wizardVersion())}
 REGISTRY_BASE=${JSON.stringify(registryBase)}
 EXTRAS_REGISTRY_BASE=${JSON.stringify(extrasRegistryBase)}
+HSPC_REGISTRY_BASE=${JSON.stringify(t(paths.hspc))}
 ${extrasArray}
+${hspcExtrasArray}
 
 REPO_URL="https://github.com/hitachi-vantara/csi-operator-hitachi.git"
 REPO_REF="main"
@@ -145,7 +153,7 @@ Usage: ./mirror.sh [mirror|plan|extras]
 
   mirror Mirror component images into your private registry (default)
   plan   Print the mirror plan for this ZIP
-  extras Mirror wizard-owned gap-fill images with skopeo (only if this ZIP needs them)
+  extras Mirror gap-fill images with skopeo (only if this ZIP needs them)
 EOF
 }
 
@@ -227,21 +235,36 @@ run_mirror() {
 }
 
 run_extras() {
-  if [[ "\${#EXTRAS_IMAGES[@]}" -eq 0 ]]; then
-    echo "No wizard-owned gap-fill images are required for this ZIP."
+  if [[ "\${#EXTRAS_IMAGES[@]}" -eq 0 && "\${#HSPC_EXTRAS_IMAGES[@]}" -eq 0 ]]; then
+    echo "No gap-fill images are required for this ZIP."
     return 0
-  fi
-  if [[ -z "\${EXTRAS_REGISTRY_BASE:-}" ]]; then
-    echo "ERROR: EXTRAS_REGISTRY_BASE is empty (wizard did not compute an extras path)." >&2
-    exit 1
   fi
   command -v skopeo >/dev/null 2>&1 || { echo "ERROR: skopeo is required." >&2; exit 1; }
 
-  echo "==> Mirroring wizard-owned images to \$EXTRAS_REGISTRY_BASE"
+  if [[ "\${#EXTRAS_IMAGES[@]}" -gt 0 && -z "\${EXTRAS_REGISTRY_BASE:-}" ]]; then
+    echo "ERROR: EXTRAS_REGISTRY_BASE is empty (wizard did not compute an extras path)." >&2
+    exit 1
+  fi
+  if [[ "\${#HSPC_EXTRAS_IMAGES[@]}" -gt 0 && -z "\${HSPC_REGISTRY_BASE:-}" ]]; then
+    echo "ERROR: HSPC_REGISTRY_BASE is empty (wizard did not compute an hspc path)." >&2
+    exit 1
+  fi
+
+  if [[ "\${#EXTRAS_IMAGES[@]}" -gt 0 ]]; then
+    echo "==> Mirroring wizard-owned images to \$EXTRAS_REGISTRY_BASE"
+  fi
   local src dst
   for src in "\${EXTRAS_IMAGES[@]}"; do
     dst="\${src##*/}"
     skopeo copy "docker://\${src}" "docker://\${EXTRAS_REGISTRY_BASE}/\${dst}"
+  done
+
+  if [[ "\${#HSPC_EXTRAS_IMAGES[@]}" -gt 0 ]]; then
+    echo "==> Mirroring component gap-fill images to \$HSPC_REGISTRY_BASE"
+  fi
+  for src in "\${HSPC_EXTRAS_IMAGES[@]}"; do
+    dst="\${src##*/}"
+    skopeo copy "docker://\${src}" "docker://\${HSPC_REGISTRY_BASE}/\${dst}"
   done
 }
 

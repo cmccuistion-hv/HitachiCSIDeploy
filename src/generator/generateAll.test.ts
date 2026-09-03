@@ -133,6 +133,19 @@ const CONSOLE_PLUGIN_MOCK = [
   'data:',
   '  config.json: |',
   '    "hsppPrometheus": { "namespace": "hspc-monitoring-system", "service": "prometheus", "port": "9090" }',
+  '---',
+  'apiVersion: batch/v1',
+  'kind: Job',
+  'metadata:',
+  '  name: console-plugin-ui',
+  'spec:',
+  '  template:',
+  '    spec:',
+  '      containers:',
+  '        - name: hv-ocp-ui',
+  '          image: registry.hitachivantara.com/hitachicsi-oci-oss/hv-ocp-ui:v3.18.3',
+  '        - name: ose-tools',
+  '          image: registry.redhat.io/openshift4/ose-tools-rhel8@sha256:e44074f21e0cca6464e50cb6ff934747e0bd11162ea01d522433a1a1ae116103',
 ].join('\n')
 
 function mockConsolePluginFetch() {
@@ -392,6 +405,37 @@ describe('generateAll package matrix', () => {
     expect(mirror).toContain('"registry.k8s.io/pause:3.9"')
     expect(mirror).toContain('"busybox:1.36"')
     expect(mirror).toContain('skopeo copy "docker://${src}" "docker://${EXTRAS_REGISTRY_BASE}/${dst}"')
+  })
+
+  it('rewrites Console Plugin images to the hspc registry path and mirrors them via mirror.sh extras when air-gapped', async () => {
+    mockConsolePluginFetch()
+    const files = await generateAll(
+      filledState({
+        platform: 'openshift',
+        components: { consolePlugin: true },
+        airGapped: true,
+        offline: {
+          registryBase: 'registry.local/hitachi',
+          catalogSourceName: 'certified-operators',
+          catalogIndexImage: '',
+        },
+      }),
+    )
+
+    const plugin = fileAt(files, '05-console/consoleplugin-ocp-ui.yaml').content
+    expect(plugin).toContain('image: registry.local/hitachi/hspc/hv-ocp-ui:v3.18.3')
+    expect(plugin).toContain(
+      'image: registry.local/hitachi/hspc/ose-tools-rhel8@sha256:e44074f21e0cca6464e50cb6ff934747e0bd11162ea01d522433a1a1ae116103',
+    )
+    expect(plugin).not.toContain('registry.hitachivantara.com')
+    expect(plugin).not.toContain('registry.redhat.io')
+
+    const mirror = fileAt(files, 'mirror.sh').content
+    expect(mirror).toContain('HSPC_REGISTRY_BASE="registry.local/hitachi/hspc"')
+    expect(mirror).toContain('HSPC_EXTRAS_IMAGES=(')
+    expect(mirror).toContain('"registry.hitachivantara.com/hitachicsi-oci-oss/hv-ocp-ui:v3.18.3"')
+    expect(mirror).toContain('"registry.redhat.io/openshift4/ose-tools-rhel8@sha256:')
+    expect(mirror).toContain('skopeo copy "docker://${src}" "docker://${HSPC_REGISTRY_BASE}/${dst}"')
   })
 
   it('generates mirror.sh at the ZIP root when air-gapped and registry base is set', async () => {
