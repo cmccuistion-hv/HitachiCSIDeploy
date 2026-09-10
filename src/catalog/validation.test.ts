@@ -21,6 +21,7 @@ import {
   storageSystemsValidForContinue,
   validateStorageSystem,
   drClusterNamesInvalidFix,
+  remoteKubeconfigSourceInvalidFix,
   validateHrpc,
   validateStorageClass,
 } from './validation'
@@ -301,6 +302,59 @@ describe('DR cluster names validation', () => {
   })
 })
 
+const CHOOSE_KUBECONFIG_SOURCE =
+  'Choose how to create the remote kubeconfig Secrets: paste both in this wizard, or confirm you will create them at install time.'
+const PASTE_BOTH_KUBECONFIGS =
+  'Paste both the primary and secondary kubeconfigs, or confirm you will create the Secrets at install time.'
+
+describe('remote kubeconfig source validation', () => {
+  it('blocks Continue and Export when neither pastes nor an install-time confirmation exist', () => {
+    const state = filledReplicationState({
+      replication: { remoteKubeconfigSource: undefined },
+    })
+    expect(remoteKubeconfigSourceInvalidFix(state)).toEqual({
+      message: CHOOSE_KUBECONFIG_SOURCE,
+      stepId: 'replication',
+    })
+    expect(validateHrpc(state)).toBe(CHOOSE_KUBECONFIG_SOURCE)
+  })
+
+  it('blocks when wizard source is chosen but a kubeconfig is missing after reload', () => {
+    const state = filledReplicationState({
+      replication: { remoteKubeconfigSource: 'wizard', primaryKubeconfig: 'only-primary' },
+    })
+    expect(remoteKubeconfigSourceInvalidFix(state)).toEqual({
+      message: PASTE_BOTH_KUBECONFIGS,
+      stepId: 'replication',
+    })
+    expect(validateHrpc(state)).toBe(PASTE_BOTH_KUBECONFIGS)
+  })
+
+  it('allows Continue and Export when both kubeconfigs are pasted', () => {
+    const state = filledReplicationState({
+      replication: {
+        primaryKubeconfig: 'dummy-primary',
+        secondaryKubeconfig: 'dummy-secondary',
+      },
+    })
+    expect(remoteKubeconfigSourceInvalidFix(state)).toBeNull()
+    expect(validateHrpc(state)).toBeNull()
+  })
+
+  it('allows Continue and Export when install-time Secret creation is confirmed', () => {
+    const state = filledReplicationState({
+      replication: { remoteKubeconfigSource: 'install-time' },
+    })
+    expect(remoteKubeconfigSourceInvalidFix(state)).toBeNull()
+    expect(validateHrpc(state)).toBeNull()
+  })
+
+  it('does not require a kubeconfig choice when Replication is off', () => {
+    const state = filledState()
+    expect(remoteKubeconfigSourceInvalidFix(state)).toBeNull()
+  })
+})
+
 describe('storage artifact validation', () => {
   it('blocks Continue when two arrays exist and a standard class has no storageSystemId', () => {
     const state = filledState({
@@ -335,6 +389,7 @@ describe('storage artifact validation', () => {
       ...state,
       replication: {
         ...state.replication,
+        remoteKubeconfigSource: 'install-time',
         storageSecrets: [
           {
             serial: '400001',

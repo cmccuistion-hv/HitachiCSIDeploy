@@ -666,6 +666,9 @@ function validateHrpcFix(state: WizardState): WizardFix | null {
   const namesFix = drClusterNamesInvalidFix(ensured)
   if (namesFix) return namesFix
 
+  const kubeconfigFix = remoteKubeconfigSourceInvalidFix(ensured)
+  if (kubeconfigFix) return kubeconfigFix
+
   return null
 }
 
@@ -679,6 +682,28 @@ export function drClusterNamesInvalidFix(state: WizardState): WizardFix | null {
     )
   }
   return null
+}
+
+export function remoteKubeconfigSourceInvalidFix(state: WizardState): WizardFix | null {
+  if (!state.components.replication) return null
+  if (t(state.replication.primaryKubeconfig) && t(state.replication.secondaryKubeconfig)) {
+    return null
+  }
+  if (state.replication.remoteKubeconfigSource === 'install-time') return null
+  if (state.replication.remoteKubeconfigSource === 'wizard') {
+    return wizardFix(
+      'Paste both the primary and secondary kubeconfigs, or confirm you will create the Secrets at install time.',
+      'replication',
+    )
+  }
+  return wizardFix(
+    'Choose how to create the remote kubeconfig Secrets: paste both in this wizard, or confirm you will create them at install time.',
+    'replication',
+  )
+}
+
+export function replicationContinueInvalidFix(state: WizardState): WizardFix | null {
+  return remoteKubeconfigSourceInvalidFix(state) || drClusterNamesInvalidFix(state)
 }
 
 export function validateHrpc(state: WizardState): string | null {

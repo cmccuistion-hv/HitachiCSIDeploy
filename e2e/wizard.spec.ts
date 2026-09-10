@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { ensureSitesForReplication } from '../src/catalog/sites'
-import { filledState } from '../src/test/fixtures'
+import { filledReplicationState, filledState } from '../src/test/fixtures'
 import {
   STORAGE_KEY,
   choice,
@@ -130,4 +130,54 @@ test('blocks Replication export when journal IDs are missing', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
   await expect(page.getByText(/Set a Journal ID for array serial/)).toBeVisible()
+})
+
+test('blocks Replication Continue and Export until a remote kubeconfig path is chosen', async ({
+  page,
+}) => {
+  const state = filledReplicationState()
+  await seedWizardState(page, state)
+  await expect
+    .poll(() =>
+      page.evaluate((storageKey) => {
+        const stored = JSON.parse(localStorage.getItem(storageKey) || '{}')
+        return stored.components?.replication
+      }, STORAGE_KEY),
+    )
+    .toBe(true)
+
+  await sidebar(page).getByRole('button', { name: /Replication/ }).click()
+  await expect(page.getByRole('heading', { name: 'Replication', exact: true })).toBeVisible()
+  await expect(continueButton(page)).toBeDisabled()
+  await expect(
+    page.getByText(
+      /Choose how to create the remote kubeconfig Secrets: paste both in this wizard, or confirm you will create them at install time/,
+    ),
+  ).toBeVisible()
+
+  await choice(page, 'At install time').click()
+  await expect(continueButton(page)).toBeEnabled()
+  await continueTo(page, 'Test volume')
+
+  await sidebar(page).getByRole('button', { name: /Review & export/ }).click()
+  await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
+})
+
+test('blocks Replication export when kubeconfigs were not re-pasted after loading a saved config', async ({
+  page,
+}) => {
+  const state = filledReplicationState({
+    replication: { remoteKubeconfigSource: 'wizard' },
+  })
+  await seedWizardState(page, state)
+
+  await sidebar(page).getByRole('button', { name: /Review & export/ }).click()
+  await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
+  await expect(
+    page.getByText(
+      /Paste both the primary and secondary kubeconfigs, or confirm you will create the Secrets at install time/,
+    ),
+  ).toBeVisible()
 })

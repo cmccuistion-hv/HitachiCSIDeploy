@@ -208,6 +208,7 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
 
   await sidebar(page).getByRole('button', { name: /Replication/ }).click()
   await expect(page.getByRole('heading', { name: 'Replication', exact: true })).toBeVisible()
+  await choice(page, 'In this wizard').click()
   await field(page, 'Primary site kubeconfig').locator('textarea').fill('dummy-primary-kubeconfig')
   await field(page, 'Secondary site kubeconfig').locator('textarea').fill('dummy-secondary-kubeconfig')
 

@@ -6,8 +6,8 @@ import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
 import { useUiMode } from './state/UiModeContext'
 import {
-  drClusterNamesInvalidFix,
   needsNoReplicationStorageClassConfirm,
+  replicationContinueInvalidFix,
   storageArtifactsContinueInvalidFix,
   storageArtifactsValidForContinue,
   storageSystemsContinueInvalidFix,
@@ -178,8 +178,9 @@ export default function App() {
   const storageContinueBlocked =
     (current?.id === 'storageclasses' && !storageArtifactsValidForContinue(state)) ||
     (current?.id === 'storage' && !storageSystemsValidForContinue(state))
-  const replicationContinueBlocked =
-    current?.id === 'replication' && !!drClusterNamesInvalidFix(state)
+  const replicationContinueFix =
+    current?.id === 'replication' ? replicationContinueInvalidFix(state) : null
+  const replicationContinueBlocked = !!replicationContinueFix
   const continueBlocked = storageContinueBlocked || replicationContinueBlocked
   const continueFix = continueBlocked
     ? current?.id === 'storage'
@@ -187,7 +188,7 @@ export default function App() {
       : current?.id === 'storageclasses'
         ? storageArtifactsContinueInvalidFix(state)
         : current?.id === 'replication'
-          ? drClusterNamesInvalidFix(state)
+          ? replicationContinueFix
           : null
     : null
 

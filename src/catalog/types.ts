@@ -126,6 +126,8 @@ export interface SnapshotClassConfig {
   retentionPeriod?: string
 }
 
+export type RemoteKubeconfigSource = 'wizard' | 'install-time'
+
 export interface ReplicationConfig {
   enabled: boolean
   /** Always true when Replication is selected — DR Operator is part of the stack */
@@ -157,6 +159,11 @@ export interface ReplicationConfig {
    */
   primaryKubeconfig?: string
   secondaryKubeconfig?: string
+  /**
+   * How the two remote kubeconfig Secrets will be created.
+   * Persist this choice (not the kubeconfig bytes). Unset on older saves.
+   */
+  remoteKubeconfigSource?: RemoteKubeconfigSource
 }
 
 export interface MetricsConfig {

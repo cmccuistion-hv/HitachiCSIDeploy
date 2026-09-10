@@ -10,12 +10,14 @@ describe('exportConfigJson', () => {
     state.replication.secondaryKubeconfig = 'secondary-kubeconfig'
     state.replication.primaryClusterName = 'dc1'
     state.replication.secondaryClusterName = 'dc2'
+    state.replication.remoteKubeconfigSource = 'install-time'
 
     const exported = JSON.parse(exportConfigJson(state))
     expect(exported.replication.primaryKubeconfig).toBeUndefined()
     expect(exported.replication.secondaryKubeconfig).toBeUndefined()
     expect(exported.replication.primaryClusterName).toBe('dc1')
     expect(exported.replication.secondaryClusterName).toBe('dc2')
+    expect(exported.replication.remoteKubeconfigSource).toBe('install-time')
   })
 
   it('omits kubeconfig values from exported state', () => {
