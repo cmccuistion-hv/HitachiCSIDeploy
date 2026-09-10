@@ -25,6 +25,24 @@ function b64utf8(text: string): string {
   return btoa(binary)
 }
 
+export function generateDrRemoteKubeconfigSecret(opts: {
+  namespace: string
+  kubeconfig: string
+  clusterName: string
+}): string {
+  const conf = opts.kubeconfig.replace(/\r\n/g, '\n').trimEnd() + '\n'
+  const key = JSON.stringify(opts.clusterName)
+  return `apiVersion: v1
+kind: Secret
+metadata:
+  name: ${DR_REMOTE_KUBECONFIG_SECRET_NAME}
+  namespace: ${opts.namespace}
+type: Opaque
+data:
+  ${key}: ${b64utf8(conf)}
+`
+}
+
 export function generateRemoteKubeconfigSecret(opts: {
   namespace: string
   /** Raw kubeconfig YAML for the *remote* cluster (the other site) */
@@ -54,10 +72,16 @@ export function generateRemoteKubeconfigScript(opts: {
   namespace: string
   cmd: 'oc' | 'kubectl'
   secretName?: string
+  primaryClusterName?: string
+  secondaryClusterName?: string
 }): string {
   const name = opts.secretName || DEFAULT_SECRET_NAME
   const ns = opts.namespace
   const cmd = opts.cmd
+  const primaryClusterName = opts.primaryClusterName || DEFAULT_PRIMARY_CLUSTER_NAME
+  const secondaryClusterName = opts.secondaryClusterName || DEFAULT_SECONDARY_CLUSTER_NAME
+  const drPrimaryDataKey = JSON.stringify(secondaryClusterName)
+  const drSecondaryDataKey = JSON.stringify(primaryClusterName)
   return `#!/usr/bin/env bash
 # Hitachi CSI — remote-kubeconfig Secrets for Replication (both sites)
 #
@@ -68,8 +92,8 @@ export function generateRemoteKubeconfigScript(opts: {
 # THIS SCRIPT DOES AUTOMATICALLY:
 #   - base64-encodes each kubeconfig
 #   - writes Secret YAML with the correct name/namespace/data key
-#   - with APPLY=1: applies primary Secret via KUBECONFIG_P and secondary via KUBECONFIG_S
-#     (each site gets the *other* site's kubeconfig)
+#   - with APPLY=1: applies Replication operator Secrets and DR Operator Secret
+#     (remote-kubeconfig) on each site via KUBECONFIG_P / KUBECONFIG_S
 #
 # Run once from a host that can reach both cluster APIs:
 #   export KUBECONFIG_P=/path/to/primary-kubeconfig
@@ -130,10 +154,42 @@ echo "  \$OUT_DIR/remote-kubeconfig-for-primary-site.yaml   (apply on PRIMARY)"
 echo "  \$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml (apply on SECONDARY)"
 
 if [[ "\${APPLY:-0}" == "1" ]]; then
-  echo "Applying to primary (KUBECONFIG=\$KUBECONFIG_P)..."
+  echo "Applying Replication operator Secret to primary (KUBECONFIG=\$KUBECONFIG_P)..."
   KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-primary-site.yaml"
-  echo "Applying to secondary (KUBECONFIG=\$KUBECONFIG_S)..."
+  echo "Applying Replication operator Secret to secondary (KUBECONFIG=\$KUBECONFIG_S)..."
   KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml"
+
+  # DR Operator Secret (name: remote-kubeconfig) — temp dir per site avoids OUT_DIR clobber
+  echo "Applying DR Operator Secret to primary (cluster key ${drPrimaryDataKey})..."
+  TMP_DR_P=\$(mktemp -d)
+  cat > "\$TMP_DR_P/remote-kubeconfig.yaml" <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${DR_REMOTE_KUBECONFIG_SECRET_NAME}
+  namespace: ${ns}
+type: Opaque
+data:
+  ${drPrimaryDataKey}: \${B64_S}
+EOF
+  KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$TMP_DR_P/remote-kubeconfig.yaml"
+  rm -rf "\$TMP_DR_P"
+
+  echo "Applying DR Operator Secret to secondary (cluster key ${drSecondaryDataKey})..."
+  TMP_DR_S=\$(mktemp -d)
+  cat > "\$TMP_DR_S/remote-kubeconfig.yaml" <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${DR_REMOTE_KUBECONFIG_SECRET_NAME}
+  namespace: ${ns}
+type: Opaque
+data:
+  ${drSecondaryDataKey}: \${B64_P}
+EOF
+  KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$TMP_DR_S/remote-kubeconfig.yaml"
+  rm -rf "\$TMP_DR_S"
+
   echo "Done."
 else
   echo
