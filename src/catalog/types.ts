@@ -147,6 +147,10 @@ export interface ReplicationConfig {
   }[]
   /** Upstream Secret name: hspc-replication-operator-remote-kubeconfig */
   remoteKubeconfigSecretName: string
+  /** DR Operator Secret remote-kubeconfig data key for this site. Default primary */
+  primaryClusterName: string
+  /** DR Operator Secret remote-kubeconfig data key for this site. Default secondary */
+  secondaryClusterName: string
   /**
    * Optional pasted kubeconfigs for assisted Secret generation.
    * Never persisted to localStorage (stripped on save).
@@ -368,6 +372,8 @@ export function createDefaultState(): WizardState {
       namespace: 'hspc-replication-operator-system',
       storageSecrets: [],
       remoteKubeconfigSecretName: 'hspc-replication-operator-remote-kubeconfig',
+      primaryClusterName: 'primary',
+      secondaryClusterName: 'secondary',
     },
     metrics: {
       enabled: false,

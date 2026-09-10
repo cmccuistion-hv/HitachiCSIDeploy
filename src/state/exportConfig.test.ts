@@ -4,6 +4,20 @@ import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
 import { wizardVersion } from '../wizardVersion'
 
 describe('exportConfigJson', () => {
+  it('keeps DR cluster names and still omits kubeconfigs', () => {
+    const state = filledState()
+    state.replication.primaryKubeconfig = 'primary-kubeconfig'
+    state.replication.secondaryKubeconfig = 'secondary-kubeconfig'
+    state.replication.primaryClusterName = 'dc1'
+    state.replication.secondaryClusterName = 'dc2'
+
+    const exported = JSON.parse(exportConfigJson(state))
+    expect(exported.replication.primaryKubeconfig).toBeUndefined()
+    expect(exported.replication.secondaryKubeconfig).toBeUndefined()
+    expect(exported.replication.primaryClusterName).toBe('dc1')
+    expect(exported.replication.secondaryClusterName).toBe('dc2')
+  })
+
   it('omits kubeconfig values from exported state', () => {
     const state = filledState()
     state.replication.primaryKubeconfig = 'primary-kubeconfig'

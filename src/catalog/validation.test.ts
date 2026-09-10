@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filledState } from '../test/fixtures'
+import { filledReplicationState, filledState } from '../test/fixtures'
 import {
   hasGadPair,
   storageClassKindsForSystems,
@@ -20,6 +20,7 @@ import {
   storageSystemsContinueInvalidFix,
   storageSystemsValidForContinue,
   validateStorageSystem,
+  drClusterNamesInvalidFix,
   validateHrpc,
   validateStorageClass,
 } from './validation'
@@ -275,6 +276,28 @@ describe('per-site readiness for the site switcher', () => {
 
     expect(siteStorageClassesReady(state, 'primary')).toBe(true)
     expect(siteStorageClassesReady(state, 'secondary')).toBe(false)
+  })
+})
+
+describe('DR cluster names validation', () => {
+  it('blocks Export when DR cluster names resolve to the same string', () => {
+    const state = filledReplicationState({
+      replication: { primaryClusterName: 'dc1', secondaryClusterName: 'dc1' },
+    })
+    expect(drClusterNamesInvalidFix(state)).toEqual({
+      message: 'Primary and secondary cluster names must be different (on the Replication step).',
+      stepId: 'replication',
+    })
+    expect(validateHrpc(state)).toBe(
+      'Primary and secondary cluster names must be different (on the Replication step).',
+    )
+  })
+
+  it('allows Export when DR cluster names differ after trim', () => {
+    const state = filledReplicationState({
+      replication: { primaryClusterName: 'dc1', secondaryClusterName: ' dc2 ' },
+    })
+    expect(drClusterNamesInvalidFix(state)).toBeNull()
   })
 })
 

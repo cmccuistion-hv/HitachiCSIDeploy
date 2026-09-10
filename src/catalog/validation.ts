@@ -1,3 +1,4 @@
+import { resolvedDrClusterNames } from '../generator/remoteKubeconfig'
 import { metricsInstalledForSite, prometheusTargetForSite } from './metrics'
 import { CONNECTION_TYPES } from './platforms'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
@@ -662,6 +663,21 @@ function validateHrpcFix(state: WizardState): WizardFix | null {
     }
   }
 
+  const namesFix = drClusterNamesInvalidFix(ensured)
+  if (namesFix) return namesFix
+
+  return null
+}
+
+export function drClusterNamesInvalidFix(state: WizardState): WizardFix | null {
+  if (!state.components.replication) return null
+  const names = resolvedDrClusterNames(state)
+  if (names.primary === names.secondary) {
+    return wizardFix(
+      'Primary and secondary cluster names must be different (on the Replication step).',
+      'replication',
+    )
+  }
   return null
 }
 

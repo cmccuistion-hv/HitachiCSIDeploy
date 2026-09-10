@@ -1,5 +1,18 @@
 /** Build HRPC remote-kubeconfig Secrets and automation script (upstream naming). */
 
+export const DR_REMOTE_KUBECONFIG_SECRET_NAME = 'remote-kubeconfig'
+export const DEFAULT_PRIMARY_CLUSTER_NAME = 'primary'
+export const DEFAULT_SECONDARY_CLUSTER_NAME = 'secondary'
+
+export function resolvedDrClusterNames(state: {
+  replication: { primaryClusterName?: string; secondaryClusterName?: string }
+}): { primary: string; secondary: string } {
+  const primary = (state.replication.primaryClusterName || '').trim() || DEFAULT_PRIMARY_CLUSTER_NAME
+  const secondary =
+    (state.replication.secondaryClusterName || '').trim() || DEFAULT_SECONDARY_CLUSTER_NAME
+  return { primary, secondary }
+}
+
 const DEFAULT_SECRET_NAME = 'hspc-replication-operator-remote-kubeconfig'
 const DEFAULT_DATA_KEY = 'remote-kubeconfig'
 
