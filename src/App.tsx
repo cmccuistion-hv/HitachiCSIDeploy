@@ -6,6 +6,7 @@ import { WelcomeModal, shouldShowWelcome } from './components/WelcomeModal'
 import { useTheme } from './state/ThemeContext'
 import { useUiMode } from './state/UiModeContext'
 import {
+  drClusterNamesInvalidFix,
   needsNoReplicationStorageClassConfirm,
   storageArtifactsContinueInvalidFix,
   storageArtifactsValidForContinue,
@@ -177,10 +178,17 @@ export default function App() {
   const storageContinueBlocked =
     (current?.id === 'storageclasses' && !storageArtifactsValidForContinue(state)) ||
     (current?.id === 'storage' && !storageSystemsValidForContinue(state))
-  const storageContinueFix = storageContinueBlocked
+  const replicationContinueBlocked =
+    current?.id === 'replication' && !!drClusterNamesInvalidFix(state)
+  const continueBlocked = storageContinueBlocked || replicationContinueBlocked
+  const continueFix = continueBlocked
     ? current?.id === 'storage'
       ? storageSystemsContinueInvalidFix(state)
-      : storageArtifactsContinueInvalidFix(state)
+      : current?.id === 'storageclasses'
+        ? storageArtifactsContinueInvalidFix(state)
+        : current?.id === 'replication'
+          ? drClusterNamesInvalidFix(state)
+          : null
     : null
 
   useEffect(() => {
@@ -374,14 +382,14 @@ export default function App() {
             Back
           </button>
           <div className="footer-center">
-            {storageContinueFix ? (
+            {continueFix ? (
               <button
                 type="button"
                 className="footer-fix"
-                onClick={() => goToFix(storageContinueFix)}
+                onClick={() => goToFix(continueFix)}
               >
-                {storageContinueFix.message}
-                <span className="footer-fix-cta">{wizardFixCta(storageContinueFix)}</span>
+                {continueFix.message}
+                <span className="footer-fix-cta">{wizardFixCta(continueFix)}</span>
               </button>
             ) : (
               <>
@@ -399,7 +407,7 @@ export default function App() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={stepIndex >= visibleSteps.length - 1 || storageContinueBlocked}
+            disabled={stepIndex >= visibleSteps.length - 1 || continueBlocked}
             onClick={() => {
               if (
                 current?.id === 'storageclasses' &&

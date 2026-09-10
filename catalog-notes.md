@@ -39,6 +39,8 @@ Constraints and parameters in `src/catalog/` are curated from the official guide
 | Journals / remote path | Configuring the storage system |
 | DR Operator | Installing DR operator |
 | Remote kubeconfig | Configuring Replication Plug-in |
+| Two Secrets per site | Replication operator: `hspc-replication-operator-remote-kubeconfig` (data key `remote-kubeconfig`); DR Operator: `remote-kubeconfig` (data key = other site cluster name; Simple mode `primary` / `secondary`) |
+| DRPolicy clusterName | Must match the data key in that site's `remote-kubeconfig` Secret |
 | OpenShift DR operator fsGroup | Installing DR operator — set `fsGroup` from namespace `openshift.io/sa.scc.supplemental-groups` (start of range) on both sites |
 
 ## Performance Metrics

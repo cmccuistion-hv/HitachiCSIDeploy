@@ -2,6 +2,7 @@ import { PLATFORMS } from '../catalog/platforms'
 import { resolvedStorageClassName } from '../catalog/sites'
 import type { WizardState } from '../catalog/types'
 import { offlineRegistryPaths } from './offline'
+import { resolvedDrClusterNames } from './remoteKubeconfig'
 
 export interface NextStep {
   id: string
@@ -92,17 +93,19 @@ export function buildNextSteps(state: WizardState): NextStep[] {
   const hasPrimaryKubeconfig = Boolean(state.replication.primaryKubeconfig?.trim())
   const hasSecondaryKubeconfig = Boolean(state.replication.secondaryKubeconfig?.trim())
   const packagedRemoteKubeconfig = hasPrimaryKubeconfig && hasSecondaryKubeconfig
+  const drClusterNames = resolvedDrClusterNames(state)
+  const drPolicyHint = `Later DRPolicy clusterName values must match the data keys in each site’s remote-kubeconfig Secret (${drClusterNames.primary} / ${drClusterNames.secondary}).`
   if (state.components.replication && packagedRemoteKubeconfig) {
     steps.push({
       id: 'replication-kubeconfigs',
       title: 'Remote kubeconfig Secrets are already in the ZIP',
-      body: 'You generated the Secret YAML in the wizard (In this wizard). install.sh applies each site’s packaged remote-kubeconfig Secret from that site’s folder. Do not set KUBECONFIG_P or KUBECONFIG_S — those are only for the helper-script path.',
+      body: `You generated the Secret YAML in the wizard (In this wizard). install.sh applies both Secrets from each site’s folder: hspc-replication-operator-remote-kubeconfig (Replication operator) and remote-kubeconfig (DR Operator). Do not set KUBECONFIG_P or KUBECONFIG_S — those are only for the helper-script path. ${drPolicyHint}`,
     })
   } else if (state.components.replication) {
     steps.push({
       id: 'replication-kubeconfigs',
       title: 'Remote kubeconfig at install time',
-      body: 'If you did not generate Secret YAML in the wizard, set both kubeconfig paths on the install host so install.sh can create each remote-kubeconfig Secret with the other site’s kubeconfig. Skip this if those YAML files are already in 03-replication/ from the wizard.',
+      body: `If you did not generate Secret YAML in the wizard, set both kubeconfig paths on the install host so install.sh can create both Secrets on each site (hspc-replication-operator-remote-kubeconfig and remote-kubeconfig). Skip this if those YAML files are already in 03-replication/ from the wizard. ${drPolicyHint}`,
       command:
         'export KUBECONFIG_P=/path/to/primary-kubeconfig\nexport KUBECONFIG_S=/path/to/secondary-kubeconfig',
     })

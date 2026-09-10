@@ -12,9 +12,11 @@ import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem } from '../ca
 import { hrpcPairResourceGroupIds, hrpcResourceGroupIdReason } from '../catalog/validation'
 import { useUiMode } from '../state/UiModeContext'
 import {
+  generateDrRemoteKubeconfigSecret,
   generateRemoteKubeconfigSecret,
   generateRemoteKubeconfigScript,
   REMOTE_KUBECONFIG_SECRET_NAME,
+  resolvedDrClusterNames,
 } from '../generator/remoteKubeconfig'
 
 const RESOURCE_PARTITIONING_ITEMS = [
@@ -67,11 +69,14 @@ export function ReplicationStep() {
   const secretName =
     state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME
   const ns = state.replication.namespace
+  const drClusterNames = resolvedDrClusterNames(state)
 
   const helperScript = generateRemoteKubeconfigScript({
     namespace: ns,
     cmd: cmd as 'oc' | 'kubectl',
     secretName,
+    primaryClusterName: drClusterNames.primary,
+    secondaryClusterName: drClusterNames.secondary,
   })
 
   const primarySecretYaml = state.replication.secondaryKubeconfig?.trim()
@@ -82,11 +87,27 @@ export function ReplicationStep() {
       })
     : null
 
+  const primaryDrSecretYaml = state.replication.secondaryKubeconfig?.trim()
+    ? generateDrRemoteKubeconfigSecret({
+        namespace: ns,
+        kubeconfig: state.replication.secondaryKubeconfig,
+        clusterName: drClusterNames.secondary,
+      })
+    : null
+
   const secondarySecretYaml = state.replication.primaryKubeconfig?.trim()
     ? generateRemoteKubeconfigSecret({
         namespace: ns,
         kubeconfig: state.replication.primaryKubeconfig,
         secretName,
+      })
+    : null
+
+  const secondaryDrSecretYaml = state.replication.primaryKubeconfig?.trim()
+    ? generateDrRemoteKubeconfigSecret({
+        namespace: ns,
+        kubeconfig: state.replication.primaryKubeconfig,
+        clusterName: drClusterNames.primary,
       })
     : null
 
@@ -251,7 +272,7 @@ export function ReplicationStep() {
             <DownloadButton
               filename="remote-kubeconfig-for-primary-site.yaml"
               content={primarySecretYaml}
-              label="Download"
+              label="Download Replication operator"
             />
           </div>
           {showFull && (
@@ -262,6 +283,36 @@ export function ReplicationStep() {
             >
               {primarySecretYaml.slice(0, 400)}…
             </CodeBlock>
+          )}
+          {primaryDrSecretYaml && (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: '0.75rem',
+                }}
+              >
+                <strong style={{ fontSize: '0.9rem' }}>
+                  DR Operator Secret for primary site (data key {drClusterNames.secondary})
+                </strong>
+                <DownloadButton
+                  filename="remote-kubeconfig.yaml"
+                  content={primaryDrSecretYaml}
+                  label="Download DR Operator"
+                />
+              </div>
+              {showFull && (
+                <CodeBlock
+                  className="yaml-preview"
+                  style={{ maxHeight: 180, marginTop: '0.35rem' }}
+                  text={primaryDrSecretYaml}
+                >
+                  {primaryDrSecretYaml.slice(0, 400)}…
+                </CodeBlock>
+              )}
+            </>
           )}
         </>
       )}
@@ -281,7 +332,7 @@ export function ReplicationStep() {
             <DownloadButton
               filename="remote-kubeconfig-for-secondary-site.yaml"
               content={secondarySecretYaml}
-              label="Download"
+              label="Download Replication operator"
             />
           </div>
           {showFull && (
@@ -292,6 +343,36 @@ export function ReplicationStep() {
             >
               {secondarySecretYaml.slice(0, 400)}…
             </CodeBlock>
+          )}
+          {secondaryDrSecretYaml && (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: '0.75rem',
+                }}
+              >
+                <strong style={{ fontSize: '0.9rem' }}>
+                  DR Operator Secret for secondary site (data key {drClusterNames.primary})
+                </strong>
+                <DownloadButton
+                  filename="remote-kubeconfig.yaml"
+                  content={secondaryDrSecretYaml}
+                  label="Download DR Operator"
+                />
+              </div>
+              {showFull && (
+                <CodeBlock
+                  className="yaml-preview"
+                  style={{ maxHeight: 180, marginTop: '0.35rem' }}
+                  text={secondaryDrSecretYaml}
+                >
+                  {secondaryDrSecretYaml.slice(0, 400)}…
+                </CodeBlock>
+              )}
+            </>
           )}
         </>
       )}
@@ -413,10 +494,40 @@ export function ReplicationStep() {
 
           <Section title="Remote kubeconfig (both sites)" help={HELP.remoteKubeconfig}>
             <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
-              Each site needs Secret <code>{secretName}</code> in <code>{ns}</code> containing the{' '}
-              <em>other</em> site&apos;s kubeconfig (data key <code>remote-kubeconfig</code>). Use either path
-              below — both produce the same Secret.
+              Each site needs Secret <code>{secretName}</code> and <code>remote-kubeconfig</code> in{' '}
+              <code>{ns}</code>, each containing the <em>other</em> site&apos;s kubeconfig. Use either path
+              below — both produce the same Secrets.
             </p>
+            <div className="field-grid" style={{ marginBottom: '0.75rem' }}>
+              <Field
+                label="Primary cluster name"
+                hint="DR Operator data key on the secondary site; DRPolicy clusterName for the primary cluster."
+              >
+                <input
+                  value={state.replication.primaryClusterName}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      replication: { ...s.replication, primaryClusterName: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+              <Field
+                label="Secondary cluster name"
+                hint="DR Operator data key on the primary site; DRPolicy clusterName for the secondary cluster."
+              >
+                <input
+                  value={state.replication.secondaryClusterName}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      replication: { ...s.replication, secondaryClusterName: e.target.value },
+                    }))
+                  }
+                />
+              </Field>
+            </div>
             <div className="option-stack">
               <div className="option-panel">
                 <h4 className="option-panel-title">At install time (helper script)</h4>
@@ -475,11 +586,14 @@ export KUBECONFIG_S=/path/to/secondary-kubeconfig`}</CodeBlock>
             </div>
           </Section>
 
-          <Section title="Remote kubeconfig (both sites)">
+          <Section title="Remote kubeconfig (both sites)" help={HELP.remoteKubeconfig}>
             <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
+              DR Operator registers the other site as primary / secondary — open Advanced to change the names.
+            </p>
+            <p style={{ margin: '0.35rem 0 0', fontSize: '0.9rem', color: 'var(--hv-text-subtle)' }}>
               Optional: upload or paste each site&apos;s kubeconfig so the wizard can generate the cross-site
               Secret YAML now. Values stay in this session only (not saved to browser storage or config JSON).
-              You can also skip this and create the Secret at install time from the ZIP.
+              You can also skip this and create the Secrets at install time from the ZIP.
             </p>
             {kubeconfigFields}
             {secretYamlDownloads}

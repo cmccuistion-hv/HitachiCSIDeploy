@@ -70,7 +70,7 @@ export const HELP = {
     'Journals and array credentials are the storage side of replication. Remote kubeconfig is the cluster side: each site stores the other site’s kubeconfig so operators can talk across clusters.',
 
   remoteKubeconfig:
-    'Each site gets a Secret with the other site’s kubeconfig. Build it with install.sh (KUBECONFIG_P / KUBECONFIG_S) on the install host, or generate the Secret YAML here from uploaded kubeconfigs. Do not invent Secret names or keys.',
+    'Each site gets two Secrets from the same kubeconfigs: hspc-replication-operator-remote-kubeconfig (data key remote-kubeconfig) for the Replication operator, and remote-kubeconfig (data key = the other site’s cluster name) for the DR Operator. Simple mode uses primary and secondary as those names.',
 
   storageClassesEnabled:
     'When off, the package skips StorageClass, VolumeSnapshotClass, and test PVC/Pod. Turn on to generate provisioning profiles.',

@@ -206,6 +206,11 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
     )
     .toBe(true)
 
+  await sidebar(page).getByRole('button', { name: /Replication/ }).click()
+  await expect(page.getByRole('heading', { name: 'Replication', exact: true })).toBeVisible()
+  await field(page, 'Primary site kubeconfig').locator('textarea').fill('dummy-primary-kubeconfig')
+  await field(page, 'Secondary site kubeconfig').locator('textarea').fill('dummy-secondary-kubeconfig')
+
   await sidebar(page).getByRole('button', { name: /Review & export/ }).click()
   await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
 
@@ -222,7 +227,13 @@ test('enables Replication ZIP download when journals are set', async ({ page }) 
   expect(config.wizardVersion).toMatch(new RegExp(`^${pkg.version.replaceAll('.', '\\.')}\\+`))
 
   expect(paths).toEqual(
-    expect.arrayContaining(['INSTALL.md', 'primary/install.sh', 'secondary/install.sh']),
+    expect.arrayContaining([
+      'INSTALL.md',
+      'primary/install.sh',
+      'secondary/install.sh',
+      'primary/03-replication/remote-kubeconfig.yaml',
+      'secondary/03-replication/remote-kubeconfig.yaml',
+    ]),
   )
   expect(config.replication.primaryKubeconfig).toBeUndefined()
   expect(config.replication.secondaryKubeconfig).toBeUndefined()

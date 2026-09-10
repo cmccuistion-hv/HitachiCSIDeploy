@@ -70,4 +70,50 @@ describe('buildNextSteps', () => {
     const unzip = buildNextSteps(filledState()).find((step) => step.id === 'unzip')
     expect(unzip?.command).toBe('unzip hitachi-csi-deployment.zip -d hitachi-csi-deployment\ncd hitachi-csi-deployment')
   })
+
+  it('packaged remote-kubeconfig step mentions both Secrets and DRPolicy clusterName', () => {
+    const step = buildNextSteps(
+      filledReplicationState({
+        replication: {
+          primaryKubeconfig: 'dummy-primary',
+          secondaryKubeconfig: 'dummy-secondary',
+        },
+      }),
+    ).find((s) => s.id === 'replication-kubeconfigs')
+
+    expect(step?.title).toContain('already in the ZIP')
+    expect(step?.body).toContain('hspc-replication-operator-remote-kubeconfig')
+    expect(step?.body).toContain('remote-kubeconfig')
+    expect(step?.body).toContain('DRPolicy')
+    expect(step?.body).toContain('clusterName')
+    expect(step?.body).toContain('primary')
+    expect(step?.body).toContain('secondary')
+  })
+
+  it('helper-path remote-kubeconfig step says install.sh creates both Secrets', () => {
+    const step = buildNextSteps(filledReplicationState()).find((s) => s.id === 'replication-kubeconfigs')
+
+    expect(step?.title).toContain('install time')
+    expect(step?.body).toContain('install.sh')
+    expect(step?.body).toContain('hspc-replication-operator-remote-kubeconfig')
+    expect(step?.body).toContain('remote-kubeconfig')
+    expect(step?.body).toContain('DRPolicy')
+    expect(step?.body).toContain('clusterName')
+  })
+
+  it('uses Advanced cluster names in packaged remote-kubeconfig DRPolicy hint', () => {
+    const step = buildNextSteps(
+      filledReplicationState({
+        replication: {
+          primaryKubeconfig: 'dummy-primary',
+          secondaryKubeconfig: 'dummy-secondary',
+          primaryClusterName: 'dc1',
+          secondaryClusterName: 'dc2',
+        },
+      }),
+    ).find((s) => s.id === 'replication-kubeconfigs')
+
+    expect(step?.body).toContain('dc1')
+    expect(step?.body).toContain('dc2')
+  })
 })
