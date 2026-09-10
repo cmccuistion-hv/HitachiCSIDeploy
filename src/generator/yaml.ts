@@ -28,9 +28,11 @@ import {
   generateOperatorHubFiles,
 } from './operatorHub'
 import {
+  generateDrRemoteKubeconfigSecret,
   generateRemoteKubeconfigScript,
   generateRemoteKubeconfigSecret,
   REMOTE_KUBECONFIG_SECRET_NAME,
+  resolvedDrClusterNames,
 } from './remoteKubeconfig'
 import { patchGrafanaDatasource, rewriteStorageClassName, rewriteYamlNamespace, splitMonitoringStack } from './monitoringStack'
 import { patchConsolePluginManifest } from './consolePlugin'
@@ -1291,8 +1293,13 @@ export function generateInstallScript(
       '        ;;',
       '    esac',
       '  fi',
+      '  if [[ -f "03-replication/remote-kubeconfig.yaml" ]]; then',
+      '    echo "Applying DR Operator Secret remote-kubeconfig (current kubeconfig/context)."',
+      '    apply "03-replication/remote-kubeconfig.yaml"',
+      '  fi',
       'else',
       '  echo "No packaged remote-kubeconfig Secret YAML and KUBECONFIG_P/S not set."',
+      '  echo "Both Secrets are required on each site: hspc-replication-operator-remote-kubeconfig and remote-kubeconfig."',
       '  echo "Either re-export after pasting both kubeconfigs in the wizard, or:"',
       '  echo "  export KUBECONFIG_P=/path/to/primary-kubeconfig"',
       '  echo "  export KUBECONFIG_S=/path/to/secondary-kubeconfig"',
@@ -1817,12 +1824,13 @@ Telemetry is disabled in this package. After HSPC is READY, \`install.sh\` scale
     }
 
     const remoteSite = opts?.remoteKubeconfigSite ?? 'both'
+    const drClusterNames = resolvedDrClusterNames(state)
     const remoteKcInstallBlurb =
       remoteSite === 'primary'
-        ? 'Applies the packaged `remote-kubeconfig-for-primary-site.yaml` in this folder (run from `primary/` on the primary cluster).'
+        ? 'Applies the packaged `remote-kubeconfig-for-primary-site.yaml` and `remote-kubeconfig.yaml` in this folder (run from `primary/` on the primary cluster).'
         : remoteSite === 'secondary'
-          ? 'Applies the packaged `remote-kubeconfig-for-secondary-site.yaml` in this folder (run from `secondary/` on the secondary cluster).'
-          : 'Applies packaged `remote-kubeconfig-for-*-site.yaml` (`REPLICATION_SITE=primary` default; use `secondary` on the other site when both files are present).'
+          ? 'Applies the packaged `remote-kubeconfig-for-secondary-site.yaml` and `remote-kubeconfig.yaml` in this folder (run from `secondary/` on the secondary cluster).'
+          : 'Applies packaged `remote-kubeconfig-for-*-site.yaml` and `remote-kubeconfig.yaml` (`REPLICATION_SITE=primary` default; use `secondary` on the other site when both files are present).'
 
     files.push({
       path: '03-replication/README.md',
@@ -1843,7 +1851,7 @@ Version: ${state.versions.replication}
 
 ## What you provide
 
-**Option A — wizard Secret YAML (already in this ZIP if you pasted kubeconfigs):** nothing else for this cluster; \`install.sh\` applies the remote-kubeconfig Secret packaged for this folder.
+**Option A — wizard Secret YAML (already in this ZIP if you pasted kubeconfigs):** nothing else for this cluster; \`install.sh\` applies both remote-kubeconfig Secrets packaged for this folder (\`hspc-replication-operator-remote-kubeconfig\` and \`remote-kubeconfig\`). DRPolicy \`clusterName\` values must match the data keys in the \`remote-kubeconfig\` Secret (\`${drClusterNames.primary}\` / \`${drClusterNames.secondary}\`).
 
 **Option B — helper script:** set paths to both cluster kubeconfigs before \`./install.sh\`:
 
@@ -1881,26 +1889,38 @@ ${
     }
     const remoteNotesApply =
       remoteSite === 'primary'
-        ? `\`${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml\``
-        : remoteSite === 'secondary'
-          ? `\`${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml\``
-          : `\`\`\`bash
+        ? `\`\`\`bash
 ${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig.yaml
+\`\`\``
+        : remoteSite === 'secondary'
+          ? `\`\`\`bash
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig.yaml
+\`\`\``
+          : `\`\`\`bash
+# on primary:
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-primary-site.yaml
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig.yaml
 # on secondary:
 ${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig-for-secondary-site.yaml
+${plat.useOc ? 'oc' : 'kubectl'} apply -f 03-replication/remote-kubeconfig.yaml
 \`\`\``
 
     files.push({
       path: '03-replication/remote-kubeconfig-notes.md',
       content: `# Remote kubeconfig Secrets
 
-Target Secret: \`${state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME}\`
-Data key: \`remote-kubeconfig\`
-Namespace: \`${state.replication.namespace}\`
+Each site needs **two** Secrets in \`${state.replication.namespace}\`:
+
+1. **Replication operator** — \`${state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME}\` (data key \`remote-kubeconfig\`): the other site's kubeconfig
+2. **DR Operator** — \`remote-kubeconfig\` (data key = the other site's cluster name): same kubeconfig, keyed for DRPolicy \`clusterName\`
+
+Resolved cluster names: primary \`${drClusterNames.primary}\`, secondary \`${drClusterNames.secondary}\`. DRPolicy \`clusterName\` on each site must match the data key in that site's \`remote-kubeconfig\` Secret.
 
 ## Option A — wizard Secret YAML (in this ZIP when you pasted kubeconfigs)
 
-\`install.sh\` applies the Secret packaged for **this folder** automatically (dual-site ZIP: run \`./install.sh\` from \`primary/\` or \`secondary/\`). If both site YAML files are present in one folder, set \`REPLICATION_SITE=primary|secondary\`.
+\`install.sh\` applies both Secrets packaged for **this folder** automatically (dual-site ZIP: run \`./install.sh\` from \`primary/\` or \`secondary/\`). If both site YAML files are present in one folder, set \`REPLICATION_SITE=primary|secondary\`.
 
 Or apply by hand:
 
@@ -1915,10 +1935,10 @@ export KUBECONFIG_S=/path/to/secondary-kubeconfig
 
 \`install.sh\` (or \`APPLY=1 ./create-remote-kubeconfig-secrets.sh\`) will:
 
-1. Build both Secrets with the correct name, namespace, and base64 data key
-2. Put the **other** site's kubeconfig into each Secret
-3. Apply the primary Secret with \`KUBECONFIG_P\`
-4. Apply the secondary Secret with \`KUBECONFIG_S\`
+1. Build both Replication operator Secrets with the correct name, namespace, and base64 data key
+2. Build both DR Operator \`remote-kubeconfig\` Secrets with cluster-name data keys
+3. Put the **other** site's kubeconfig into each Secret
+4. Apply all four Secrets with \`KUBECONFIG_P\` / \`KUBECONFIG_S\`
 
 You do not create these Secrets by hand.
 `,
@@ -1931,6 +1951,8 @@ You do not create these Secrets by hand.
         namespace: state.replication.namespace,
         cmd: plat.useOc ? 'oc' : 'kubectl',
         secretName: state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME,
+        primaryClusterName: drClusterNames.primary,
+        secondaryClusterName: drClusterNames.secondary,
       }),
       description: 'Automates both remote-kubeconfig Secrets from KUBECONFIG_P / KUBECONFIG_S',
       group: 'replication',
@@ -1946,6 +1968,16 @@ You do not create these Secrets by hand.
         description: 'Apply on primary cluster (contains secondary kubeconfig)',
         group: 'replication',
       })
+      files.push({
+        path: '03-replication/remote-kubeconfig.yaml',
+        content: generateDrRemoteKubeconfigSecret({
+          namespace: state.replication.namespace,
+          kubeconfig: state.replication.secondaryKubeconfig,
+          clusterName: drClusterNames.secondary,
+        }),
+        description: 'DR Operator Secret on primary cluster (secondary cluster name as data key)',
+        group: 'replication',
+      })
     }
     if (remoteSite !== 'primary' && state.replication.primaryKubeconfig?.trim()) {
       files.push({
@@ -1956,6 +1988,16 @@ You do not create these Secrets by hand.
           secretName: state.replication.remoteKubeconfigSecretName || REMOTE_KUBECONFIG_SECRET_NAME,
         }),
         description: 'Apply on secondary cluster (contains primary kubeconfig)',
+        group: 'replication',
+      })
+      files.push({
+        path: '03-replication/remote-kubeconfig.yaml',
+        content: generateDrRemoteKubeconfigSecret({
+          namespace: state.replication.namespace,
+          kubeconfig: state.replication.primaryKubeconfig,
+          clusterName: drClusterNames.primary,
+        }),
+        description: 'DR Operator Secret on secondary cluster (primary cluster name as data key)',
         group: 'replication',
       })
     }

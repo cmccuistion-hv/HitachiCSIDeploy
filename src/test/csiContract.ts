@@ -15,6 +15,7 @@ import { getSiteStorage } from '../catalog/sites'
 import { csiSecretRefForSystem, gadArraysForStorageClass } from '../catalog/arrayBinding'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
 import { effectiveSerialNumber } from '../catalog/validation'
+import { resolvedDrClusterNames } from '../generator/remoteKubeconfig'
 import { snapshotClassOpts } from '../generator/yaml'
 
 export const UPSTREAM_SAMPLE_VERSION = 'v3.18.3'
@@ -316,7 +317,7 @@ export function assertSecretEmittedKeys(
 }
 
 const CSI_PATH =
-  /^(?:primary\/|secondary\/)?(?:01-storage\/(?:storageclass-|secret-|volumesnapshotclass-).*|02-driver\/hspc-cr\.yaml|03-replication\/(?:storage-secrets\.yaml|remote-kubeconfig-.+\.yaml))$/
+  /^(?:primary\/|secondary\/)?(?:01-storage\/(?:storageclass-|secret-|volumesnapshotclass-).*|02-driver\/hspc-cr\.yaml|03-replication\/(?:storage-secrets\.yaml|remote-kubeconfig\.yaml|remote-kubeconfig-.+\.yaml))$/
 
 function paramStr(value: unknown): string {
   if (value === undefined || value === null) return ''
@@ -615,6 +616,27 @@ function assertRemoteKubeconfig(path: string, content: string): void {
   }
 }
 
+function assertDrRemoteKubeconfig(path: string, content: string, state: WizardState): void {
+  const doc = parse(content) as {
+    metadata?: { name?: string }
+    data?: Record<string, string>
+  }
+  if (doc.metadata?.name !== 'remote-kubeconfig') {
+    throw new Error(
+      `${path}: metadata.name "${doc.metadata?.name ?? ''}" !== wizard state`,
+    )
+  }
+  const dataKeys = Object.keys(doc.data ?? {})
+  if (dataKeys.length !== 1) {
+    throw new Error(`${path}: expected exactly one data key, got "${dataKeys.join(',')}"`)
+  }
+  const names = resolvedDrClusterNames(state)
+  const expectedKey = path.includes('primary/') ? names.secondary : names.primary
+  if (dataKeys[0] !== expectedKey) {
+    throw new Error(`${path}: data key "${dataKeys[0]}" !== wizard state "${expectedKey}"`)
+  }
+}
+
 export function assertCsiContract(
   files: Array<{ path: string; content: string }>,
   state: WizardState,
@@ -643,7 +665,12 @@ export function assertCsiContract(
       assertHspcCr(file.path, file.content, state)
     } else if (file.path.endsWith('03-replication/storage-secrets.yaml')) {
       assertHrpcStorageSecrets(file.path, file.content, state)
-    } else if (file.path.includes('03-replication/remote-kubeconfig-')) {
+    } else if (file.path.endsWith('03-replication/remote-kubeconfig.yaml')) {
+      assertDrRemoteKubeconfig(file.path, file.content, state)
+    } else if (
+      file.path.includes('03-replication/remote-kubeconfig-for-') ||
+      file.path.includes('03-replication/remote-kubeconfig-')
+    ) {
       assertRemoteKubeconfig(file.path, file.content)
     }
   }

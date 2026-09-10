@@ -1212,6 +1212,8 @@ describe('generateAll package matrix', () => {
         'secondary/03-replication/storage-secrets.yaml',
         'primary/03-replication/remote-kubeconfig-for-primary-site.yaml',
         'secondary/03-replication/remote-kubeconfig-for-secondary-site.yaml',
+        'primary/03-replication/remote-kubeconfig.yaml',
+        'secondary/03-replication/remote-kubeconfig.yaml',
       ]),
     )
     for (const path of [
@@ -1221,6 +1223,15 @@ describe('generateAll package matrix', () => {
       expect(fileAt(files, path).content).toContain('name: hspc-replication-operator-remote-kubeconfig')
       expect(fileAt(files, path).content).toContain('remote-kubeconfig:')
     }
+    expect(fileAt(files, 'primary/03-replication/remote-kubeconfig.yaml').content).toContain(
+      'name: remote-kubeconfig',
+    )
+    expect(fileAt(files, 'primary/03-replication/remote-kubeconfig.yaml').content).toMatch(
+      /data:\n  "secondary": /,
+    )
+    expect(fileAt(files, 'secondary/03-replication/remote-kubeconfig.yaml').content).toMatch(
+      /data:\n  "primary": /,
+    )
     expect(
       generatedPaths.some((path) =>
         ['sample-replication', 'replicationsample', 'testing'].some((needle) =>
@@ -1233,6 +1244,45 @@ describe('generateAll package matrix', () => {
     expect(generatedPaths).not.toContain('VERSION')
     expect(generatedPaths).not.toContain('primary/VERSION')
     expect(generatedPaths).not.toContain('secondary/VERSION')
+  })
+
+  it('packages DR Operator remote-kubeconfig.yaml with advanced cluster names as data keys', async () => {
+    const state = filledReplicationState({
+      replication: {
+        primaryKubeconfig: 'dummy-primary-kubeconfig',
+        secondaryKubeconfig: 'dummy-secondary-kubeconfig',
+        primaryClusterName: 'dc1',
+        secondaryClusterName: 'dc2',
+      },
+    })
+    const files = await generateAll(state)
+
+    expect(fileAt(files, 'primary/03-replication/remote-kubeconfig.yaml').content).toMatch(
+      /data:\n  "dc2": /,
+    )
+    expect(fileAt(files, 'secondary/03-replication/remote-kubeconfig.yaml').content).toMatch(
+      /data:\n  "dc1": /,
+    )
+  })
+
+  it('omits remote-kubeconfig.yaml without pasted kubeconfigs but bakes cluster names in helper script', async () => {
+    const state = filledReplicationState({
+      replication: {
+        primaryClusterName: 'dc1',
+        secondaryClusterName: 'dc2',
+      },
+    })
+    const files = await generateAll(state)
+    const generatedPaths = paths(files)
+
+    expect(generatedPaths).not.toContain('primary/03-replication/remote-kubeconfig.yaml')
+    expect(generatedPaths).not.toContain('secondary/03-replication/remote-kubeconfig.yaml')
+    expect(generatedPaths).toEqual(
+      expect.arrayContaining(['primary/03-replication/create-remote-kubeconfig-secrets.sh']),
+    )
+    const script = fileAt(files, 'primary/03-replication/create-remote-kubeconfig-secrets.sh').content
+    expect(script).toContain('"dc2"')
+    expect(script).toContain('"dc1"')
   })
 
   it('refreshes Replication storage-secrets from each site’s array when stored secrets are stale', async () => {

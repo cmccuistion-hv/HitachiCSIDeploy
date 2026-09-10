@@ -77,6 +77,25 @@ describe('generateInstallScript', () => {
     execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
   })
 
+  it('applies packaged DR Operator remote-kubeconfig.yaml after the Replication operator Secret', () => {
+    const script = generateInstallScript(filledReplicationState(), [
+      yamlFile('03-replication/cert-manager.yaml', 'replication'),
+      yamlFile('03-replication/dr-operator-install.yaml', 'replication'),
+      yamlFile('03-replication/remote-kubeconfig-for-primary-site.yaml', 'replication'),
+      yamlFile('03-replication/remote-kubeconfig.yaml', 'replication'),
+    ])
+
+    const applyDr = script.indexOf('apply "03-replication/dr-operator-install.yaml"')
+    const applyHrpc = script.indexOf('apply "03-replication/remote-kubeconfig-for-primary-site.yaml"')
+    const applyDrKc = script.indexOf('apply "03-replication/remote-kubeconfig.yaml"')
+
+    expect(applyDr).toBeGreaterThan(-1)
+    expect(applyHrpc).toBeGreaterThan(applyDr)
+    expect(applyDrKc).toBeGreaterThan(applyHrpc)
+    expect(script).toContain('APPLY=1 ./03-replication/create-remote-kubeconfig-secrets.sh')
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('waits for cert-manager Certificate and Issuer APIs before applying the DR operator', () => {
     const script = generateInstallScript(filledReplicationState(), [
       yamlFile('03-replication/cert-manager.yaml', 'replication'),
