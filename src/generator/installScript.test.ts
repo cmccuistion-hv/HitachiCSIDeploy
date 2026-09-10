@@ -397,6 +397,32 @@ apply_manifest bad.yaml
     expect(lines.slice(teeIdx + 1).some((line) => line === `echo "==> Wizard ${stamp}"`)).toBe(true)
   })
 
+  it('patches the Performance Metrics exporter instead of applying a sparse Deployment', () => {
+    const script = generateInstallScript(
+      filledState({
+        components: { metrics: true },
+        metrics: { enabled: true, namespace: 'hspc-monitoring-system' },
+      }),
+      [
+        yamlFile('04-metrics/namespace.yaml', 'metrics'),
+        yamlFile('04-metrics/exporter.yaml', 'metrics'),
+        yamlFile('04-metrics/exporter-patch.yaml', 'metrics'),
+      ],
+    )
+
+    expect(script).toContain('apply "04-metrics/exporter.yaml"')
+    expect(script).not.toContain('apply "04-metrics/exporter-patch.yaml"')
+    expect(script).toContain('--type strategic')
+    expect(script).toContain('--patch-file "04-metrics/exporter-patch.yaml"')
+    expect(script).toContain('deployment storage-exporter')
+    expect(script).toContain('-n "hspc-monitoring-system"')
+    const applyExporter = script.indexOf('apply "04-metrics/exporter.yaml"')
+    const patchExporter = script.indexOf('--patch-file "04-metrics/exporter-patch.yaml"')
+    expect(applyExporter).toBeGreaterThan(-1)
+    expect(patchExporter).toBeGreaterThan(applyExporter)
+    execFileSync('bash', ['-n'], { input: script, encoding: 'utf8' })
+  })
+
   it('quotes MCP jsonpath filters so bash command substitution can parse them', () => {
     const script = generateInstallScript(filledState(), [
       {

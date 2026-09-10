@@ -862,6 +862,13 @@ describe('generateAll package matrix', () => {
     )
     expect(fileAt(files, '04-metrics/metrics-secret.yaml').content).toContain('serial: 400001')
     expect(fileAt(files, 'install.sh').content).toMatch(/04-metrics/)
+    expect(fileAt(files, 'install.sh').content).toContain('--patch-file "04-metrics/exporter-patch.yaml"')
+    expect(fileAt(files, 'install.sh').content).not.toContain('apply "04-metrics/exporter-patch.yaml"')
+    expect(fileAt(files, '04-metrics/README.md').content).toContain(
+      '--patch-file exporter-patch.yaml',
+    )
+    expect(fileAt(files, '04-metrics/README.md').content).not.toContain('apply -f exporter-patch.yaml')
+    expect(fileAt(files, '04-metrics/exporter-patch.yaml').content).toContain('Do not kubectl apply')
   })
 
   it('fills the Performance Metrics exporter secret from storage systems when metrics.storages is empty', async () => {

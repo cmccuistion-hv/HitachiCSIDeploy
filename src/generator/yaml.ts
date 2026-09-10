@@ -518,7 +518,8 @@ ${storages}
 }
 
 export function generateMetricsExporterPatch(cfg: MetricsConfig, version: string): string {
-  return `# Performance Metrics exporter environment (apply after base exporter.yaml)
+  return `# Performance Metrics exporter overlay (strategic merge patch after exporter.yaml).
+# Wizard image tag + Advanced env. Do not kubectl apply this file — it is not a full Deployment.
 # Image tag aligned to ${version}
 apiVersion: apps/v1
 kind: Deployment
@@ -1110,6 +1111,15 @@ export function generateInstallScript(
     }
     // Quickstart PVC/Pod: wait for Bound before creating the Pod (dedicated block below)
     if (f.group === 'quickstart') {
+      continue
+    }
+    // Sparse Deployment overlay — kubectl apply would clear selector/labels (immutable)
+    if (f.path === '04-metrics/exporter-patch.yaml') {
+      const metricsNs = state.metrics.namespace || 'hspc-monitoring-system'
+      lines.push(
+        `echo "==> Patching Performance Metrics exporter env/image"`,
+        `"$CMD" patch deployment storage-exporter -n ${JSON.stringify(metricsNs)} --type strategic --patch-file "04-metrics/exporter-patch.yaml"`,
+      )
       continue
     }
     lines.push(`apply "${f.path}"`)
@@ -2077,7 +2087,9 @@ metadata:
         description: 'Performance Metrics exporter patch (env + image tag aligned to wizard version)',
         group: 'metrics',
       })
-      stackLines.push(`${cmd} apply -f exporter-patch.yaml`)
+      stackLines.push(
+        `${cmd} patch deployment storage-exporter -n ${metricsNs} --type strategic --patch-file exporter-patch.yaml`,
+      )
     } else {
       fetchFailed = true
     }
