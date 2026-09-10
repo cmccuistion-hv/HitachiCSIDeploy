@@ -91,9 +91,8 @@ export function generateRemoteKubeconfigScript(opts: {
 #
 # THIS SCRIPT DOES AUTOMATICALLY:
 #   - base64-encodes each kubeconfig
-#   - writes Secret YAML with the correct name/namespace/data key
-#   - with APPLY=1: applies Replication operator Secrets and DR Operator Secret
-#     (remote-kubeconfig) on each site via KUBECONFIG_P / KUBECONFIG_S
+#   - writes Replication operator and DR Operator Secret YAML
+#   - with APPLY=1: applies all four Secrets on each site via KUBECONFIG_P / KUBECONFIG_S
 #
 # Run once from a host that can reach both cluster APIs:
 #   export KUBECONFIG_P=/path/to/primary-kubeconfig
@@ -121,7 +120,7 @@ if [[ ! -f "\$KUBECONFIG_P" || ! -f "\$KUBECONFIG_S" ]]; then
   exit 1
 fi
 
-mkdir -p "\$OUT_DIR"
+mkdir -p "\$OUT_DIR/primary" "\$OUT_DIR/secondary"
 
 # Secret applied ON the primary cluster — data is the secondary kubeconfig
 B64_S=\$(base64 -w0 < "\$KUBECONFIG_S" 2>/dev/null || base64 < "\$KUBECONFIG_S" | tr -d '\\n')
@@ -149,20 +148,8 @@ data:
   remote-kubeconfig: \${B64_P}
 EOF
 
-echo "Wrote:"
-echo "  \$OUT_DIR/remote-kubeconfig-for-primary-site.yaml   (apply on PRIMARY)"
-echo "  \$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml (apply on SECONDARY)"
-
-if [[ "\${APPLY:-0}" == "1" ]]; then
-  echo "Applying Replication operator Secret to primary (KUBECONFIG=\$KUBECONFIG_P)..."
-  KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-primary-site.yaml"
-  echo "Applying Replication operator Secret to secondary (KUBECONFIG=\$KUBECONFIG_S)..."
-  KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml"
-
-  # DR Operator Secret (name: remote-kubeconfig) — temp dir per site avoids OUT_DIR clobber
-  echo "Applying DR Operator Secret to primary (cluster key ${drPrimaryDataKey})..."
-  TMP_DR_P=\$(mktemp -d)
-  cat > "\$TMP_DR_P/remote-kubeconfig.yaml" <<EOF
+# DR Operator Secret (name: remote-kubeconfig) — separate subdirs avoid OUT_DIR clobber
+cat > "\$OUT_DIR/primary/remote-kubeconfig.yaml" <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -172,12 +159,8 @@ type: Opaque
 data:
   ${drPrimaryDataKey}: \${B64_S}
 EOF
-  KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$TMP_DR_P/remote-kubeconfig.yaml"
-  rm -rf "\$TMP_DR_P"
 
-  echo "Applying DR Operator Secret to secondary (cluster key ${drSecondaryDataKey})..."
-  TMP_DR_S=\$(mktemp -d)
-  cat > "\$TMP_DR_S/remote-kubeconfig.yaml" <<EOF
+cat > "\$OUT_DIR/secondary/remote-kubeconfig.yaml" <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -187,8 +170,23 @@ type: Opaque
 data:
   ${drSecondaryDataKey}: \${B64_P}
 EOF
-  KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$TMP_DR_S/remote-kubeconfig.yaml"
-  rm -rf "\$TMP_DR_S"
+
+echo "Wrote:"
+echo "  \$OUT_DIR/remote-kubeconfig-for-primary-site.yaml   (apply on PRIMARY)"
+echo "  \$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml (apply on SECONDARY)"
+echo "  \$OUT_DIR/primary/remote-kubeconfig.yaml           (apply on PRIMARY, DR Operator)"
+echo "  \$OUT_DIR/secondary/remote-kubeconfig.yaml         (apply on SECONDARY, DR Operator)"
+
+if [[ "\${APPLY:-0}" == "1" ]]; then
+  echo "Applying Replication operator Secret to primary (KUBECONFIG=\$KUBECONFIG_P)..."
+  KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-primary-site.yaml"
+  echo "Applying Replication operator Secret to secondary (KUBECONFIG=\$KUBECONFIG_S)..."
+  KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml"
+
+  echo "Applying DR Operator Secret to primary (cluster key ${drPrimaryDataKey})..."
+  KUBECONFIG="\$KUBECONFIG_P" "\$CMD" apply -f "\$OUT_DIR/primary/remote-kubeconfig.yaml"
+  echo "Applying DR Operator Secret to secondary (cluster key ${drSecondaryDataKey})..."
+  KUBECONFIG="\$KUBECONFIG_S" "\$CMD" apply -f "\$OUT_DIR/secondary/remote-kubeconfig.yaml"
 
   echo "Done."
 else
@@ -196,7 +194,9 @@ else
   echo "Apply manually:"
   echo "  KUBECONFIG=\\\$KUBECONFIG_P $CMD apply -f \$OUT_DIR/remote-kubeconfig-for-primary-site.yaml"
   echo "  KUBECONFIG=\\\$KUBECONFIG_S $CMD apply -f \$OUT_DIR/remote-kubeconfig-for-secondary-site.yaml"
-  echo "Or re-run with APPLY=1 to apply both automatically."
+  echo "  KUBECONFIG=\\\$KUBECONFIG_P $CMD apply -f \$OUT_DIR/primary/remote-kubeconfig.yaml"
+  echo "  KUBECONFIG=\\\$KUBECONFIG_S $CMD apply -f \$OUT_DIR/secondary/remote-kubeconfig.yaml"
+  echo "Or re-run with APPLY=1 to apply all four automatically."
 fi
 `
 }

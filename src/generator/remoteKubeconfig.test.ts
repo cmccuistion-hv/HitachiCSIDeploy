@@ -46,7 +46,7 @@ describe('generateDrRemoteKubeconfigSecret', () => {
 })
 
 describe('generateRemoteKubeconfigScript DR apply', () => {
-  it('helper script bakes cluster names and applies DR Secret from a temp remote-kubeconfig.yaml', () => {
+  it('helper script writes DR Secret YAML under primary/ and secondary/ without APPLY=1', () => {
     const script = generateRemoteKubeconfigScript({
       namespace: 'ns-a',
       cmd: 'oc',
@@ -54,10 +54,14 @@ describe('generateRemoteKubeconfigScript DR apply', () => {
       secondaryClusterName: 'dc2',
     })
     expect(script).toContain('name: remote-kubeconfig')
-    expect(script).toContain('dc1')
-    expect(script).toContain('dc2')
-    expect(script).toContain('mktemp')
-    expect(script).toContain('remote-kubeconfig.yaml')
+    expect(script).toContain('"dc1"')
+    expect(script).toContain('"dc2"')
+    expect(script).toContain('primary/remote-kubeconfig.yaml')
+    expect(script).toContain('secondary/remote-kubeconfig.yaml')
+    expect(script).toContain('Apply manually:')
+    expect(script).toMatch(/apply -f .*primary\/remote-kubeconfig\.yaml/)
+    expect(script).toMatch(/apply -f .*secondary\/remote-kubeconfig\.yaml/)
+    expect(script).not.toContain('mktemp')
     expect(script).not.toContain('jq')
     expect(script).not.toContain('remote-cluster-management.sh')
   })
