@@ -23,6 +23,7 @@ import type {
 } from '../catalog/types'
 import {
   nextUniqueName,
+  portIdWithoutMultipathWarning,
   siteStorageClassesReady,
   siteStorageSystemsReady,
   validateStorageClass,
@@ -43,14 +44,6 @@ import { useWizard } from '../state/WizardContext'
 import { useUiMode } from '../state/UiModeContext'
 import { useSiteTab } from '../state/useSiteTab'
 import { Callout, CodeBlock, Field, HelpTip, Section } from '../components/ui'
-
-/** Count comma-separated Port ID values (empty segments ignored). */
-function portIdCount(value: string | undefined): number {
-  return (value || '')
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean).length
-}
 
 function arrayOptionLabel(sys: StorageSystemConfig): string {
   const name = (sys.name || '').trim() || 'Unnamed array'
@@ -897,18 +890,14 @@ export function StorageClassesStep() {
                     <input value={sc.poolID || ''} onChange={(e) => updateSc(sc.id, { poolID: e.target.value })} placeholder="1" />
                   </Field>
                   {conn.needsPortId && (
-                    <>
-                      {multipathOff && (
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <Callout variant="warn">
-                            {portIdCount(sc.portID) > 1 ? HELP.portIdMultipleWithoutMultipath : HELP.portIdWithoutMultipath}
-                          </Callout>
-                        </div>
-                      )}
-                      <Field label="Port ID(s)" hint={portIdHint} error={errors.portID}>
-                        <input value={sc.portID || ''} onChange={(e) => updateSc(sc.id, { portID: e.target.value })} placeholder={portIdPlaceholder} />
-                      </Field>
-                    </>
+                    <Field
+                      label="Port ID(s)"
+                      hint={portIdHint}
+                      error={errors.portID}
+                      warning={portIdWithoutMultipathWarning(state.multipath.enabled, sc.portID)}
+                    >
+                      <input value={sc.portID || ''} onChange={(e) => updateSc(sc.id, { portID: e.target.value })} placeholder={portIdPlaceholder} />
+                    </Field>
                   )}
                   {conn.needsNvmSubsystem && (
                     <Field label="NVMe subsystem ID" hint="Required for NVMe-FC and NVMe/TCP — Port ID is not used." error={errors.nvmSubsystemID}>
@@ -920,13 +909,6 @@ export function StorageClassesStep() {
 
               {(sc.kind === 'stretched' || sc.kind === 'stretched-adr') && (
                 <>
-                  {multipathOff && (
-                    <Callout variant="warn">
-                      {portIdCount(sc.primaryPortID) > 1 || portIdCount(sc.secondaryPortID) > 1
-                        ? HELP.portIdMultipleWithoutMultipath
-                        : HELP.portIdWithoutMultipath}
-                    </Callout>
-                  )}
                   <div className="field-grid" style={{ marginTop: '1rem' }}>
                     <Field
                       label="Primary array"
@@ -987,6 +969,7 @@ export function StorageClassesStep() {
                       label="Primary port ID(s)"
                       hint={multipathOff ? 'Prefer a single primary port when wizard multipath packaging is off (e.g. CL1-A).' : 'Comma-separated primary ports (e.g. CL1-A,CL2-A).'}
                       error={errors.primaryPortID}
+                      warning={portIdWithoutMultipathWarning(state.multipath.enabled, sc.primaryPortID)}
                     >
                       <input value={sc.primaryPortID || ''} onChange={(e) => updateSc(sc.id, { primaryPortID: e.target.value })} placeholder={portIdPlaceholder} />
                     </Field>
@@ -997,6 +980,7 @@ export function StorageClassesStep() {
                       label="Secondary port ID(s)"
                       hint={multipathOff ? 'Prefer a single secondary port when wizard multipath packaging is off (e.g. CL1-F).' : 'Comma-separated secondary ports.'}
                       error={errors.secondaryPortID}
+                      warning={portIdWithoutMultipathWarning(state.multipath.enabled, sc.secondaryPortID)}
                     >
                       <input value={sc.secondaryPortID || ''} onChange={(e) => updateSc(sc.id, { secondaryPortID: e.target.value })} placeholder={multipathOff ? 'CL1-F' : 'CL1-F,CL2-F'} />
                     </Field>

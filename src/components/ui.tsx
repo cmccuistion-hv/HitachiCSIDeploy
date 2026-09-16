@@ -161,6 +161,7 @@ export function Field({
   help,
   helpDiagram,
   error,
+  warning,
   children,
 }: {
   label: string
@@ -169,17 +170,21 @@ export function Field({
   help?: string
   helpDiagram?: ReactNode
   error?: string
+  warning?: string
   children: ReactNode
 }) {
+  const showError = Boolean(error)
+  const showWarning = Boolean(warning) && !showError
   return (
-    <div className={`field${error ? ' error' : ''}`}>
+    <div className={`field${showError ? ' error' : ''}${showWarning ? ' warning' : ''}`}>
       <label>
         {label}
         {help ? <HelpTip text={help} diagram={helpDiagram} /> : null}
       </label>
       {children}
-      {hint && !error && <span className="hint">{hint}</span>}
-      {error && <span className="error-text">{error}</span>}
+      {hint && !showError && !showWarning && <span className="hint">{hint}</span>}
+      {showError && <span className="error-text">{error}</span>}
+      {showWarning && <span className="warning-text">{warning}</span>}
     </div>
   )
 }

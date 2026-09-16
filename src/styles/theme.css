@@ -605,6 +605,16 @@ textarea {
   font-size: 0.75rem;
 }
 
+.field.warning input,
+.field.warning select {
+  border-color: var(--hv-warning);
+}
+
+.warning-text {
+  color: var(--hv-warning);
+  font-size: 0.75rem;
+}
+
 .section {
   margin-bottom: 1.75rem;
   padding: 1.15rem;

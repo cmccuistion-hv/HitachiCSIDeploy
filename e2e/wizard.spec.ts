@@ -167,6 +167,50 @@ test('blocks incomplete StorageClasses and hides the OpenShift console step on K
   await expect(page.locator('.footer-fix')).toBeVisible()
 })
 
+test('shows a yellow Port ID warning for multiple ports when wizard multipath is off, without blocking Continue', async ({
+  page,
+}) => {
+  const state = filledState({
+    multipath: { enabled: false, includeConf: false, includeMachineConfig: false, includeDaemonSet: false },
+  })
+  state.storageClasses[0].portID = 'CL1-A,CL2-A'
+  await seedWizardState(page, state)
+
+  await sidebar(page).getByRole('button', { name: /StorageClasses/ }).click()
+  await expect(page.getByRole('heading', { name: 'StorageClasses & snapshots' })).toBeVisible()
+
+  const portField = field(page, 'Port ID(s)')
+  await expect(portField).toHaveClass(/warning/)
+  await expect(portField).not.toHaveClass(/error/)
+  await expect(portField.locator('.warning-text')).toContainText(/Multiple ports need multipathing/)
+  await expect(portField.locator('.error-text')).toHaveCount(0)
+  await expect(page.getByText(/Prefer a single Port ID unless/)).toHaveCount(0)
+  await expect(continueButton(page)).toBeEnabled()
+
+  await portField.locator('input').fill('CL1-A')
+  await expect(portField.locator('.warning-text')).toHaveCount(0)
+  await expect(continueButton(page)).toBeEnabled()
+})
+
+test('blocks Continue when a Port ID is malformed', async ({ page }) => {
+  const state = filledState()
+  state.storageClasses[0].portID = 'CL-2A'
+  await seedWizardState(page, state)
+
+  await sidebar(page).getByRole('button', { name: /StorageClasses/ }).click()
+  await expect(page.getByRole('heading', { name: 'StorageClasses & snapshots' })).toBeVisible()
+
+  const portField = field(page, 'Port ID(s)')
+  await expect(portField).toHaveClass(/error/)
+  await expect(portField).not.toHaveClass(/warning/)
+  await expect(portField.locator('.error-text')).toContainText(/CL, 1–2 digits/)
+  await expect(continueButton(page)).toBeDisabled()
+
+  await portField.locator('input').fill('CL3-G,CL4-G,CL2-A')
+  await expect(portField.locator('.error-text')).toHaveCount(0)
+  await expect(continueButton(page)).toBeEnabled()
+})
+
 test('blocks Replication export when journal IDs are missing', async ({ page }) => {
   const state = replicationStateWithoutJournals()
   expect(state.components.replication).toBe(true)
