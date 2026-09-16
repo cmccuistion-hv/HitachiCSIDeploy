@@ -110,6 +110,7 @@ export interface SiteStorageConfig {
   storageSystems: StorageSystemConfig[]
   storageClasses: StorageClassConfig[]
   metrics?: SiteMetricsConfig
+  quickstart?: SiteQuickstartConfig
 }
 
 export interface SnapshotClassConfig {
@@ -195,6 +196,11 @@ export interface QuickstartConfig {
   podName: string
   accessMode: 'ReadWriteOnce' | 'ReadWriteMany' | 'ReadOnlyMany'
   volumeMode: 'Filesystem' | 'Block'
+}
+
+export interface SiteQuickstartConfig extends QuickstartConfig {
+  /** When false, this cluster’s package omits 06-quickstart/. Default true. */
+  install: boolean
 }
 
 export interface MultipathConfig {

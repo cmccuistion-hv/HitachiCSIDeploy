@@ -1,5 +1,6 @@
 import type {
   SiteId,
+  SiteQuickstartConfig,
   SiteStorageConfig,
   StorageClassConfig,
   StorageSystemConfig,
@@ -30,6 +31,7 @@ export function createEmptySiteStorage(
     storageSystems: partial?.storageSystems ?? [],
     storageClasses: partial?.storageClasses ?? [],
     ...(partial?.metrics ? { metrics: partial.metrics } : {}),
+    ...(partial?.quickstart ? { quickstart: partial.quickstart } : {}),
   }
 }
 
@@ -201,16 +203,27 @@ export function ensureSitesForReplication(state: WizardState): WizardState {
     ? secondary
     : { ...secondary, metrics: { ...(primaryWithMetrics.metrics ?? seeded) } }
 
+  const seededQs: SiteQuickstartConfig = {
+    install: true,
+    ...state.quickstart,
+  }
+  const primaryWithQs = primaryWithMetrics.quickstart
+    ? primaryWithMetrics
+    : { ...primaryWithMetrics, quickstart: seededQs }
+  const secondaryWithQs = secondaryWithMetrics.quickstart
+    ? secondaryWithMetrics
+    : { ...secondaryWithMetrics, quickstart: { ...(primaryWithQs.quickstart ?? seededQs) } }
+
   if (
-    state.sites?.primary === primaryWithMetrics &&
-    state.sites?.secondary === secondaryWithMetrics
+    state.sites?.primary === primaryWithQs &&
+    state.sites?.secondary === secondaryWithQs
   ) {
     return state
   }
 
   return {
     ...state,
-    sites: { primary: primaryWithMetrics, secondary: secondaryWithMetrics },
+    sites: { primary: primaryWithQs, secondary: secondaryWithQs },
   }
 }
 
