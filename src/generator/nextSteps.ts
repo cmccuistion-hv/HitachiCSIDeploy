@@ -1,5 +1,6 @@
 import { PLATFORMS } from '../catalog/platforms'
-import { resolvedStorageClassName } from '../catalog/sites'
+import { resolvedStorageClassName, type SiteId } from '../catalog/sites'
+import { quickstartForSite, quickstartInstalledForSite } from '../catalog/siteQuickstart'
 import type { WizardState } from '../catalog/types'
 import { offlineRegistryPaths } from './offline'
 import { resolvedDrClusterNames } from './remoteKubeconfig'
@@ -15,6 +16,55 @@ function formatList(items: string[]): string {
   if (items.length === 1) return items[0]
   if (items.length === 2) return `${items[0]} and ${items[1]}`
   return `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`
+}
+
+function testVolumeSites(state: WizardState): SiteId[] {
+  const sites: SiteId[] = []
+  if (quickstartInstalledForSite(state, 'primary')) sites.push('primary')
+  if (quickstartInstalledForSite(state, 'secondary')) sites.push('secondary')
+  return sites
+}
+
+function buildVerifyTestVolumeStep(state: WizardState, clusterCommand: string): NextStep | null {
+  const sites = testVolumeSites(state)
+  if (sites.length === 0) return null
+
+  if (!state.components.replication || sites.length === 1) {
+    const site = sites[0]
+    const qs = quickstartForSite(state, site)
+    const clusterHint =
+      state.components.replication && site === 'secondary'
+        ? ' on the secondary cluster'
+        : state.components.replication && site === 'primary'
+          ? ' on the primary cluster'
+          : ''
+    return {
+      id: 'verify-test-volume',
+      title: 'Confirm the test volume',
+      body: `Confirm PVC ${qs.pvcName} is Bound and Pod ${qs.podName} is Running${clusterHint}.`,
+      command: `${clusterCommand} get pvc ${qs.pvcName}\n${clusterCommand} get pod ${qs.podName}`,
+    }
+  }
+
+  const bodyParts: string[] = []
+  const commandParts: string[] = []
+  for (const site of sites) {
+    const qs = quickstartForSite(state, site)
+    const label = site === 'primary' ? 'primary' : 'secondary'
+    bodyParts.push(
+      `On the ${label} cluster, confirm PVC ${qs.pvcName} is Bound and Pod ${qs.podName} is Running.`,
+    )
+    commandParts.push(
+      `# ${label.charAt(0).toUpperCase()}${label.slice(1)} cluster\n${clusterCommand} get pvc ${qs.pvcName}\n${clusterCommand} get pod ${qs.podName}`,
+    )
+  }
+
+  return {
+    id: 'verify-test-volume',
+    title: 'Confirm the test volume',
+    body: bodyParts.join(' '),
+    command: commandParts.join('\n'),
+  }
 }
 
 export function buildNextSteps(state: WizardState): NextStep[] {
@@ -115,7 +165,7 @@ export function buildNextSteps(state: WizardState): NextStep[] {
   if (state.components.replication) installedItems.push('Replication and the DR Operator')
   if (state.components.metrics) installedItems.push('Performance Metrics')
   if (state.components.consolePlugin) installedItems.push('the OpenShift Console Plugin')
-  if (state.storageClassesEnabled) installedItems.push('the test volume')
+  if (testVolumeSites(state).length > 0) installedItems.push('the test volume')
 
   if (state.components.replication) {
     steps.push(
@@ -144,14 +194,8 @@ export function buildNextSteps(state: WizardState): NextStep[] {
     })
   }
 
-  if (state.storageClassesEnabled) {
-    steps.push({
-      id: 'verify-test-volume',
-      title: 'Confirm the test volume',
-      body: `Confirm PVC ${state.quickstart.pvcName} is Bound and Pod ${state.quickstart.podName} is Running.`,
-      command: `${clusterCommand} get pvc ${state.quickstart.pvcName}\n${clusterCommand} get pod ${state.quickstart.podName}`,
-    })
-  }
+  const verifyTestVolume = buildVerifyTestVolumeStep(state, clusterCommand)
+  if (verifyTestVolume) steps.push(verifyTestVolume)
 
   if (state.components.consolePlugin) {
     const exampleSc = resolvedStorageClassName(state)

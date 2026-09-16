@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { withSiteQuickstart } from '../catalog/siteQuickstart'
 import { filledReplicationState, filledState } from '../test/fixtures'
 import { buildNextSteps } from './nextSteps'
 
@@ -64,6 +65,27 @@ describe('buildNextSteps', () => {
   it('omits the test-volume verify step when StorageClasses are off', () => {
     expect(stepIds(filledState({ storageClassesEnabled: false }))).not.toContain('verify-test-volume')
     expect(stepIds(filledState())).toContain('verify-test-volume')
+  })
+
+  it('omits verify-test-volume when both Replication sites skip the test volume', () => {
+    let state = filledReplicationState()
+    state = withSiteQuickstart(state, 'primary', { install: false })
+    state = withSiteQuickstart(state, 'secondary', { install: false })
+    expect(stepIds(state)).not.toContain('verify-test-volume')
+  })
+
+  it('scopes verify-test-volume to the secondary site when primary skips it', () => {
+    let state = filledReplicationState()
+    state = withSiteQuickstart(state, 'primary', { install: false })
+    state = withSiteQuickstart(state, 'secondary', { pvcName: 's-pvc', podName: 's-pod' })
+    const step = buildNextSteps(state).find((s) => s.id === 'verify-test-volume')
+
+    expect(step).toBeDefined()
+    expect(step?.body).toContain('s-pvc')
+    expect(step?.body).toContain('s-pod')
+    expect(step?.body).not.toContain('hitachi-csi-test-pvc')
+    expect(step?.command).toContain('s-pvc')
+    expect(step?.command).toContain('s-pod')
   })
 
   it('uses a stable unzip directory name without the CSI Driver tag', () => {

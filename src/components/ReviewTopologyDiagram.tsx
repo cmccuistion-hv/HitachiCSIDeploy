@@ -643,7 +643,8 @@ export function ReviewTopologyDiagram({
     : null
 
   const clusterH =
-    Math.max(left.clusterH, right?.clusterH ?? 0) + (model.sites[0].testVolume ? 44 : 0)
+    Math.max(left.clusterH, right?.clusterH ?? 0) +
+    (model.sites[0].testVolume || model.sites[1]?.testVolume ? 44 : 0)
   const arrayY = clusterY + clusterH + 36
   const sideBySide = !dual
   const leftVol = model.sites[0].testVolume ? testVolumeBox(leftX, colW, clusterY, clusterH) : undefined
