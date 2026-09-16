@@ -14,7 +14,7 @@ import { resolvedReplicationStorageSecrets } from '../catalog/replicationSecrets
 import { getSiteStorage } from '../catalog/sites'
 import { csiSecretRefForSystem, gadArraysForStorageClass } from '../catalog/arrayBinding'
 import type { StorageClassConfig, StorageClassKind, StorageSystemConfig, WizardState } from '../catalog/types'
-import { effectiveSerialNumber } from '../catalog/validation'
+import { effectiveSerialNumber, normalizePortId } from '../catalog/validation'
 import { resolvedDrClusterNames } from '../generator/remoteKubeconfig'
 import { snapshotClassOpts } from '../generator/yaml'
 
@@ -395,9 +395,9 @@ function assertStorageClassFile(
       copyGroupName: sc.copyGroupName || '',
       consistencyGroupId: sc.consistencyGroupId || '',
       primaryPoolID: sc.primaryPoolID || '',
-      primaryPortID: sc.primaryPortID || '',
+      primaryPortID: normalizePortId(sc.primaryPortID) || '',
       secondaryPoolID: sc.secondaryPoolID || '',
-      secondaryPortID: sc.secondaryPortID || '',
+      secondaryPortID: normalizePortId(sc.secondaryPortID) || '',
     }
     if (sc.copyPairName) expected.copyPairName = sc.copyPairName
     for (const [key, want] of Object.entries(expected)) {
@@ -426,7 +426,7 @@ function assertStorageClassFile(
   if (sc.poolID && paramStr(params.poolID) !== sc.poolID) {
     throw new Error(`${path}: poolID "${paramStr(params.poolID)}" !== wizard state`)
   }
-  if (sc.portID && paramStr(params.portID) !== sc.portID) {
+  if (sc.portID && paramStr(params.portID) !== normalizePortId(sc.portID)) {
     throw new Error(`${path}: portID "${paramStr(params.portID)}" !== wizard state`)
   }
   if (sc.nvmSubsystemID && paramStr(params.nvmSubsystemID) !== sc.nvmSubsystemID) {

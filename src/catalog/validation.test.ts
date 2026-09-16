@@ -504,7 +504,7 @@ describe('storage artifact validation', () => {
   })
 
   it('returns HELP.portIdFormat for malformed Port ID tokens', () => {
-    for (const portID of ['CL-2A', 'CLG4', 'CL123-A', 'cl3-g', 'CL3-g', 'CL2-A,CLG4']) {
+    for (const portID of [',', '  ,  ', 'CL-2A', 'CLG4', 'CL123-A', 'cl3-g', 'CL3-g', 'CL2-A,CLG4']) {
       expect(portIdFormatError(portID)).toBe(HELP.portIdFormat)
     }
   })

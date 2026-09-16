@@ -5,7 +5,7 @@ import type { MultipathConfig, WizardState } from '../catalog/types'
 import { exportConfigJson } from '../state/exportConfig'
 import { filledReplicationState, filledState } from '../test/fixtures'
 import { fetchFirstAvailable } from '../services/versions'
-import { generateAll, snapshotClassOpts, type GeneratedFile } from './yaml'
+import { generateAll, generateStorageClass, snapshotClassOpts, type GeneratedFile } from './yaml'
 
 const HV_OFFLINE_BUNDLE_MOCK = ['#!/usr/bin/env bash', 'echo "mocked hvcsi-offline-bundle.sh"'].join('\n')
 
@@ -1727,5 +1727,31 @@ describe('generateAll package matrix', () => {
       ],
     })
     expect(snapshotClassOpts(state).secretNamespace).toBe('hspc-operator-system')
+  })
+})
+
+describe('generateStorageClass port ID emit', () => {
+  it('normalizes comma-separated Port IDs (trim + join)', () => {
+    const base = filledState().storageClasses[0]!
+    expect(generateStorageClass({ ...base, portID: 'CL3-G, CL4-G' })).toContain('portID: CL3-G,CL4-G')
+
+    const stretched = {
+      ...base,
+      kind: 'stretched' as const,
+      serialNumber: '',
+      quorumID: '1',
+      copyGroupName: 'cg',
+      consistencyGroupId: '10',
+      primaryPoolID: '0',
+      primaryPortID: 'CL1-A, CL2-A',
+      secondaryPoolID: '1',
+      secondaryPortID: 'CL1-F, CL2-F',
+      stretchedSecretName: 'hitachi-csi-secret-stretched',
+      primaryStorageSystemId: 'storage-1',
+      secondaryStorageSystemId: 'storage-2',
+    }
+    const yaml = generateStorageClass(stretched)
+    expect(yaml).toContain('primaryPortID: CL1-A,CL2-A')
+    expect(yaml).toContain('secondaryPortID: CL1-F,CL2-F')
   })
 })

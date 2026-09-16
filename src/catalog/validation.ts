@@ -239,6 +239,16 @@ export function countPortIds(value: string | undefined): number {
     .filter(Boolean).length
 }
 
+/** Collapse comma-separated Port IDs to trimmed, comma-joined form for YAML emit. */
+export function normalizePortId(value: string | undefined): string | undefined {
+  const tokens = (value || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (tokens.length === 0) return undefined
+  return tokens.join(',')
+}
+
 /** Blocking format error. Empty values are left to the required-field checks. */
 export function portIdFormatError(value: string | undefined): string | undefined {
   if (!(value || '').trim()) return undefined

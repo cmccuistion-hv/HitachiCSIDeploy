@@ -16,6 +16,7 @@ import {
   supportsCsiVolumeSnapshots,
 } from '../catalog/platforms'
 import { PLATFORMS } from '../catalog/platforms'
+import { normalizePortId } from '../catalog/validation'
 import { wizardVersion } from '../wizardVersion'
 import { generateMultipathMachineConfigs, getMultipathConf, expectedMultipathMachineConfigNames } from './multipath'
 import {
@@ -271,13 +272,13 @@ export function generateStorageClass(sc: StorageClassConfig): string {
     if (sc.copyPairName) params.push(`  copyPairName: ${JSON.stringify(sc.copyPairName)}`)
     if (sc.consistencyGroupId) params.push(`  consistencyGroupId: ${JSON.stringify(sc.consistencyGroupId)}`)
     if (sc.primaryPoolID) params.push(`  primaryPoolID: ${JSON.stringify(sc.primaryPoolID)}`)
-    if (sc.primaryPortID) params.push(`  primaryPortID: ${sc.primaryPortID}`)
+    if (sc.primaryPortID) params.push(`  primaryPortID: ${normalizePortId(sc.primaryPortID)}`)
     if (sc.secondaryPoolID) params.push(`  secondaryPoolID: ${JSON.stringify(sc.secondaryPoolID)}`)
-    if (sc.secondaryPortID) params.push(`  secondaryPortID: ${sc.secondaryPortID}`)
+    if (sc.secondaryPortID) params.push(`  secondaryPortID: ${normalizePortId(sc.secondaryPortID)}`)
   } else {
     if (sc.serialNumber) params.push(`  serialNumber: ${JSON.stringify(sc.serialNumber)}`)
     if (sc.poolID) params.push(`  poolID: ${JSON.stringify(sc.poolID)}`)
-    if (conn?.needsPortId && sc.portID) params.push(`  portID: ${sc.portID}`)
+    if (conn?.needsPortId && sc.portID) params.push(`  portID: ${normalizePortId(sc.portID)}`)
     params.push(`  connectionType: ${sc.connectionType}`)
     if (conn?.needsNvmSubsystem && sc.nvmSubsystemID) {
       params.push(`  nvmSubsystemID: ${JSON.stringify(sc.nvmSubsystemID)}`)
