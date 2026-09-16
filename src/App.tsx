@@ -165,10 +165,12 @@ export default function App() {
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const noReplicationScRef = useRef<HTMLDialogElement>(null)
   const resetDialogRef = useRef<HTMLDialogElement>(null)
+  const importErrorRef = useRef<HTMLDialogElement>(null)
   const stepPickerDialogRef = useRef<HTMLDialogElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
   const [noReplicationScOpen, setNoReplicationScOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const [stepPickerOpen, setStepPickerOpen] = useState(false)
   const [sidebarInert, setSidebarInert] = useState(false)
 
@@ -215,6 +217,16 @@ export default function App() {
   }, [resetOpen])
 
   useEffect(() => {
+    const el = importErrorRef.current
+    if (!el) return
+    if (importError) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [importError])
+
+  useEffect(() => {
     const el = stepPickerDialogRef.current
     if (!el) return
     if (stepPickerOpen) {
@@ -256,10 +268,12 @@ export default function App() {
         importConfig(String(reader.result || ''))
         setStepIndex(0)
       } catch {
-        alert('Could not import that file. Choose a hitachi-csi-wizard-config.json export.')
+        setImportError(
+          'Could not import that file. Choose a hitachi-csi-wizard-config.json export from Save config or from a generated ZIP.',
+        )
       }
     }
-    reader.onerror = () => alert('Could not read the selected file.')
+    reader.onerror = () => setImportError('Could not read the selected file.')
     reader.readAsText(file)
   }
 
@@ -554,6 +568,30 @@ export default function App() {
               }}
             >
               Reset wizard
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog
+        ref={importErrorRef}
+        className="welcome-dialog"
+        aria-labelledby="import-error-title"
+        onCancel={(e) => {
+          e.preventDefault()
+          setImportError(null)
+        }}
+        onClick={(e) => {
+          if (e.target === importErrorRef.current) setImportError(null)
+        }}
+        onClose={() => setImportError(null)}
+      >
+        <div className="welcome-dialog-body">
+          <h2 id="import-error-title">Could not import config</h2>
+          <p>{importError}</p>
+          <div className="welcome-actions" style={{ gap: '0.65rem' }}>
+            <button type="button" className="btn btn-primary" onClick={() => setImportError(null)}>
+              Close
             </button>
           </div>
         </div>

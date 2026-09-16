@@ -84,6 +84,29 @@ test('header Reset wizard asks for confirmation before clearing answers', async 
   await expect(page.getByRole('heading', { name: 'Platform & connectivity' })).toBeVisible()
 })
 
+test('invalid import JSON shows an in-app dialog and keeps current answers', async ({ page }) => {
+  await openFresh(page)
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await choice(page, 'Kubernetes').click()
+
+  page.on('dialog', (native) => {
+    throw new Error(`unexpected native dialog: ${native.message()}`)
+  })
+
+  await page.locator('input[type="file"][accept*="json"]').setInputFiles({
+    name: 'bad.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{not-json'),
+  })
+
+  const dialog = page.getByRole('dialog', { name: 'Could not import config' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(/hitachi-csi-wizard-config\.json/)).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(choice(page, 'Kubernetes')).toHaveClass(/selected/)
+})
+
 test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) => {
   await openFresh(page)
   await page.getByRole('button', { name: 'Get started' }).click()
