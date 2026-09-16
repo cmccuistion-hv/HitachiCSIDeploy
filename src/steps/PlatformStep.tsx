@@ -60,7 +60,6 @@ export function PlatformStep() {
             <ChoiceCard
               key={id}
               title={PLATFORMS[id].displayName}
-              description={`Supported: ${PLATFORMS[id].versions.join(', ')}`}
               selected={state.platform === id}
               onClick={() => {
                 const p = PLATFORMS[id]

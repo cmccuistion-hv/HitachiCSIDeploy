@@ -53,6 +53,16 @@ function replicationStateWithoutJournals() {
   }
 }
 
+test('platform cards omit the supported-version list and keep the version select', async ({
+  page,
+}) => {
+  await openFresh(page)
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await expect(page.getByRole('heading', { name: 'Platform & connectivity' })).toBeVisible()
+  await expect(page.locator('.section').filter({ hasText: 'Container platform' }).getByText(/Supported:/)).toHaveCount(0)
+  await expect(field(page, 'Platform version').locator('select')).toBeVisible()
+})
+
 test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) => {
   await openFresh(page)
   await page.getByRole('button', { name: 'Get started' }).click()
