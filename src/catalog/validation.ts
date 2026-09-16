@@ -1,6 +1,7 @@
 import { resolvedDrClusterNames } from '../generator/remoteKubeconfig'
 import { metricsInstalledForSite, prometheusTargetForSite } from './metrics'
 import { CONNECTION_TYPES } from './platforms'
+import { HELP } from './help'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { arrayForStorageClass, csiSecretRefForSystem, gadArraysForStorageClass } from './arrayBinding'
 import { resolvedReplicationStorageSecrets } from './replicationSecrets'
@@ -168,6 +169,14 @@ export function validateStorageClass(
     if (!(sc.primaryPortID || '').trim()) errors.primaryPortID = 'Primary port ID is required.'
     if (!(sc.secondaryPoolID || '').trim()) errors.secondaryPoolID = 'Secondary pool ID is required.'
     if (!(sc.secondaryPortID || '').trim()) errors.secondaryPortID = 'Secondary port ID is required.'
+    if (!errors.primaryPortID) {
+      const fmt = portIdFormatError(sc.primaryPortID)
+      if (fmt) errors.primaryPortID = fmt
+    }
+    if (!errors.secondaryPortID) {
+      const fmt = portIdFormatError(sc.secondaryPortID)
+      if (fmt) errors.secondaryPortID = fmt
+    }
     if (!(sc.stretchedSecretName || sc.secretName || '').trim()) {
       errors.stretchedSecretName = 'Stretched secret name is required.'
     } else if (ctx.siblings) {
@@ -210,10 +219,46 @@ export function validateStorageClass(
   if (conn?.needsPortId && !(sc.portID || '').trim()) {
     errors.portID = 'Port ID is required for this connection type.'
   }
+  if (conn?.needsPortId && !errors.portID) {
+    const fmt = portIdFormatError(sc.portID)
+    if (fmt) errors.portID = fmt
+  }
   if (conn?.needsNvmSubsystem && !(sc.nvmSubsystemID || '').trim()) {
     errors.nvmSubsystemID = 'NVMe subsystem ID is required.'
   }
   return errors
+}
+
+const PORT_ID_TOKEN = /^CL[0-9]{1,2}-[A-Z]$/
+
+/** Comma-separated Port ID values, ignoring empty segments. */
+export function countPortIds(value: string | undefined): number {
+  return (value || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean).length
+}
+
+/** Blocking format error. Empty values are left to the required-field checks. */
+export function portIdFormatError(value: string | undefined): string | undefined {
+  if (!(value || '').trim()) return undefined
+  const tokens = (value || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (tokens.length === 0 || tokens.some((p) => !PORT_ID_TOKEN.test(p))) {
+    return HELP.portIdFormat
+  }
+  return undefined
+}
+
+/** Soft warning: multiple ports with wizard multipath packaging off. Does not block Continue. */
+export function portIdWithoutMultipathWarning(
+  multipathEnabled: boolean,
+  portID: string | undefined,
+): string | undefined {
+  if (multipathEnabled || countPortIds(portID) <= 1) return undefined
+  return HELP.portIdMultipleWithoutMultipath
 }
 
 export function validateStorageSystem(

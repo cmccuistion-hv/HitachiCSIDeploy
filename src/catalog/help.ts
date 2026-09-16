@@ -49,11 +49,11 @@ export const HELP = {
   openshiftTopology:
     'Self-managed clusters have Machine Config Operator on the API you target. Hosted / HCP (HyperShift, ROSA HCP, many lab guests) often lack MachineConfig — choose DaemonSet so multipath.conf is written on nodes without MCO.',
 
-  portIdWithoutMultipath:
-    'Wizard multipath packaging is off. Prefer a single Port ID unless worker nodes already have multipathing configured another way.',
-
   portIdMultipleWithoutMultipath:
     'Wizard multipath packaging is off and this StorageClass lists multiple Port IDs. Multiple ports need multipathing on the nodes — confirm your own config covers this, or enable multipath in Prerequisites.',
+
+  portIdFormat:
+    'Each Port ID must be CL, 1–2 digits, a hyphen, and a letter A–Z (for example CL3-G or CL12-A).',
 
   gad: {
     role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary. Leave as None if this array is not part of a GAD pair.',

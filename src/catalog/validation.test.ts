@@ -24,7 +24,10 @@ import {
   remoteKubeconfigSourceInvalidFix,
   validateHrpc,
   validateStorageClass,
+  portIdWithoutMultipathWarning,
+  portIdFormatError,
 } from './validation'
+import { HELP } from './help'
 
 function validReplicationState(): WizardState {
   const state = ensureSitesForReplication(
@@ -457,6 +460,64 @@ describe('storage artifact validation', () => {
 
     expect(validateStorageClass(sds, { storageSystems: state.storageSystems })).toEqual({})
   })
+
+  it('does not block Continue when multiple Port IDs are set with wizard multipath packaging off', () => {
+    const state = filledState({
+      multipath: { enabled: false, includeConf: false, includeMachineConfig: false, includeDaemonSet: false },
+    })
+    state.storageClasses[0].portID = 'CL1-A,CL2-A'
+
+    expect(validateStorageClass(state.storageClasses[0], { storageSystems: state.storageSystems })).not.toHaveProperty(
+      'portID',
+    )
+    expect(storageArtifactsValidForContinue(state)).toBe(true)
+    expect(portIdWithoutMultipathWarning(false, 'CL1-A,CL2-A')).toBe(HELP.portIdMultipleWithoutMultipath)
+    expect(portIdWithoutMultipathWarning(false, 'CL1-A')).toBeUndefined()
+    expect(portIdWithoutMultipathWarning(true, 'CL1-A,CL2-A')).toBeUndefined()
+  })
+
+  it('blocks Continue when a Port ID token is malformed', () => {
+    const state = filledState()
+    state.storageClasses[0].portID = 'CL-2A'
+
+    expect(
+      validateStorageClass(state.storageClasses[0], { storageSystems: state.storageSystems }).portID,
+    ).toBe(HELP.portIdFormat)
+    expect(storageArtifactsValidForContinue(state)).toBe(false)
+    expect(storageArtifactsValid(state)).toBe(false)
+  })
+
+  it('accepts comma-separated Port IDs with optional spaces, including two-digit CL', () => {
+    const state = filledState()
+    const ctx = { storageSystems: state.storageSystems }
+
+    for (const portID of ['CL2-A', 'CL3-G,CL4-G,CL2-A', 'CL3-G, CL4-G', 'CL12-A', 'CL99-Z']) {
+      expect(portIdFormatError(portID)).toBeUndefined()
+      expect(validateStorageClass({ ...state.storageClasses[0], portID }, ctx)).not.toHaveProperty(
+        'portID',
+      )
+    }
+
+    expect(portIdFormatError(undefined)).toBeUndefined()
+    expect(portIdFormatError('')).toBeUndefined()
+    expect(portIdFormatError('   ')).toBeUndefined()
+  })
+
+  it('returns HELP.portIdFormat for malformed Port ID tokens', () => {
+    for (const portID of ['CL-2A', 'CLG4', 'CL123-A', 'cl3-g', 'CL3-g', 'CL2-A,CLG4']) {
+      expect(portIdFormatError(portID)).toBe(HELP.portIdFormat)
+    }
+  })
+
+  it('keeps the required Port ID message when the field is blank', () => {
+    const state = filledState()
+    state.storageClasses[0].portID = ''
+
+    expect(
+      validateStorageClass(state.storageClasses[0], { storageSystems: state.storageSystems }).portID,
+    ).toBe('Port ID is required for this connection type.')
+    expect(portIdFormatError('')).toBeUndefined()
+  })
 })
 
 describe('GAD and stretched StorageClass constraints', () => {
@@ -576,6 +637,37 @@ describe('GAD and stretched StorageClass constraints', () => {
     expect(errors).toHaveProperty('primaryPortID')
     expect(errors).toHaveProperty('secondaryPoolID')
     expect(errors).toHaveProperty('secondaryPortID')
+  })
+
+  it('blocks malformed primary and secondary Port IDs on stretched StorageClasses', () => {
+    const systems = filledState().storageSystems.concat([
+      {
+        ...filledState().storageSystems[0],
+        id: 'storage-2',
+        name: 'array-2',
+        serial: '400002',
+        family: 'vsp-5000-g-e-f',
+        csiSecretName: 'hitachi-csi-secret-2',
+      },
+    ])
+    const stretched = {
+      ...filledState().storageClasses[0],
+      kind: 'stretched' as const,
+      quorumID: '1',
+      copyGroupName: 'spc-cpg1',
+      consistencyGroupId: '1',
+      primaryPoolID: '0',
+      primaryPortID: 'CL-2A',
+      secondaryPoolID: '1',
+      secondaryPortID: 'CLG4',
+      stretchedSecretName: 'hitachi-csi-secret-stretched',
+      primaryStorageSystemId: 'storage-1',
+      secondaryStorageSystemId: 'storage-2',
+    }
+
+    const errors = validateStorageClass(stretched, { storageSystems: systems })
+    expect(errors.primaryPortID).toBe(HELP.portIdFormat)
+    expect(errors.secondaryPortID).toBe(HELP.portIdFormat)
   })
 
   it('derives stable package paths for stretched Secrets', () => {
