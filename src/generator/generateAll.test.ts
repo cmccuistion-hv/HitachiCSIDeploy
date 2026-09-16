@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { withSiteMetrics } from '../catalog/metrics'
+import { withSiteQuickstart } from '../catalog/siteQuickstart'
 import { getSiteStorage, setHrpcPairOnSite, withSiteStorage } from '../catalog/sites'
 import type { MultipathConfig, WizardState } from '../catalog/types'
 import { exportConfigJson } from '../state/exportConfig'
@@ -1339,6 +1340,35 @@ describe('generateAll package matrix', () => {
     expect(secret).toContain('journal: 20')
     expect(secret).not.toContain('primary-user')
     expect(secret).not.toContain('primary-password')
+  })
+
+  it('omits secondary 06-quickstart when that site skips the test volume', async () => {
+    let state = filledReplicationState()
+    state = withSiteQuickstart(state, 'secondary', { install: false })
+    const files = await generateAll(state)
+    const generated = paths(files)
+    expect(generated).toContain('primary/06-quickstart/pvc.yaml')
+    expect(generated.some((p) => p.startsWith('secondary/06-quickstart/'))).toBe(false)
+    expect(fileAt(files, 'secondary/install.sh').content).not.toContain('Test volume (PVC then Pod)')
+    expect(fileAt(files, 'primary/install.sh').content).toContain('Test volume (PVC then Pod)')
+  })
+
+  it('uses each site’s test-volume StorageClass and PVC name', async () => {
+    let state = filledReplicationState()
+    state = withSiteQuickstart(state, 'primary', {
+      pvcName: 'p-test-pvc',
+      storageClassName: 'hitachi-csi',
+    })
+    state = withSiteQuickstart(state, 'secondary', {
+      pvcName: 's-test-pvc',
+      storageClassName: getSiteStorage(state, 'secondary').storageClasses[0]!.name,
+    })
+    const files = await generateAll(state)
+    const primaryPvc = fileAt(files, 'primary/06-quickstart/pvc.yaml').content
+    const secondaryPvc = fileAt(files, 'secondary/06-quickstart/pvc.yaml').content
+    expect(primaryPvc).toContain('name: p-test-pvc')
+    expect(secondaryPvc).toContain('name: s-test-pvc')
+    expect(secondaryPvc).not.toContain('name: p-test-pvc')
   })
 
   it('uses each site’s StorageClasses and StorageClass secretName in the dual-site package', async () => {

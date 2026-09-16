@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { filledReplicationState, filledState } from '../test/fixtures'
 import { withSiteMetrics } from './siteMetrics'
+import { withSiteQuickstart } from './siteQuickstart'
 import { buildReviewTopology, type ReviewTopologyModel } from './reviewTopology'
 import type { StorageSystemConfig } from './types'
 
@@ -136,6 +137,15 @@ describe('buildReviewTopology', () => {
     const model = buildReviewTopology(state, [])
     expect(metricsChip(model, 0)).toBeDefined()
     expect(metricsChip(model, 1)).toBeUndefined()
+  })
+
+  it('omits Test volume chip on a Replication site that skipped the test volume', () => {
+    let state = filledReplicationState()
+    state = withSiteQuickstart(state, 'secondary', { install: false })
+    const model = buildReviewTopology(state, [])
+    expect(model.sites[0].testVolume).toBeDefined()
+    expect(model.sites[1].testVolume).toBeUndefined()
+    expect(model.hits['secondary:testvol']).toBeUndefined()
   })
 
   it('renders the Console Plugin as a filled chip like CSI Driver, not a hollow pill', () => {

@@ -7,6 +7,7 @@ import { arrayForStorageClass, gadArraysForStorageClass } from './arrayBinding'
 import { CONNECTION_TYPES, PLATFORMS, stretchedSecretPackagePath, supportsCsiVolumeSnapshots } from './platforms'
 import { getSiteStorage, hrpcPairSystem, pickStorageClassName, type SiteId } from './sites'
 import { metricsForSite, metricsInstalledForSite } from './siteMetrics'
+import { quickstartForSite, quickstartInstalledForSite } from './siteQuickstart'
 import type { StorageClassConfig, StorageSystemConfig, WizardState } from './types'
 import { effectiveSerialNumber } from './validation'
 
@@ -374,22 +375,27 @@ function buildSite(
   }
 
   let testVolume: ReviewChip | undefined
-  const testScName = state.storageClassesEnabled ? pickStorageClassName(classes, state.quickstart?.storageClassName) : ''
+  const qs = quickstartForSite(state, siteId)
+  const testScName = quickstartInstalledForSite(state, siteId)
+    ? pickStorageClassName(classes, qs.storageClassName)
+    : ''
   const testSc = classes.find((sc) => t(sc.name) === t(testScName))
-  const testVolumeArrayIds = state.storageClassesEnabled ? testVolumeArrayIdsForClass(testSc, systems) : []
+  const testVolumeArrayIds = quickstartInstalledForSite(state, siteId)
+    ? testVolumeArrayIdsForClass(testSc, systems)
+    : []
   const testVolumeProtocolLabel = CONNECTION_TYPES.find((c) => c.id === (testSc?.connectionType || state.connectionType))?.label
-  if (state.storageClassesEnabled) {
+  if (quickstartInstalledForSite(state, siteId)) {
     const id = `${site}:testvol`
     addHit({
       id,
       title: 'Test volume',
-      why: `PersistentVolumeClaim ${state.quickstart.pvcName || 'test-pvc'} binds to StorageClass ${testScName || 'hitachi-csi'}; the Pod mounts it.`,
+      why: `PersistentVolumeClaim ${qs.pvcName || 'test-pvc'} binds to StorageClass ${testScName || 'hitachi-csi'}; the Pod mounts it.`,
       files: pick(files, ['06-quickstart/pvc.yaml', '06-quickstart/pod.yaml'], prefix),
     })
     testVolume = {
       id,
       label: 'Test volume',
-      sub: `${state.quickstart.pvcName || 'test-pvc'} → ${state.quickstart.podName || 'test-pod'}`,
+      sub: `${qs.pvcName || 'test-pvc'} → ${qs.podName || 'test-pod'}`,
       tone: 'card',
     }
   }

@@ -55,6 +55,7 @@ import {
   resolvedCurrentStorageClassName,
   resolvedStorageClassName,
 } from '../catalog/sites'
+import { applySiteQuickstartToState, quickstartInstalledForSite } from '../catalog/siteQuickstart'
 import type { SiteId } from '../catalog/sites'
 
 export interface GeneratedFile {
@@ -1342,8 +1343,7 @@ export function generateInstallScript(
     )
   }
 
-  const hasQuickstart =
-    state.storageClassesEnabled || files.some((f) => f.group === 'quickstart')
+  const hasQuickstart = files.some((f) => f.group === 'quickstart')
   if (hasQuickstart) {
     const pvcName = state.quickstart.pvcName
     const podName = state.quickstart.podName
@@ -1386,12 +1386,15 @@ export function generateInstallScript(
 
 function stateForSite(state: WizardState, site: SiteId): WizardState {
   const s = getSiteStorage(state, site)
-  return applySiteMetricsToState(
-    {
-      ...state,
-      storageSystems: s.storageSystems,
-      storageClasses: s.storageClasses,
-    },
+  return applySiteQuickstartToState(
+    applySiteMetricsToState(
+      {
+        ...state,
+        storageSystems: s.storageSystems,
+        storageClasses: s.storageClasses,
+      },
+      site,
+    ),
     site,
   )
 }
@@ -1416,7 +1419,11 @@ function primaryHrpcStorageClassName(state: WizardState): string | undefined {
 
 async function generateAllSingleSite(
   state: WizardState,
-  opts?: { remoteKubeconfigSite?: SiteId | 'both'; drScNameOverride?: string },
+  opts?: {
+    remoteKubeconfigSite?: SiteId | 'both'
+    drScNameOverride?: string
+    includeTestVolume?: boolean
+  },
 ): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = []
   const plat = PLATFORMS[state.platform]
@@ -2218,7 +2225,8 @@ ${pluginRaw ? '' : '\nWARNING: could not fetch upstream console plugin YAML; re-
   }
 
   // Quickstart
-  if (state.storageClassesEnabled) {
+  const includeTestVolume = opts?.includeTestVolume ?? state.storageClassesEnabled
+  if (includeTestVolume) {
     files.push({
       path: '06-quickstart/pvc.yaml',
       content: generatePvc({
@@ -2278,10 +2286,12 @@ export async function generateAll(state: WizardState): Promise<GeneratedFile[]> 
   const primaryFiles = await generateAllSingleSite(primaryState, {
     remoteKubeconfigSite: 'primary',
     drScNameOverride: drScName,
+    includeTestVolume: quickstartInstalledForSite(ensured, 'primary'),
   })
   const secondaryFiles = await generateAllSingleSite(secondaryState, {
     remoteKubeconfigSite: 'secondary',
     drScNameOverride: drScName,
+    includeTestVolume: quickstartInstalledForSite(ensured, 'secondary'),
   })
   const mirror = mirrorScriptFile(ensured, [...primaryFiles, ...secondaryFiles])
   const offline = mirror ? await hvOfflineBundleScriptFile(ensured) : null
