@@ -22,11 +22,13 @@ export function HeaderMoreMenu({
   onAbout,
   onImport,
   onSave,
+  onReset,
   issuesUrl,
 }: {
   onAbout: () => void
   onImport: () => void
   onSave: () => void
+  onReset: () => void
   issuesUrl: string
 }) {
   const [open, setOpen] = useState(false)
@@ -159,6 +161,32 @@ export function HeaderMoreMenu({
                 <path d="M5 18h14" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
               </MenuIcon>
               <span>Save config</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="theme-menu-item"
+              onClick={() => closeAnd(onReset)}
+            >
+              <span className="theme-menu-check" aria-hidden="true" />
+              <MenuIcon>
+                <path
+                  d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M4.5 4.5v5h5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </MenuIcon>
+              <span>Reset wizard</span>
             </button>
           </div>
         </div>

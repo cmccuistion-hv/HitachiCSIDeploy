@@ -63,6 +63,27 @@ test('platform cards omit the supported-version list and keep the version select
   await expect(field(page, 'Platform version').locator('select')).toBeVisible()
 })
 
+test('header Reset wizard asks for confirmation before clearing answers', async ({ page }) => {
+  await openFresh(page)
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await choice(page, 'Kubernetes').click()
+  await expect(choice(page, 'Kubernetes')).toHaveClass(/selected/)
+
+  await page.getByRole('button', { name: 'Reset wizard', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Reset wizard?' })
+  await expect(dialog).toBeVisible()
+
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(choice(page, 'Kubernetes')).toHaveClass(/selected/)
+
+  await page.getByRole('button', { name: 'Reset wizard', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Reset wizard', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(choice(page, 'Red Hat OpenShift')).toHaveClass(/selected/)
+  await expect(page.getByRole('heading', { name: 'Platform & connectivity' })).toBeVisible()
+})
+
 test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) => {
   await openFresh(page)
   await page.getByRole('button', { name: 'Get started' }).click()

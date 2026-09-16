@@ -18,7 +18,7 @@ import { useWizard } from '../state/WizardContext'
 import { Callout, CodeBlock, Section } from '../components/ui'
 
 export function ExportStep() {
-  const { state, exportConfig, reset, goToFix } = useWizard()
+  const { state, exportConfig, goToFix } = useWizard()
   const plat = PLATFORMS[state.platform]
   const [files, setFiles] = useState<GeneratedFile[]>([])
   const [generating, setGenerating] = useState(false)
@@ -135,9 +135,6 @@ export function ExportStep() {
               }}
             >
               Export config JSON
-            </button>
-            <button type="button" className="btn btn-primary" onClick={reset}>
-              Reset wizard
             </button>
           </div>
         }

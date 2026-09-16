@@ -157,16 +157,18 @@ function StepBody({ id }: { id: string }) {
 }
 
 export default function App() {
-  const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig, goToFix } = useWizard()
+  const { state, visibleSteps, stepIndex, setStepIndex, exportConfig, importConfig, reset, goToFix } = useWizard()
   const { palette, mode, setPalette, setMode, headerLight } = useTheme()
   const { uiMode, setUiMode } = useUiMode()
   const current = visibleSteps[stepIndex]
   const importRef = useRef<HTMLInputElement>(null)
   const mainScrollRef = useRef<HTMLDivElement>(null)
   const noReplicationScRef = useRef<HTMLDialogElement>(null)
+  const resetDialogRef = useRef<HTMLDialogElement>(null)
   const stepPickerDialogRef = useRef<HTMLDialogElement>(null)
   const [welcomeOpen, setWelcomeOpen] = useState(() => shouldShowWelcome())
   const [noReplicationScOpen, setNoReplicationScOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
   const [stepPickerOpen, setStepPickerOpen] = useState(false)
   const [sidebarInert, setSidebarInert] = useState(false)
 
@@ -201,6 +203,16 @@ export default function App() {
       el.close()
     }
   }, [noReplicationScOpen])
+
+  useEffect(() => {
+    const el = resetDialogRef.current
+    if (!el) return
+    if (resetOpen) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [resetOpen])
 
   useEffect(() => {
     const el = stepPickerDialogRef.current
@@ -293,6 +305,7 @@ export default function App() {
             onAbout={() => setWelcomeOpen(true)}
             onImport={() => importRef.current?.click()}
             onSave={onSaveConfig}
+            onReset={() => setResetOpen(true)}
             issuesUrl={REPO_ISSUES_URL}
           />
           <button
@@ -361,6 +374,19 @@ export default function App() {
               <path d="M5 18h14" />
             </HeaderIcon>
             <span className="header-action-label">Save config</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost header-action-desktop"
+            title="Reset wizard"
+            aria-label="Reset wizard"
+            onClick={() => setResetOpen(true)}
+          >
+            <HeaderIcon>
+              <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+              <path d="M4.5 4.5v5h5" />
+            </HeaderIcon>
+            <span className="header-action-label">Reset wizard</span>
           </button>
         </div>
       </header>
@@ -491,6 +517,43 @@ export default function App() {
               }}
             >
               Continue anyway
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog
+        ref={resetDialogRef}
+        className="welcome-dialog"
+        aria-labelledby="reset-wizard-title"
+        onCancel={(e) => {
+          e.preventDefault()
+          setResetOpen(false)
+        }}
+        onClick={(e) => {
+          if (e.target === resetDialogRef.current) setResetOpen(false)
+        }}
+        onClose={() => setResetOpen(false)}
+      >
+        <div className="welcome-dialog-body">
+          <h2 id="reset-wizard-title">Reset wizard?</h2>
+          <p>
+            This clears your answers in this browser and returns to Platform. Download ZIP or Save
+            config first if you still need this configuration.
+          </p>
+          <div className="welcome-actions" style={{ gap: '0.65rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setResetOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setResetOpen(false)
+                reset()
+              }}
+            >
+              Reset wizard
             </button>
           </div>
         </div>

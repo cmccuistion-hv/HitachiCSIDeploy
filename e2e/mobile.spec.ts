@@ -50,6 +50,25 @@ test('More menu opens About', async ({ page }) => {
   ).toBeVisible()
 })
 
+test('More menu Reset wizard asks for confirmation before clearing answers', async ({ page }) => {
+  await openFresh(page)
+  await dismissWelcome(page)
+  await choice(page, 'Kubernetes').click()
+
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Reset wizard' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Reset wizard?' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(choice(page, 'Kubernetes')).toHaveClass(/selected/)
+
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Reset wizard' }).click()
+  await dialog.getByRole('button', { name: 'Reset wizard', exact: true }).click()
+  await expect(choice(page, 'Red Hat OpenShift')).toHaveClass(/selected/)
+})
+
 test('step picker jumps to Storage systems', async ({ page }) => {
   await openFresh(page)
   await dismissWelcome(page)
