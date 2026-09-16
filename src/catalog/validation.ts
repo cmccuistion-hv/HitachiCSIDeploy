@@ -229,7 +229,7 @@ export function validateStorageClass(
   return errors
 }
 
-const PORT_ID_TOKEN = /^CL[0-9]{1,2}-[A-Z]$/
+const PORT_ID_TOKEN = /^[Cc][Ll][1-9A-G]-[A-HJ-NP-R]$/
 
 /** Comma-separated Port ID values, ignoring empty segments. */
 export function countPortIds(value: string | undefined): number {

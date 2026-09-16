@@ -53,7 +53,7 @@ export const HELP = {
     'Wizard multipath packaging is off and this StorageClass lists multiple Port IDs. Multiple ports need multipathing on the nodes — confirm your own config covers this, or enable multipath in Prerequisites.',
 
   portIdFormat:
-    'Each Port ID must be CL, 1–2 digits, a hyphen, and a letter A–Z (for example CL3-G or CL12-A).',
+    'Each Port ID must be CL, then 1–9 or A–G, a hyphen, and a letter A–H, J–N, or P–R (for example CL3-G or CLA-A).',
 
   gad: {
     role: 'Which side this array plays for stretched (GAD) volumes. Stretched StorageClasses need a primary and a secondary. Leave as None if this array is not part of a GAD pair.',

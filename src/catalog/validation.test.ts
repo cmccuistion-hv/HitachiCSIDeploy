@@ -487,11 +487,19 @@ describe('storage artifact validation', () => {
     expect(storageArtifactsValid(state)).toBe(false)
   })
 
-  it('accepts comma-separated Port IDs with optional spaces, including two-digit CL', () => {
+  it('accepts comma-separated Port IDs matching Hitachi CL[1-9A-G]-[A-HJ-NP-R]', () => {
     const state = filledState()
     const ctx = { storageSystems: state.storageSystems }
 
-    for (const portID of ['CL2-A', 'CL3-G,CL4-G,CL2-A', 'CL3-G, CL4-G', 'CL12-A', 'CL99-Z']) {
+    for (const portID of [
+      'CL2-A',
+      'CL3-G,CL4-G,CL2-A',
+      'CL3-G, CL4-G',
+      'CLA-A',
+      'CLG-R',
+      'cl1-A',
+      'Cl3-G',
+    ]) {
       expect(portIdFormatError(portID)).toBeUndefined()
       expect(validateStorageClass({ ...state.storageClasses[0], portID }, ctx)).not.toHaveProperty(
         'portID',
@@ -504,7 +512,22 @@ describe('storage artifact validation', () => {
   })
 
   it('returns HELP.portIdFormat for malformed Port ID tokens', () => {
-    for (const portID of [',', '  ,  ', 'CL-2A', 'CLG4', 'CL123-A', 'cl3-g', 'CL3-g', 'CL2-A,CLG4']) {
+    for (const portID of [
+      ',',
+      '  ,  ',
+      'CL-2A',
+      'CLG4',
+      'CL12-A',
+      'CL99-Z',
+      'CL0-A',
+      'CL1-I',
+      'CL1-O',
+      'CL1-S',
+      'CLH-A',
+      'cl3-g',
+      'CL3-g',
+      'CL2-A,CLG4',
+    ]) {
       expect(portIdFormatError(portID)).toBe(HELP.portIdFormat)
     }
   })

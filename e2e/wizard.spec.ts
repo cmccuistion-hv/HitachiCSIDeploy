@@ -203,7 +203,7 @@ test('blocks Continue when a Port ID is malformed', async ({ page }) => {
   const portField = field(page, 'Port ID(s)')
   await expect(portField).toHaveClass(/error/)
   await expect(portField).not.toHaveClass(/warning/)
-  await expect(portField.locator('.error-text')).toContainText(/CL, 1–2 digits/)
+  await expect(portField.locator('.error-text')).toContainText(/1–9 or A–G/)
   await expect(continueButton(page)).toBeDisabled()
 
   await portField.locator('input').fill('CL3-G,CL4-G,CL2-A')
