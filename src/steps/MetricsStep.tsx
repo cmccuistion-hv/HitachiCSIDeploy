@@ -3,7 +3,7 @@ import {
   displayMetricsStorages,
   metricsForSite,
   metricsInstalledForSite,
-  metricsStoragesFromSystems,
+  patchSingleSiteMetricsStorage,
   prometheusTargetForSite,
   resolvedMetricsPvcStorageClassName,
   withSiteMetrics,
@@ -28,6 +28,9 @@ export function MetricsStep() {
   const showMetricsForm = !replicationOn || metricsInstall
   const prometheusTarget = prometheusTargetForSite(state, site)
   const storages = displayMetricsStorages(state, site)
+  const storageSystems = replicationOn
+    ? getSiteStorage(state, site).storageSystems
+    : state.storageSystems || []
 
   const classNames = (replicationOn
     ? getSiteStorage(state, site).storageClasses
@@ -47,11 +50,7 @@ export function MetricsStep() {
         )
         return withSiteStorage(s, site, { ...current, storageSystems: nextSystems })
       }
-      const current = s.metrics.storages.length
-        ? s.metrics.storages
-        : metricsStoragesFromSystems(s.storageSystems)
-      const next = current.map((row, i) => (i === idx ? { ...row, ...patch } : row))
-      return { ...s, metrics: { ...s.metrics, storages: next } }
+      return patchSingleSiteMetricsStorage(s, idx, patch)
     })
   }
 
@@ -59,8 +58,7 @@ export function MetricsStep() {
     <div className="step-panel">
       <h2>Performance Metrics</h2>
       <p className="lede">
-        Deploy the storage metrics exporter for Prometheus (and optional Grafana). On OpenShift an SCC
-        manifest is required.
+        Deploy the storage metrics exporter for Prometheus (and optional Grafana).
       </p>
 
       {replicationOn && (
@@ -270,34 +268,41 @@ export function MetricsStep() {
             ? 'Pre-filled from this cluster’s storage systems (same credentials as the CSI Driver secret). Each site package includes only that cluster’s arrays.'
             : 'Pre-filled from Storage systems. You can change these if the exporter should use different credentials.'}
         </p>
-        {storages.map((sec, idx) => (
-          <div key={idx} className="field-grid" style={{ marginBottom: '0.75rem' }}>
-            <Field label="Serial">
-              <input
-                value={sec.serial}
-                onChange={(e) => patchStorage(idx, { serial: e.target.value })}
-              />
-            </Field>
-            <Field label="URL" hint="Prefer storage controller IP where documented.">
-              <input
-                value={sec.url}
-                onChange={(e) => patchStorage(idx, { url: e.target.value })}
-              />
-            </Field>
-            <Field label="User">
-              <input
-                value={sec.user}
-                onChange={(e) => patchStorage(idx, { user: e.target.value })}
-              />
-            </Field>
-            <Field label="Password">
-              <PasswordInput
-                value={sec.password}
-                onChange={(value) => patchStorage(idx, { password: value })}
-              />
-            </Field>
-          </div>
-        ))}
+        {storages.map((sec, idx) => {
+          const sys = storageSystems[idx]
+          const arrayLabel = `Array: ${sys?.name || sys?.id || idx + 1}`
+          return (
+            <div key={sys?.id ?? idx} className="exporter-array">
+              <h4 className="exporter-array-title">{arrayLabel}</h4>
+              <div className="field-grid">
+                <Field label="Serial">
+                  <input
+                    value={sec.serial}
+                    onChange={(e) => patchStorage(idx, { serial: e.target.value })}
+                  />
+                </Field>
+                <Field label="URL" hint="Prefer storage controller IP where documented.">
+                  <input
+                    value={sec.url}
+                    onChange={(e) => patchStorage(idx, { url: e.target.value })}
+                  />
+                </Field>
+                <Field label="User">
+                  <input
+                    value={sec.user}
+                    onChange={(e) => patchStorage(idx, { user: e.target.value })}
+                  />
+                </Field>
+                <Field label="Password">
+                  <PasswordInput
+                    value={sec.password}
+                    onChange={(value) => patchStorage(idx, { password: value })}
+                  />
+                </Field>
+              </div>
+            </div>
+          )
+        })}
       </Section>
       </>
       )}

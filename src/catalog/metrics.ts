@@ -24,9 +24,16 @@ export function metricsStoragesFromSystems(systems: StorageSystemConfig[]): Metr
   }))
 }
 
-function hasCredentialData(storage: MetricsStorage): boolean {
-  return Boolean(
-    storage.serial.trim() || storage.url.trim() || storage.user.trim() || storage.password.trim(),
+function hasExporterOverride(storage: MetricsStorage | undefined): boolean {
+  return Boolean(storage?.serial?.trim() || storage?.url?.trim())
+}
+
+function overlayMetricsStorages(
+  systems: StorageSystemConfig[],
+  overrides: MetricsStorage[],
+): MetricsStorage[] {
+  return metricsStoragesFromSystems(systems).map((fromSystem, i) =>
+    hasExporterOverride(overrides[i]) ? overrides[i] : fromSystem,
   )
 }
 
@@ -40,12 +47,37 @@ export function filledMetricsStorages(storages: MetricsStorage[]): MetricsStorag
  * primary copy in metrics.storages is not applied to the secondary cluster.
  */
 export function resolvedMetricsStorages(state: WizardState): MetricsStorage[] {
-  const fromSystems = filledMetricsStorages(metricsStoragesFromSystems(state.storageSystems || []))
-  if (state.components.replication) return fromSystems
-  if (state.metrics.storages.some(hasCredentialData)) {
-    return filledMetricsStorages(state.metrics.storages)
+  if (state.components.replication) {
+    return filledMetricsStorages(metricsStoragesFromSystems(state.storageSystems || []))
   }
-  return fromSystems
+  return filledMetricsStorages(
+    overlayMetricsStorages(state.storageSystems || [], state.metrics.storages),
+  )
+}
+
+const emptyMetricsStorage = (): MetricsStorage => ({
+  serial: '',
+  url: '',
+  user: '',
+  password: '',
+})
+
+export function patchSingleSiteMetricsStorage(
+  state: WizardState,
+  idx: number,
+  patch: Partial<MetricsStorage>,
+): WizardState {
+  const systems = state.storageSystems || []
+  const fromSystems = metricsStoragesFromSystems(systems)
+  const overrides = state.metrics.storages
+  const next = [...overrides]
+  while (next.length <= idx) {
+    next.push(emptyMetricsStorage())
+  }
+  const existing = next[idx]
+  const base = hasExporterOverride(existing) ? existing : fromSystems[idx] ?? emptyMetricsStorage()
+  next[idx] = { ...base, ...patch }
+  return { ...state, metrics: { ...state.metrics, storages: next } }
 }
 
 /** Values shown on the Performance Metrics step (includes empty rows). */
@@ -53,6 +85,5 @@ export function displayMetricsStorages(state: WizardState, site: SiteId = 'prima
   if (state.components.replication) {
     return metricsStoragesFromSystems(getSiteStorage(state, site).storageSystems)
   }
-  if (state.metrics.storages.length) return state.metrics.storages
-  return metricsStoragesFromSystems(state.storageSystems || [])
+  return overlayMetricsStorages(state.storageSystems || [], state.metrics.storages)
 }

@@ -3,6 +3,8 @@ import { filledReplicationState, filledState } from '../test/fixtures'
 import {
   applySiteMetricsToState,
   copyPrimarySiteMetricsToTopLevel,
+  displayMetricsStorages,
+  patchSingleSiteMetricsStorage,
   metricsForSite,
   metricsInstalledForSite,
   prometheusTargetForSite,
@@ -73,6 +75,116 @@ describe('resolvedMetricsStorages', () => {
         password: 'other-password',
       },
     ])
+  })
+
+  it('empty leftover rows do not block display pull from storage systems', () => {
+    const state = filledState({
+      metrics: {
+        storages: [{ serial: '', url: '', user: '', password: '' }],
+      },
+    })
+
+    expect(displayMetricsStorages(state)).toEqual([
+      {
+        serial: '400001',
+        url: 'https://192.0.2.10',
+        user: 'maintenance',
+        password: 'fixture-password',
+      },
+    ])
+  })
+
+  it('user/password-only leftover does not empty resolved exporter credentials', () => {
+    const state = filledState({
+      metrics: {
+        storages: [{ serial: '', url: '', user: 'leftover', password: 'leftover' }],
+      },
+    })
+
+    expect(resolvedMetricsStorages(state)).toEqual([
+      {
+        serial: '400001',
+        url: 'https://192.0.2.10',
+        user: 'maintenance',
+        password: 'fixture-password',
+      },
+    ])
+  })
+
+  it('new arrays still appear after a one-row exporter override', () => {
+    const base = filledState()
+    const state = filledState({
+      storageSystems: [
+        base.storageSystems[0],
+        {
+          ...base.storageSystems[0],
+          id: 'storage-2',
+          name: 'array-2',
+          serial: '400099',
+          url: 'https://192.0.2.99',
+        },
+      ],
+      metrics: {
+        storages: [
+          {
+            serial: '999999',
+            url: 'https://metrics.example',
+            user: 'metrics',
+            password: 'other-password',
+          },
+        ],
+      },
+    })
+
+    expect(resolvedMetricsStorages(state).map((storage) => storage.serial)).toEqual([
+      '999999',
+      '400099',
+    ])
+    expect(displayMetricsStorages(state).map((storage) => storage.serial)).toEqual([
+      '999999',
+      '400099',
+    ])
+  })
+
+  it('editing one exporter row does not freeze other storage systems', () => {
+    const base = filledState()
+    const state = filledState({
+      storageSystems: [
+        base.storageSystems[0],
+        {
+          ...base.storageSystems[0],
+          id: 'storage-2',
+          name: 'array-2',
+          serial: '400002',
+          url: 'https://192.0.2.99',
+        },
+      ],
+      metrics: { storages: [] },
+    })
+
+    const patched = patchSingleSiteMetricsStorage(state, 0, { password: 'exporter-only' })
+    const updated = {
+      ...patched,
+      storageSystems: [
+        patched.storageSystems[0],
+        { ...patched.storageSystems[1], serial: '400888' },
+      ],
+    }
+
+    expect(displayMetricsStorages(updated)[0]?.password).toBe('exporter-only')
+    expect(displayMetricsStorages(updated)[1]?.serial).toBe('400888')
+    expect(resolvedMetricsStorages(updated).map((s) => s.serial)).toEqual(['400001', '400888'])
+  })
+
+  it('storage-system serial change is live when that index is not an override', () => {
+    const base = filledState()
+    const state = filledState({
+      metrics: { storages: [] },
+      storageSystems: [{ ...base.storageSystems[0], serial: '400777' }],
+    })
+
+    expect(displayMetricsStorages(state)[0]?.serial).toBe('400777')
+    expect(resolvedMetricsStorages(state)[0]?.serial).toBe('400777')
   })
 
   it('uses this cluster’s storage systems for Replication even if metrics.storages still holds primary credentials', () => {

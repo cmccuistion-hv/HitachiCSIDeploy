@@ -871,6 +871,22 @@ describe('generateAll package matrix', () => {
     expect(fileAt(files, '04-metrics/exporter-patch.yaml').content).toContain('Do not kubectl apply')
   })
 
+  it('password-only leftover in metrics.storages still packages storage systems', async () => {
+    const files = await generateAll(
+      filledState({
+        components: { metrics: true },
+        metrics: {
+          enabled: true,
+          storages: [{ serial: '', url: '', user: 'leftover', password: 'leftover' }],
+        },
+      }),
+    )
+    const secret = fileAt(files, '04-metrics/metrics-secret.yaml').content
+
+    expect(secret).toContain('serial: 400001')
+    expect(secret).toContain('https://192.0.2.10')
+  })
+
   it('fills the Performance Metrics exporter secret from storage systems when metrics.storages is empty', async () => {
     const files = await generateAll(
       filledState({
