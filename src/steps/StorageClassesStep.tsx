@@ -35,6 +35,7 @@ import {
   gadArraysForStorageClass,
 } from '../catalog/arrayBinding'
 import type { SiteId } from '../catalog/sites'
+import { quickstartForSite, withSiteQuickstart } from '../catalog/siteQuickstart'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, withSiteStorage } from '../catalog/sites'
 import { generateSnapshotClass, generateStorageClass, snapshotClassOpts } from '../generator/yaml'
 import { AdvancedSection } from '../components/AdvancedSection'
@@ -270,19 +271,20 @@ export function StorageClassesStep() {
 
       const primary = patchOne(getSiteStorage(ensured, 'primary'))
       const secondary = patchOne(getSiteStorage(ensured, 'secondary'))
+      const siteQs = quickstartForSite(ensured, site)
       const nextScName =
         patch.name !== undefined &&
-        (ensured.quickstart.storageClassName || '').trim() === (sc.name || '').trim()
+        (siteQs.storageClassName || '').trim() === (sc.name || '').trim()
           ? patch.name
-          : ensured.quickstart.storageClassName
-      return {
-        ...ensured,
-        sites: { primary, secondary },
-        quickstart: {
-          ...ensured.quickstart,
-          storageClassName: nextScName,
+          : siteQs.storageClassName
+      return withSiteQuickstart(
+        {
+          ...ensured,
+          sites: { primary, secondary },
         },
-      }
+        site,
+        { storageClassName: nextScName },
+      )
     })
   }
 

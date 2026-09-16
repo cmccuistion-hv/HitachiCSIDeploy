@@ -128,6 +128,7 @@ test('exports the OpenShift hosted Fibre Channel golden path', async ({ page }) 
 
   await fillStandardStorageClass(page)
   await continueTo(page, 'Test volume')
+  await expect(page.getByRole('tab', { name: /Primary site/ })).toHaveCount(0)
   await continueTo(page, 'Review & export')
 
   const zip = await downloadZip(page)
@@ -228,6 +229,30 @@ test('blocks Replication export when journal IDs are missing', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
   await expect(page.getByText(/Set a Journal ID for array serial/)).toBeVisible()
+})
+
+test('Test volume site tabs can skip secondary packaging without blocking Continue', async ({
+  page,
+}) => {
+  const state = filledReplicationState({
+    replication: {
+      enabled: true,
+      disasterRecovery: true,
+      remoteKubeconfigSource: 'install-time',
+    },
+  })
+  await seedWizardState(page, state)
+  await sidebar(page).getByRole('button', { name: /Test volume/ }).click()
+  await expect(page.getByRole('heading', { name: 'Test volume', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Primary site/ })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Secondary site/ })).toBeVisible()
+
+  await page.getByRole('tab', { name: /Secondary site/ }).click()
+  const include = page.getByRole('checkbox', { name: /Include test volume on this cluster/ })
+  await expect(include).toBeChecked()
+  await include.uncheck()
+  await expect(page.getByText(/will not include the sample PVC\/Pod/)).toBeVisible()
+  await expect(continueButton(page)).toBeEnabled()
 })
 
 test('blocks Replication Continue and Export until a remote kubeconfig path is chosen', async ({
