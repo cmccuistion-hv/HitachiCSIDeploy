@@ -23,6 +23,7 @@ html[data-palette='coe'][data-mode='light'] {
   --hv-warning: #b78103;
   --hv-negative: #c62828;
   --hv-info: #1a7fa8;
+  --hv-plugin: #6751d6;
   --hv-shadow: 0 2px 14px rgba(22, 45, 72, 0.1);
   --hv-header-bg: #ffffff;
   --hv-header-fg: #162d48;
@@ -65,6 +66,7 @@ html[data-palette='coe'][data-mode='dark'] {
   --hv-warning: #f0b429;
   --hv-negative: #ff6b6b;
   --hv-info: #63c2de;
+  --hv-plugin: #6751d6;
   --hv-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --hv-header-bg: #0e1116;
   --hv-header-fg: #ffffff;
@@ -101,6 +103,7 @@ html[data-palette='blue'][data-mode='light'] {
   --hv-warning: #f9a825;
   --hv-negative: #d32f2f;
   --hv-info: #2064b4;
+  --hv-plugin: #6751d6;
   --hv-shadow: 0 2px 12px rgba(65, 65, 65, 0.12);
   --hv-header-bg: linear-gradient(90deg, #0f2d52 0%, #2064b4 55%, #2a7ad4 100%);
   --hv-header-fg: #fbfcfc;
@@ -137,6 +140,7 @@ html[data-palette='blue'][data-mode='dark'] {
   --hv-warning: #f0b429;
   --hv-negative: #ff6b6b;
   --hv-info: #63c2de;
+  --hv-plugin: #6751d6;
   --hv-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --hv-header-bg: linear-gradient(90deg, #071018 0%, #123a66 55%, #1a5090 100%);
   --hv-header-fg: #fbfcfc;
@@ -1833,6 +1837,11 @@ a.theme-menu-item {
 
 .rp-diagram-chip-dr rect {
   fill: var(--hv-primary);
+  stroke: none;
+}
+
+.rp-diagram-chip-plugin rect {
+  fill: var(--hv-plugin);
   stroke: none;
 }
 

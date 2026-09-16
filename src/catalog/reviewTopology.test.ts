@@ -137,4 +137,26 @@ describe('buildReviewTopology', () => {
     expect(metricsChip(model, 0)).toBeDefined()
     expect(metricsChip(model, 1)).toBeUndefined()
   })
+
+  it('renders the Console Plugin as a filled chip like CSI Driver, not a hollow pill', () => {
+    const model = buildReviewTopology(
+      filledState({
+        components: { metrics: true, consolePlugin: true },
+        metrics: { deployPrometheus: true, deployGrafana: false },
+      }),
+      [],
+    )
+    const chips = model.sites[0].chips.flat()
+    const consoleChip = chips.find((c) => c.id.endsWith(':console'))
+    const driver = chips.find((c) => c.label === 'CSI Driver')
+    expect(consoleChip).toMatchObject({
+      label: 'Console Plugin',
+      sub: 'OpenShift UI',
+      tone: 'plugin',
+    })
+    expect(driver?.tone).toBe('ctrl')
+    expect(metricsChip(model)?.tone).toBe('node')
+    expect(consoleChip?.tone).not.toBe(driver?.tone)
+    expect(consoleChip?.tone).not.toBe(metricsChip(model)?.tone)
+  })
 })

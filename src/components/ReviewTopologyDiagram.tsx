@@ -91,6 +91,7 @@ function Chip({
   const cx = x + w / 2
   const tw = w - 14
   const cid = clipId(chip.id)
+  const filled = chip.tone === 'ctrl' || chip.tone === 'dr' || chip.tone === 'node' || chip.tone === 'plugin'
   const cls =
     chip.tone === 'ctrl'
       ? 'rp-diagram-chip-ctrl'
@@ -98,19 +99,21 @@ function Chip({
         ? 'rp-diagram-chip-dr'
         : chip.tone === 'node'
           ? 'rp-diagram-chip-node'
-          : chip.tone === 'pill'
-            ? 'rp-diagram-pill'
-            : 'rp-diagram-card'
-  const titleClass = chip.tone === 'ctrl' || chip.tone === 'dr' || chip.tone === 'node'
+          : chip.tone === 'plugin'
+            ? 'rp-diagram-chip-plugin'
+            : chip.tone === 'pill'
+              ? 'rp-diagram-pill'
+              : 'rp-diagram-card'
+  const titleClass = filled
     ? 'rp-diagram-chip-title'
     : chip.tone === 'pill'
       ? 'rp-diagram-link-label'
       : 'rp-diagram-card-title'
   const titleSize = chip.tone === 'pill' ? 8 : 11
-  const subClass = chip.tone === 'ctrl' || chip.tone === 'dr' || chip.tone === 'node'
+  const subClass = filled
     ? 'rp-diagram-chip-sub'
     : 'rp-diagram-muted'
-  const subSize = chip.tone === 'ctrl' || chip.tone === 'dr' || chip.tone === 'node' ? 9 : 9.5
+  const subSize = filled ? 9 : 9.5
   return (
     <Hit id={chip.id} selected={selected} onSelect={onSelect}>
       <clipPath id={cid}>

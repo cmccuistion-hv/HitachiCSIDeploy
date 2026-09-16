@@ -14,7 +14,7 @@ export const REVIEW_MAX_POOLS = 3
 export const REVIEW_MAX_STORAGECLASSES = 4
 export const REVIEW_MAX_ARRAYS = 3
 
-export type ReviewTone = 'ctrl' | 'dr' | 'node' | 'pill' | 'card'
+export type ReviewTone = 'ctrl' | 'dr' | 'node' | 'plugin' | 'pill' | 'card'
 
 export type ReviewHit = {
   id: string
@@ -303,11 +303,16 @@ function buildSite(
     const id = `${site}:console`
     addHit({
       id,
-      title: 'OpenShift Console plugin',
+      title: 'OpenShift Console Plugin',
       why: 'ConsolePlugin that reads Prometheus in the cluster.',
       files: under(files, '05-console', prefix),
     })
-    metricsConsole.push({ id, label: 'Console plugin', tone: 'pill' })
+    metricsConsole.push({
+      id,
+      label: 'Console Plugin',
+      sub: 'OpenShift UI',
+      tone: 'plugin',
+    })
   }
   if (metricsConsole.length) chipRows.push(metricsConsole)
 
