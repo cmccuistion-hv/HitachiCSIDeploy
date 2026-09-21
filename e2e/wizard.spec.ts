@@ -304,3 +304,71 @@ test('blocks Replication export when kubeconfigs were not re-pasted after loadin
     ),
   ).toBeVisible()
 })
+
+test('welcome says the wizard stays in-browser and does not send answers to Hitachi Vantara', async ({
+  page,
+}) => {
+  await openFresh(page)
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('runs in your browser')
+  await expect(
+    dialog.locator('.welcome-boundary').filter({ hasText: 'not sent to Hitachi Vantara servers' }),
+  ).toBeVisible()
+})
+
+test('platform picker omits ROSA and EKS', async ({ page }) => {
+  await openFresh(page)
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await expect(choice(page, 'Red Hat OpenShift')).toBeVisible()
+  await expect(choice(page, 'Kubernetes')).toBeVisible()
+  await expect(choice(page, 'Rancher Kubernetes Engine 2 (RKE2)')).toBeVisible()
+  await expect(choice(page, 'Red Hat OpenShift Service on AWS (ROSA)')).toHaveCount(0)
+  await expect(choice(page, 'Amazon Elastic Kubernetes Service (EKS)')).toHaveCount(0)
+})
+
+test('a PVC size without a unit blocks Continue', async ({ page }) => {
+  await seedWizardState(page, filledState({ quickstart: { pvcSize: '7' } }))
+  await sidebar(page).getByRole('button', { name: /Test volume/ }).click()
+  await expect(page.getByRole('heading', { name: 'Test volume', exact: true })).toBeVisible()
+  await expect(field(page, 'Size').locator('.error-text')).toHaveText(
+    'PVC size must include a unit (for example 1Gi or 500Mi).',
+  )
+  await expect(continueButton(page)).toBeDisabled()
+})
+
+test('invalid PVC size blocks Test volume Continue and Download ZIP', async ({ page }) => {
+  await seedWizardState(page, filledState({ quickstart: { pvcSize: '9999999TTGi' } }))
+  await sidebar(page).getByRole('button', { name: /Test volume/ }).click()
+  await expect(page.getByRole('heading', { name: 'Test volume', exact: true })).toBeVisible()
+  await expect(field(page, 'Size').locator('.error-text')).toHaveText(
+    'PVC size must be a Kubernetes quantity (for example 1Gi or 500Mi).',
+  )
+  await expect(continueButton(page)).toBeDisabled()
+
+  await sidebar(page).getByRole('button', { name: /Review & export/ }).click()
+  await expect(page.getByRole('heading', { name: 'Review & export' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
+  await expect(
+    page.getByText('PVC size must be a Kubernetes quantity (for example 1Gi or 500Mi).'),
+  ).toBeVisible()
+  await expect(page.getByText('Open Test volume')).toBeVisible()
+})
+
+test('overflow PVC size blocks export', async ({ page }) => {
+  const huge = `${'1'.padEnd(200, '0')}Gi`
+  await seedWizardState(page, filledState({ quickstart: { pvcSize: huge } }))
+  await sidebar(page).getByRole('button', { name: /Test volume/ }).click()
+  await expect(field(page, 'Size').locator('.error-text')).toHaveText(
+    'PVC size is too large. Use a Kubernetes quantity below 8Ei.',
+  )
+  await expect(continueButton(page)).toBeDisabled()
+})
+
+test('Review & export has no Continue button', async ({ page }) => {
+  await seedWizardState(page, filledState())
+  await sidebar(page).getByRole('button', { name: /Test volume/ }).click()
+  await expect(continueButton(page)).toBeEnabled()
+  await continueTo(page, 'Review & export')
+  await expect(continueButton(page)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
+})

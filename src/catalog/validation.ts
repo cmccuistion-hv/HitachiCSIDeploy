@@ -7,6 +7,8 @@ import { arrayForStorageClass, csiSecretRefForSystem, gadArraysForStorageClass }
 import { resolvedReplicationStorageSecrets } from './replicationSecrets'
 import { ensureSitesForReplication, getSiteStorage, hrpcPairSystem, type SiteId } from './sites'
 import { nextUniqueName } from './uniqueName'
+import { k8sQuantityInvalidReason } from './k8sQuantity'
+import { quickstartForSite, quickstartInstalledForSite } from './siteQuickstart'
 
 /** Blocking issue plus where the wizard should take the user to fix it. */
 export type WizardFix = {
@@ -18,6 +20,7 @@ export type WizardFix = {
     | 'storageclasses'
     | 'replication'
     | 'console'
+    | 'quickstart'
   site?: SiteId
 }
 
@@ -908,10 +911,31 @@ export function consolePluginPrometheusWiringInvalidFix(state: WizardState): Wiz
   return null
 }
 
+export function quickstartPvcSizeInvalidFix(state: WizardState): WizardFix | null {
+  if (!state.storageClassesEnabled) return null
+  if (state.components.replication) {
+    for (const site of ['primary', 'secondary'] as const) {
+      if (!quickstartInstalledForSite(state, site)) continue
+      const reason = k8sQuantityInvalidReason(quickstartForSite(state, site).pvcSize)
+      if (reason) {
+        return wizardFix(
+          `${site === 'primary' ? 'Primary site: ' : 'Secondary site: '}${reason}`,
+          'quickstart',
+          site,
+        )
+      }
+    }
+    return null
+  }
+  const reason = k8sQuantityInvalidReason(state.quickstart.pvcSize)
+  return reason ? wizardFix(reason, 'quickstart') : null
+}
+
 export function wizardFixCta(fix: WizardFix): string {
   if (fix.stepId === 'platform') return 'Open Platform'
   if (fix.stepId === 'prerequisites-checklist') return 'Open Prerequisites'
   if (fix.stepId === 'console') return 'Open Console Plugin'
+  if (fix.stepId === 'quickstart') return 'Open Test volume'
   if (fix.site === 'secondary') return 'Open Secondary site'
   if (fix.site === 'primary') return 'Open Primary site'
   if (fix.stepId === 'replication') return 'Open Replication'

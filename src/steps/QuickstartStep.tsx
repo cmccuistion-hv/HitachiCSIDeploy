@@ -1,4 +1,5 @@
 import { PLATFORMS } from '../catalog/platforms'
+import { k8sQuantityInvalidReason } from '../catalog/k8sQuantity'
 import { quickstartForSite, withSiteQuickstart } from '../catalog/siteQuickstart'
 import { getSiteStorage, packageStorageClasses, pickStorageClassName } from '../catalog/sites'
 import { siteStorageClassesReady, siteStorageSystemsReady } from '../catalog/validation'
@@ -131,7 +132,11 @@ export function QuickstartStep() {
           </AdvancedSection>
 
           <div className="field-grid">
-            <Field label="Size" hint="Requested capacity for the test PVC (for example 1Gi).">
+            <Field
+              label="Size"
+              hint="Requested capacity with a unit (for example 1Gi or 500Mi)."
+              error={k8sQuantityInvalidReason(qs.pvcSize) ?? undefined}
+            >
               <input
                 value={qs.pvcSize}
                 onChange={(e) =>

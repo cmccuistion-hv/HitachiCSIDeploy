@@ -1,6 +1,7 @@
 import {
   CONNECTION_TYPES,
   PLATFORMS,
+  PLATFORM_PICKER_IDS,
   coerceConnectionType,
   connectionsForNodeEnvironment,
   connectionsForStorageClassKind,
@@ -56,7 +57,7 @@ export function PlatformStep() {
 
       <Section title="Container platform">
         <div className="card-grid">
-          {(Object.keys(PLATFORMS) as PlatformId[]).map((id) => (
+          {PLATFORM_PICKER_IDS.map((id) => (
             <ChoiceCard
               key={id}
               title={PLATFORMS[id].displayName}

@@ -6,6 +6,7 @@ import { PLATFORMS } from '../catalog/platforms'
 import {
   airGappedRegistryInvalidFix,
   consolePluginPrometheusWiringInvalidFix,
+  quickstartPvcSizeInvalidFix,
   storageArtifactsInvalidFix,
   storageArtifactsValid,
   wizardFixCta,
@@ -45,8 +46,13 @@ export function ExportStep() {
   const storageExportFix = storageExportBlocked ? storageArtifactsInvalidFix(state) : null
   const consolePromFix = consolePluginPrometheusWiringInvalidFix(state)
   const airGappedFix = airGappedRegistryInvalidFix(state)
-  const exportBlocked = storageExportBlocked || consolePromFix !== null || airGappedFix !== null
-  const exportFix = storageExportFix ?? consolePromFix ?? airGappedFix
+  const quickstartFix = quickstartPvcSizeInvalidFix(state)
+  const exportBlocked =
+    storageExportBlocked ||
+    consolePromFix !== null ||
+    airGappedFix !== null ||
+    quickstartFix !== null
+  const exportFix = storageExportFix ?? consolePromFix ?? airGappedFix ?? quickstartFix
   const nextSteps = buildNextSteps(state)
 
   const offlineReplicationRequired =

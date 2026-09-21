@@ -3,6 +3,7 @@ import {
   defaultOpenShiftTopology,
   effectiveMultipathDelivery,
   multipathFlagsForDelivery,
+  PLATFORM_PICKER_IDS,
   PLATFORMS,
   supportsStretchedGad,
 } from './platforms'
@@ -57,6 +58,12 @@ describe('platform defaults and constraints', () => {
     expect(PLATFORMS.kubernetes.supportsConsolePlugin).toBe(false)
     expect(PLATFORMS.rke2.supportsConsolePlugin).toBe(false)
     expect(PLATFORMS.eks.supportsConsolePlugin).toBe(false)
+  })
+
+  it('omits ROSA and EKS from the Platform picker', () => {
+    expect([...PLATFORM_PICKER_IDS]).toEqual(['openshift', 'kubernetes', 'rke2'])
+    expect(PLATFORMS.rosa).toBeDefined()
+    expect(PLATFORMS.eks).toBeDefined()
   })
 
   it('uses a loose multipath.conf for RKE2 and EKS dm-multipath', () => {

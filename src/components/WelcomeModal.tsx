@@ -76,6 +76,10 @@ export function WelcomeModal({
           Performance Metrics, and OpenShift Console Plugin, then generates install manifests and scripts.
           It does <strong>not</strong> connect to your cluster from this page.
         </p>
+        <p className="welcome-boundary">
+          This wizard runs in your browser. Answers stay on this device and are not sent to Hitachi
+          Vantara servers.
+        </p>
         <p>
           Simple view (default) asks for cluster and storage decisions; switch to Advanced in the header
           when you need to change namespaces, Secret names, or component versions.

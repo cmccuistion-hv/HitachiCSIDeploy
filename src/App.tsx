@@ -7,6 +7,7 @@ import { useTheme } from './state/ThemeContext'
 import { useUiMode } from './state/UiModeContext'
 import {
   needsNoReplicationStorageClassConfirm,
+  quickstartPvcSizeInvalidFix,
   replicationContinueInvalidFix,
   storageArtifactsContinueInvalidFix,
   storageArtifactsValidForContinue,
@@ -185,7 +186,11 @@ export default function App() {
   const replicationContinueFix =
     current?.id === 'replication' ? replicationContinueInvalidFix(state) : null
   const replicationContinueBlocked = !!replicationContinueFix
-  const continueBlocked = storageContinueBlocked || replicationContinueBlocked
+  const quickstartContinueFix =
+    current?.id === 'quickstart' ? quickstartPvcSizeInvalidFix(state) : null
+  const continueBlocked =
+    storageContinueBlocked || replicationContinueBlocked || !!quickstartContinueFix
+  const isLastStep = stepIndex >= visibleSteps.length - 1
   const continueFix = continueBlocked
     ? current?.id === 'storage'
       ? storageSystemsContinueInvalidFix(state)
@@ -193,7 +198,9 @@ export default function App() {
         ? storageArtifactsContinueInvalidFix(state)
         : current?.id === 'replication'
           ? replicationContinueFix
-          : null
+          : current?.id === 'quickstart'
+            ? quickstartContinueFix
+            : null
     : null
 
   useEffect(() => {
@@ -445,23 +452,25 @@ export default function App() {
               </>
             )}
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={stepIndex >= visibleSteps.length - 1 || continueBlocked}
-            onClick={() => {
-              if (
-                current?.id === 'storageclasses' &&
-                needsNoReplicationStorageClassConfirm(state)
-              ) {
-                setNoReplicationScOpen(true)
-                return
-              }
-              setStepIndex(stepIndex + 1)
-            }}
-          >
-            Continue
-          </button>
+          {!isLastStep ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={continueBlocked}
+              onClick={() => {
+                if (
+                  current?.id === 'storageclasses' &&
+                  needsNoReplicationStorageClassConfirm(state)
+                ) {
+                  setNoReplicationScOpen(true)
+                  return
+                }
+                setStepIndex(stepIndex + 1)
+              }}
+            >
+              Continue
+            </button>
+          ) : null}
         </footer>
       </main>
 

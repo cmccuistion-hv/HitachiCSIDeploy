@@ -1,6 +1,9 @@
 /** Platform, protocol, and storage-type catalog with documented constraints. */
 
 export type PlatformId = 'openshift' | 'kubernetes' | 'rke2' | 'eks' | 'rosa'
+
+/** Cards shown on Platform. `rosa` and `eks` remain in PLATFORMS for saved configs. */
+export const PLATFORM_PICKER_IDS: readonly PlatformId[] = ['openshift', 'kubernetes', 'rke2']
 export type ConnectionType = 'fc' | 'iscsi' | 'nvme-fc' | 'nvme-tcp'
 /** Worker node form factor — HSPC server requirements restrict protocols per environment */
 export type NodeEnvironment = 'bare-metal' | 'virtual-machine'

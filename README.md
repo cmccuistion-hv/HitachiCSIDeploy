@@ -1,6 +1,6 @@
 # Hitachi CSI Deployment Wizard
 
-A browser configurator for deploying the **Hitachi CSI** stack on OpenShift, ROSA, Kubernetes, RKE2, or EKS.
+A browser configurator for deploying the **Hitachi CSI** stack on OpenShift, Kubernetes, or RKE2.
 
 Answer a short series of questions about your platform, storage systems, and optional add-ons. The wizard produces a ZIP of manifests and an `install.sh` you run against your cluster — it never connects to the cluster from the page.
 
@@ -28,7 +28,7 @@ Installing Hitachi storage for containers usually means stitching together opera
 
 ## What you get
 
-- Platform-aware defaults (OpenShift/ROSA vs Kubernetes-style namespaces and OperatorHub vs YAML)
+- Platform-aware defaults (OpenShift vs Kubernetes-style namespaces and OperatorHub vs YAML)
 - Prerequisites called out for multipath, iSCSI, NVMe, firewall, and licenses where they apply
 - StorageClass options constrained to documented rules (stretched/GAD, SDS Block, efficiency)
 - Latest component versions pulled from [csi-operator-hitachi](https://github.com/hitachi-vantara/csi-operator-hitachi)

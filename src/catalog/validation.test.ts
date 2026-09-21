@@ -26,6 +26,8 @@ import {
   validateStorageClass,
   portIdWithoutMultipathWarning,
   portIdFormatError,
+  quickstartPvcSizeInvalidFix,
+  wizardFixCta,
 } from './validation'
 import { HELP } from './help'
 
@@ -803,5 +805,77 @@ describe('Console Plugin Prometheus wiring export validation', () => {
       existingPrometheusPort: '9090',
     })
     expect(consolePluginPrometheusWiringInvalidFix(state)).toBeNull()
+  })
+})
+
+describe('quickstart PVC size', () => {
+  it('allows the default 1Gi', () => {
+    expect(quickstartPvcSizeInvalidFix(filledState())).toBeNull()
+  })
+
+  it('rejects unknown units and overflow', () => {
+    expect(
+      quickstartPvcSizeInvalidFix(filledState({ quickstart: { pvcSize: '9999999TTGi' } })),
+    ).toEqual({
+      message: 'PVC size must be a Kubernetes quantity (for example 1Gi or 500Mi).',
+      stepId: 'quickstart',
+    })
+    const huge = `${'1'.padEnd(200, '0')}Gi`
+    expect(quickstartPvcSizeInvalidFix(filledState({ quickstart: { pvcSize: huge } }))).toEqual({
+      message: 'PVC size is too large. Use a Kubernetes quantity below 8Ei.',
+      stepId: 'quickstart',
+    })
+  })
+
+  it('skips when StorageClasses are off', () => {
+    expect(
+      quickstartPvcSizeInvalidFix(
+        filledState({ storageClassesEnabled: false, quickstart: { pvcSize: '9999999TTGi' } }),
+      ),
+    ).toBeNull()
+  })
+
+  it('validates only sites that include a test volume', () => {
+    const state = filledReplicationState({ quickstart: { pvcSize: '1Gi' } })
+    const primaryQs = {
+      install: true as const,
+      ...state.quickstart,
+      pvcSize: '1Gi',
+    }
+    const badQs = {
+      install: false as const,
+      ...state.quickstart,
+      pvcSize: '9999999TTGi',
+    }
+    const skipped: WizardState = {
+      ...state,
+      sites: {
+        primary: { ...state.sites!.primary, quickstart: primaryQs },
+        secondary: { ...state.sites!.secondary, quickstart: badQs },
+      },
+    }
+    expect(quickstartPvcSizeInvalidFix(skipped)).toBeNull()
+    const included: WizardState = {
+      ...skipped,
+      sites: {
+        ...skipped.sites!,
+        secondary: {
+          ...skipped.sites!.secondary,
+          quickstart: { ...badQs, install: true },
+        },
+      },
+    }
+    expect(quickstartPvcSizeInvalidFix(included)).toEqual({
+      message: 'Secondary site: PVC size must be a Kubernetes quantity (for example 1Gi or 500Mi).',
+      stepId: 'quickstart',
+      site: 'secondary',
+    })
+  })
+
+  it('uses the Test volume CTA', () => {
+    expect(wizardFixCta({ message: 'x', stepId: 'quickstart' })).toBe('Open Test volume')
+    expect(
+      wizardFixCta({ message: 'x', stepId: 'quickstart', site: 'secondary' }),
+    ).toBe('Open Test volume')
   })
 })
