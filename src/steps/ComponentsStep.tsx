@@ -176,37 +176,41 @@ export function ComponentsStep() {
                 ))}
               </select>
             </Field>
-            <Field
-              label="Replication version"
-              hint="Latest tag from GitHub when available. Used for Replication and the included DR Operator."
-            >
-              <select
-                value={state.versions.replication}
-                onChange={(e) =>
-                  setState((s) => ({ ...s, versions: { ...s.versions, replication: e.target.value } }))
-                }
+            {state.components.replication ? (
+              <Field
+                label="Replication version"
+                hint="Latest tag from GitHub when available. Used for Replication and the included DR Operator."
               >
-                {(versions?.hrpc || [state.versions.replication]).map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Performance Metrics version" hint="Latest tag from GitHub when available.">
-              <select
-                value={state.versions.metrics}
-                onChange={(e) =>
-                  setState((s) => ({ ...s, versions: { ...s.versions, metrics: e.target.value } }))
-                }
-              >
-                {(versions?.hspp || [state.versions.metrics]).map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                <select
+                  value={state.versions.replication}
+                  onChange={(e) =>
+                    setState((s) => ({ ...s, versions: { ...s.versions, replication: e.target.value } }))
+                  }
+                >
+                  {(versions?.hrpc || [state.versions.replication]).map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {state.components.metrics ? (
+              <Field label="Performance Metrics version" hint="Latest tag from GitHub when available.">
+                <select
+                  value={state.versions.metrics}
+                  onChange={(e) =>
+                    setState((s) => ({ ...s, versions: { ...s.versions, metrics: e.target.value } }))
+                  }
+                >
+                  {(versions?.hspp || [state.versions.metrics]).map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
           </div>
         </Section>
 

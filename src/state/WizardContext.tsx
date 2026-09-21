@@ -28,7 +28,7 @@ import {
   supportsImmutableSnapshots,
 } from '../catalog/platforms'
 import { migrateArrayBinding } from '../catalog/arrayBinding'
-import { fetchVersions, type VersionInfo } from '../services/versions'
+import { fetchVersions, pickListedVersion, type VersionInfo } from '../services/versions'
 import { exportConfigJson, parseWizardConfigJson } from './exportConfig'
 import { migrateMetricsConfig } from './migrateMetrics'
 import { migrateOfflineConfig } from './migrateOffline'
@@ -211,9 +211,9 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       setState((s) => ({
         ...s,
         versions: {
-          driver: s.versions.driver || v.latest.hspc,
-          replication: s.versions.replication || v.latest.hrpc,
-          metrics: s.versions.metrics || v.latest.hspp,
+          driver: pickListedVersion(s.versions.driver, v.hspc, v.latest.hspc),
+          replication: pickListedVersion(s.versions.replication, v.hrpc, v.latest.hrpc),
+          metrics: pickListedVersion(s.versions.metrics, v.hspp, v.latest.hspp),
         },
       }))
       setVersionsLoading(false)

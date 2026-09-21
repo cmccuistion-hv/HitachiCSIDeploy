@@ -11,11 +11,14 @@ export interface VersionInfo {
   source: 'api' | 'cache' | 'fallback'
 }
 
+/** Oldest CSI component tag the wizard offers in version dropdowns. */
+export const MIN_COMPONENT_VERSION = 'v3.18.0'
+
 /** Bundled fallback when GitHub API is unavailable */
 export const FALLBACK_VERSIONS: VersionInfo = {
-  hspc: ['v3.18.3', 'v3.18.2', 'v3.18.1', 'v3.18.0', 'v3.17.4'],
-  hrpc: ['v3.18.3', 'v3.17.4', 'v3.17.1', 'v3.17.0'],
-  hspp: ['v3.18.3', 'v3.17.4', 'v1.4.1', 'v1.4.0'],
+  hspc: ['v3.18.3', 'v3.18.2', 'v3.18.1', 'v3.18.0'],
+  hrpc: ['v3.18.3'],
+  hspp: ['v3.18.3'],
   latest: { hspc: 'v3.18.3', hrpc: 'v3.18.3', hspp: 'v3.18.3' },
   fetchedAt: '2026-08-10T00:00:00.000Z',
   source: 'fallback',
@@ -39,6 +42,26 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
+export function versionAtLeast(version: string, min: string): boolean {
+  const a = parseSemver(version)
+  const b = parseSemver(min)
+  for (let i = 0; i < 3; i++) {
+    if (a[i] > b[i]) return true
+    if (a[i] < b[i]) return false
+  }
+  return true
+}
+
+export function filterSupportedVersions(list: string[]): string[] {
+  return list.filter((v) => versionAtLeast(v, MIN_COMPONENT_VERSION)).sort(compareVersions)
+}
+
+/** Keep the current tag when it is still offered; otherwise use latest. */
+export function pickListedVersion(current: string, listed: string[], latest: string): string {
+  if (current && listed.includes(current)) return current
+  return latest
+}
+
 function extractVersions(paths: string[], folder: PluginFolder): string[] {
   const set = new Set<string>()
   const re = new RegExp(`^${folder}/(v\\d+\\.\\d+\\.\\d+)/`)
@@ -46,7 +69,25 @@ function extractVersions(paths: string[], folder: PluginFolder): string[] {
     const m = p.match(re)
     if (m) set.add(m[1])
   }
-  return Array.from(set).sort(compareVersions)
+  return filterSupportedVersions(Array.from(set))
+}
+
+function withSupportedLists(info: VersionInfo): VersionInfo | null {
+  const hspc = filterSupportedVersions(info.hspc)
+  const hrpc = filterSupportedVersions(info.hrpc)
+  const hspp = filterSupportedVersions(info.hspp)
+  if (!hspc.length) return null
+  return {
+    ...info,
+    hspc,
+    hrpc: hrpc.length ? hrpc : FALLBACK_VERSIONS.hrpc,
+    hspp: hspp.length ? hspp : FALLBACK_VERSIONS.hspp,
+    latest: {
+      hspc: hspc[0],
+      hrpc: (hrpc.length ? hrpc : FALLBACK_VERSIONS.hrpc)[0]!,
+      hspp: (hspp.length ? hspp : FALLBACK_VERSIONS.hspp)[0]!,
+    },
+  }
 }
 
 function loadCache(): VersionInfo | null {
@@ -55,7 +96,7 @@ function loadCache(): VersionInfo | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as VersionInfo & { cachedAt?: number }
     if (parsed.cachedAt && Date.now() - parsed.cachedAt > CACHE_TTL_MS) return null
-    return { ...parsed, source: 'cache' }
+    return withSupportedLists({ ...parsed, source: 'cache' })
   } catch {
     return null
   }
@@ -82,18 +123,19 @@ export async function fetchVersions(): Promise<VersionInfo> {
     const hrpc = extractVersions(paths, 'hrpc')
     const hspp = extractVersions(paths, 'hspp')
     if (!hspc.length) throw new Error('No HSPC versions found')
-    const info: VersionInfo = {
+    const info = withSupportedLists({
       hspc,
-      hrpc: hrpc.length ? hrpc : FALLBACK_VERSIONS.hrpc,
-      hspp: hspp.length ? hspp : FALLBACK_VERSIONS.hspp,
+      hrpc,
+      hspp,
       latest: {
-        hspc: hspc[0],
-        hrpc: (hrpc.length ? hrpc : FALLBACK_VERSIONS.hrpc)[0],
-        hspp: (hspp.length ? hspp : FALLBACK_VERSIONS.hspp)[0],
+        hspc: hspc[0]!,
+        hrpc: (hrpc.length ? hrpc : FALLBACK_VERSIONS.hrpc)[0]!,
+        hspp: (hspp.length ? hspp : FALLBACK_VERSIONS.hspp)[0]!,
       },
       fetchedAt: new Date().toISOString(),
       source: 'api',
-    }
+    })
+    if (!info) throw new Error('No supported HSPC versions found')
     saveCache(info)
     return info
   } catch {

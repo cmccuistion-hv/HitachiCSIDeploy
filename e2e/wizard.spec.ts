@@ -372,3 +372,34 @@ test('Review & export has no Continue button', async ({ page }) => {
   await expect(continueButton(page)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
 })
+
+test('component version dropdowns match selected components', async ({ page }) => {
+  await openFresh(page)
+  await page.getByRole('button', { name: 'Get started' }).click()
+  await continueTo(page, 'CSI components')
+  await page.getByRole('button', { name: 'Show advanced on this step' }).click()
+
+  await expect(field(page, 'CSI Driver version')).toBeVisible()
+  await expect(page.locator('.field').filter({ hasText: 'Replication version' })).toHaveCount(0)
+  await expect(page.locator('.field').filter({ hasText: 'Performance Metrics version' })).toHaveCount(0)
+
+  await page.getByRole('checkbox', { name: /Replication \+ DR Operator/ }).check()
+  await expect(field(page, 'Replication version')).toBeVisible()
+  await expect(page.locator('.field').filter({ hasText: 'Performance Metrics version' })).toHaveCount(0)
+
+  await page.getByRole('checkbox', { name: /Performance Metrics/ }).check()
+  await expect(field(page, 'Performance Metrics version')).toBeVisible()
+
+  for (const label of ['CSI Driver version', 'Replication version', 'Performance Metrics version']) {
+    const options = await page.locator('.field').filter({ hasText: label }).locator('option').allTextContents()
+    expect(options.length).toBeGreaterThan(0)
+    for (const tag of options) {
+      const [major, minor] = tag.replace(/^v/, '').split('.').map((n) => parseInt(n, 10))
+      expect(major > 3 || (major === 3 && minor >= 18), `${label} listed ${tag}`).toBe(true)
+    }
+  }
+
+  await page.getByRole('checkbox', { name: /Replication \+ DR Operator/ }).uncheck()
+  await expect(page.locator('.field').filter({ hasText: 'Replication version' })).toHaveCount(0)
+  await expect(field(page, 'Performance Metrics version')).toBeVisible()
+})
