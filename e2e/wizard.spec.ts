@@ -314,6 +314,9 @@ test('welcome says the wizard stays in-browser and does not send answers to Hita
   await expect(
     dialog.locator('.welcome-boundary').filter({ hasText: 'not sent to Hitachi Vantara servers' }),
   ).toBeVisible()
+  await expect(dialog).toContainText(
+    'you also need a second cluster and a second storage array attached there, with replication paths set up between the two Hitachi VSP storage arrays',
+  )
 })
 
 test('platform picker omits ROSA and EKS', async ({ page }) => {

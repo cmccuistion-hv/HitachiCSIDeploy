@@ -103,8 +103,9 @@ export function WelcomeModal({
         <h3>What you will need</h3>
         <p>
           Cluster-admin access later (when you run the scripts), plus array REST credentials, serial, and
-          pool IDs. If you enable Replication, also gather journal IDs — details a storage admin may
-          already have.
+          pool IDs. If you enable Replication, you also need a second cluster and a second storage array
+          attached there, with replication paths set up between the two Hitachi VSP storage arrays. Gather
+          journal IDs as well — details a storage admin may already have.
         </p>
 
         <p className="welcome-boundary">
