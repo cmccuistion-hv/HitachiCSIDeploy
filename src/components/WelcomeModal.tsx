@@ -70,7 +70,7 @@ export function WelcomeModal({
       }}
     >
       <div className="welcome-dialog-body">
-        <h2 id="welcome-title">Configure Hitachi CSI for your cluster</h2>
+        <h2 id="welcome-title">Configure Hitachi Vantara CSI for your cluster</h2>
         <p>
           This browser configurator walks you through platform, storage, and optional Replication,
           Performance Metrics, and OpenShift Console Plugin, then generates install manifests and scripts.

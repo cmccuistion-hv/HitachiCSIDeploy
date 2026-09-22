@@ -46,7 +46,7 @@ test('More menu opens About', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'About' }).click()
 
   await expect(
-    page.getByRole('heading', { name: 'Configure Hitachi CSI for your cluster' }),
+    page.getByRole('heading', { name: 'Configure Hitachi Vantara CSI for your cluster' }),
   ).toBeVisible()
 })
 
