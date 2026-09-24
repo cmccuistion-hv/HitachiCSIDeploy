@@ -1712,8 +1712,8 @@ a.theme-menu-item {
   z-index: 40;
   padding: 0.65rem 0.75rem;
   border-radius: var(--hv-radius);
-  border: 1px solid var(--hv-border);
-  background: var(--hv-bg-container);
+  border: 1px solid color-mix(in srgb, var(--hv-text) 22%, var(--hv-border));
+  background: var(--hv-bg-secondary);
   color: var(--hv-text);
   font-size: 0.78rem;
   font-weight: 400;
@@ -1925,105 +1925,8 @@ a.theme-menu-item {
   stroke: color-mix(in srgb, var(--hv-positive) 42%, var(--hv-border));
 }
 
-.acm-packet {
-  fill: color-mix(in srgb, var(--hv-primary) 70%, var(--hv-info));
-}
-
-.acm-grow {
-  transform-box: fill-box;
-  transform-origin: center bottom;
-  animation: acm-grow 10s ease-in-out infinite;
-}
-
-.acm-delete-clone {
-  animation: acm-delete-clone 10s ease-in-out infinite;
-}
-
-.acm-delete-parent {
-  animation: acm-delete-parent 10s ease-in-out infinite;
-}
-
-.acm-later-expand,
-.acm-later-recreate {
-  animation: acm-panel-focus 10s ease-in-out infinite;
-}
-
-.acm-later-recreate {
-  animation-delay: 5s;
-}
-
-.acm-packet-expand {
-  animation: acm-packet-phase 10s ease-in-out infinite;
-}
-
-@keyframes acm-grow {
-  0%,
-  8% {
-    transform: scaleY(1);
-  }
-  22%,
-  38% {
-    transform: scaleY(1.28);
-  }
-  48%,
-  100% {
-    transform: scaleY(1);
-  }
-}
-
-@keyframes acm-delete-clone {
-  0%,
-  50% {
-    opacity: 1;
-  }
-  58%,
-  82% {
-    opacity: 0.18;
-  }
-  92%,
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes acm-delete-parent {
-  0%,
-  58% {
-    opacity: 1;
-  }
-  66%,
-  82% {
-    opacity: 0.18;
-  }
-  92%,
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes acm-panel-focus {
-  0%,
-  42% {
-    opacity: 1;
-  }
-  50%,
-  92% {
-    opacity: 0.45;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes acm-packet-phase {
-  0%,
-  42% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
+.acm-parent {
+  opacity: 0.72;
 }
 
 .welcome-dialog {
@@ -2368,21 +2271,6 @@ a.theme-menu-item {
 
   .topo-packets {
     display: none;
-  }
-
-  .acm-packet {
-    display: none;
-  }
-
-  .acm-grow,
-  .acm-delete-clone,
-  .acm-delete-parent,
-  .acm-later-expand,
-  .acm-later-recreate,
-  .acm-packet-expand {
-    animation: none;
-    opacity: 1;
-    transform: none;
   }
 }
 

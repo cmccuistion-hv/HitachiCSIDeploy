@@ -69,7 +69,7 @@ export const SECRET_FIELDS_STANDARD: FieldDef[] = [
     key: 'alternativeCloneMode',
     label: 'Alternative clone mode',
     description:
-      'Keeps a hidden original for every new volume so VMs from templates and cloned volumes can grow, and CSI deletes the parent — you do not have to delete clones first. About twice the pool space. VSP One Block High End (B85) and 20 Series only.',
+      'On, CSI creates a hidden parent volume and a child volume for every new volume so VMs from templates and cloned volumes can grow. The workload uses the child volume. CSI expands the parent volume first, then the child volume, and deletes the parent volume when you delete the child. About twice the pool space: 100 Gi needs about 200 Gi free. VSP One Block High End (B85) and 20 Series only.',
     optional: true,
     type: 'boolean',
     defaultValue: false,

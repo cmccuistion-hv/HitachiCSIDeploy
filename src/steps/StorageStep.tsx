@@ -306,9 +306,7 @@ export function StorageStep() {
                       />
                     </strong>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: 'var(--hv-text-subtle)' }}>
-                      Create VMs from a template, or clone volumes, and still grow those disks. CSI deletes the
-                      hidden parent — you do not have to delete clones first. Array clone rule — not an OpenShift
-                      Virtualization limit. Cost: about 2× pool space. 20 Series and High End (B85) only.
+                      {HELP.alternativeCloneModeHint}
                     </p>
                   </div>
                 </label>
