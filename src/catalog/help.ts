@@ -26,7 +26,10 @@ export const HELP = {
     'Set Resource group ID on each site’s Replication array on the Storage step. Both sites must have an ID (one-sided is not supported); the IDs are per array and do not need to match. The Replication step then shows journal, host group, and CSI Driver user checks.',
 
   resourceGroupId:
-    'This Secret’s Resource group ID selects which group on the array CSI Driver provisions into (LDEV IDs, host groups, pool). Required if the storage user can access more than one group. Multiple clusters can share one array by using different IDs.',
+    'This Secret’s ID is the resource group CSI provisions into.',
+
+  resourceGroupIdHint:
+    'Required if the storage user can access more than one resource group, or a resource group and the Meta resource.',
 
   alternativeCloneMode:
     'Turn this on only if you create VMs from a template or clone volumes.',

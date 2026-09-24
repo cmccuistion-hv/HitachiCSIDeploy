@@ -277,7 +277,7 @@ export function StorageStep() {
               {!!sys.family && !isSdsBlockFamily(sys.family) && !(replicationOn && sys.hrpcPair) && (
                 <Field
                   label="Resource group ID (optional)"
-                  hint="Required only if the user can access multiple resource groups."
+                  hint={HELP.resourceGroupIdHint}
                   help={HELP.resourceGroupId}
                   helpDiagram={<ResourceGroupOverviewDiagram resourceGroupID={sys.resourceGroupID} />}
                 >
